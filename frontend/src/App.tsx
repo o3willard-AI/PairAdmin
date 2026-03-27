@@ -1,8 +1,18 @@
+import { ThreeColumnLayout } from "@/components/layout/ThreeColumnLayout";
+
 function App() {
   return (
-    <div className="h-screen w-screen bg-zinc-950 text-zinc-100 flex items-center justify-center">
-      <span>PairAdmin — Phase 1</span>
-    </div>
+    <ThreeColumnLayout
+      sidebar={
+        <div className="flex items-center justify-center h-full text-zinc-600 text-sm">
+          Commands — Plan 04
+        </div>
+      }
+    >
+      <div className="flex items-center justify-center h-full text-zinc-600 text-sm">
+        Chat area — Plan 04
+      </div>
+    </ThreeColumnLayout>
   );
 }
 

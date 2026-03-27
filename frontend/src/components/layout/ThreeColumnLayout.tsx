@@ -1,0 +1,43 @@
+import type { ReactNode } from "react";
+import { useTerminalStore } from "@/stores/terminalStore";
+import { TerminalTabList } from "@/components/terminal/TerminalTabList";
+import { TerminalPreview } from "@/components/terminal/TerminalPreview";
+import { StatusBar } from "./StatusBar";
+
+interface ThreeColumnLayoutProps {
+  children?: ReactNode;
+  sidebar?: ReactNode;
+}
+
+export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps) {
+  const activeTabId = useTerminalStore((state) => state.activeTabId);
+
+  return (
+    <div className="flex flex-col h-screen w-screen overflow-hidden">
+      <div className="flex flex-1 overflow-hidden bg-zinc-950 text-zinc-100">
+        {/* Left column: terminal tab list */}
+        <aside className="w-40 flex-none border-r border-zinc-800 overflow-y-auto">
+          <TerminalTabList />
+        </aside>
+
+        {/* Center column: chat area + terminal preview */}
+        <main className="flex flex-1 flex-col overflow-hidden">
+          {/* Upper: chat area */}
+          <div className="flex flex-1 flex-col overflow-hidden">{children}</div>
+
+          {/* Lower: xterm.js terminal preview */}
+          <div className="h-[30%] border-t border-zinc-800">
+            <TerminalPreview tabId={activeTabId} />
+          </div>
+        </main>
+
+        {/* Right column: command sidebar */}
+        <aside className="w-[220px] flex-none border-l border-zinc-800 overflow-y-auto">
+          {sidebar}
+        </aside>
+      </div>
+
+      <StatusBar />
+    </div>
+  );
+}
