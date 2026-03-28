@@ -12,6 +12,9 @@ interface TerminalState {
   tabs: TerminalTab[];
   activeTabId: string;
   setActiveTab: (tabId: string) => void;
+  addTab: (id: string, name: string) => void;
+  removeTab: (id: string) => void;
+  clearTabs: () => void;
   setTermRef: (tabId: string, term: Terminal) => void;
   getTermRef: (tabId: string) => Terminal | undefined;
 }
@@ -22,15 +25,37 @@ const termRefsMap = new Map<string, Terminal>();
 export const useTerminalStore = create<TerminalState>()(
   devtools(
     immer((set) => ({
-      tabs: [
-        { id: "bash-1", name: "bash:1" },
-        { id: "bash-2", name: "bash:2" },
-      ],
-      activeTabId: "bash-1",
+      tabs: [],
+      activeTabId: "",
       setActiveTab: (tabId) => {
         set((state) => {
           state.activeTabId = tabId;
         });
+      },
+      addTab: (id, name) => {
+        set((state) => {
+          if (state.tabs.some((t) => t.id === id)) return; // duplicate guard
+          state.tabs.push({ id, name });
+          if (state.tabs.length === 1) {
+            state.activeTabId = id; // first tab becomes active
+          }
+        });
+      },
+      removeTab: (id) => {
+        set((state) => {
+          state.tabs = state.tabs.filter((t) => t.id !== id);
+          if (state.activeTabId === id) {
+            state.activeTabId = state.tabs.length > 0 ? state.tabs[0].id : "";
+          }
+        });
+        termRefsMap.delete(id); // cleanup xterm ref
+      },
+      clearTabs: () => {
+        set((state) => {
+          state.tabs = [];
+          state.activeTabId = "";
+        });
+        termRefsMap.clear();
       },
       setTermRef: (tabId, term) => {
         termRefsMap.set(tabId, term);
