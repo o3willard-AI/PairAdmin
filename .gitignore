@@ -2,3 +2,8 @@ build/bin/
 frontend/node_modules/
 frontend/dist/
 frontend/wailsjs/
+# Exception: wailsjs stub files checked in for test/type resolution
+# (actual Wails-generated files are still excluded by the pattern above,
+# but .js stubs needed by vitest are committed)
+!frontend/wailsjs/runtime/runtime.js
+!frontend/wailsjs/runtime/runtime.d.ts
