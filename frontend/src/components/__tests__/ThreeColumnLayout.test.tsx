@@ -80,15 +80,16 @@ describe("ThreeColumnLayout", () => {
     expect(screen.getByText("No model")).toBeInTheDocument();
   });
 
-  it("renders bash:1 and bash:2 tabs in the tab list", () => {
+  it("renders empty tab list when store has no tabs (initial empty state)", () => {
     render(
       <ThreeColumnLayout>
         <div>Chat</div>
       </ThreeColumnLayout>
     );
 
-    expect(screen.getByText("bash:1")).toBeInTheDocument();
-    expect(screen.getByText("bash:2")).toBeInTheDocument();
+    // Initial store state is now empty (tabs added dynamically via Wails events)
+    expect(screen.queryByText("bash:1")).not.toBeInTheDocument();
+    expect(screen.queryByText("bash:2")).not.toBeInTheDocument();
   });
 
   it("passes children to the center column", () => {
