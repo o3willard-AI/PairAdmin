@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"pairadmin/services/llm"
+	"pairadmin/services/llm/filter"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -76,7 +77,15 @@ func (s *LLMService) SendMessage(tabId, userInput, terminalContext string) error
 		return fmt.Errorf("no LLM provider configured; set PAIRADMIN_PROVIDER environment variable")
 	}
 
-	messages := llm.BuildMessages(llm.SystemPrompt, terminalContext, userInput)
+	// Apply filter pipeline: ANSI stripping + credential redaction before LLM
+	credFilter, err := filter.NewCredentialFilter()
+	if err != nil {
+		return fmt.Errorf("failed to initialize credential filter: %w", err)
+	}
+	pipeline := filter.NewPipeline(filter.NewANSIFilter(), credFilter)
+	filteredContext, _ := pipeline.Apply(terminalContext)
+
+	messages := llm.BuildMessages(llm.SystemPrompt, filteredContext, userInput)
 
 	go func() {
 		ctx, cancel := context.WithTimeout(s.ctx, 5*time.Minute)

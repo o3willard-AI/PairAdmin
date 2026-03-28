@@ -20,6 +20,9 @@ func main() {
 	// Create CommandService for clipboard and Wayland detection
 	commands := services.NewCommandService()
 
+	// Create LLMService with config from environment variables
+	llmService := services.NewLLMService(services.LoadConfig())
+
 	// Create application with options
 	err := wails.Run(&options.App{
 		Title:  "PairAdmin",
@@ -32,10 +35,12 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			app.startup(ctx)
 			commands.Startup(ctx)
+			llmService.Startup(ctx)
 		},
 		Bind: []interface{}{
 			app,
 			commands,
+			llmService,
 		},
 	})
 

@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { CanvasAddon } from "@xterm/addon-canvas";
 import "@xterm/xterm/css/xterm.css";
+import { useTerminalStore } from "@/stores/terminalStore";
 
 interface TerminalPreviewProps {
   tabId: string;
@@ -31,6 +32,9 @@ export function TerminalPreview({ tabId }: TerminalPreviewProps) {
     term.loadAddon(fitAddon);
 
     term.open(containerRef.current);
+
+    // Register term ref in terminalStore so ChatPane can read terminal context
+    useTerminalStore.getState().setTermRef(tabId, term);
 
     // CanvasAddon MUST be loaded after open()
     try {
