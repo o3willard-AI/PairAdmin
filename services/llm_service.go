@@ -21,6 +21,7 @@ type Config struct {
 	AnthropicKey  string // ANTHROPIC_API_KEY
 	OpenRouterKey string // OPENROUTER_API_KEY (alternative key for OpenRouter)
 	OllamaHost    string // OLLAMA_HOST: optional, defaults to localhost
+	LMStudioHost  string // LMSTUDIO_HOST: optional, defaults to http://localhost:1234/v1
 }
 
 // LoadConfig reads LLM configuration from environment variables.
@@ -32,6 +33,7 @@ func LoadConfig() Config {
 		AnthropicKey:  os.Getenv("ANTHROPIC_API_KEY"),
 		OpenRouterKey: os.Getenv("OPENROUTER_API_KEY"),
 		OllamaHost:    os.Getenv("OLLAMA_HOST"),
+		LMStudioHost:  os.Getenv("LMSTUDIO_HOST"),
 	}
 }
 
@@ -162,7 +164,11 @@ func buildProvider(cfg Config) llm.Provider {
 		}
 		return llm.NewOpenAIProvider(key, "https://openrouter.ai/api/v1", cfg.Model)
 	case "lmstudio":
-		return llm.NewOpenAIProvider("", "http://localhost:1234/v1", cfg.Model)
+		baseURL := cfg.LMStudioHost
+		if baseURL == "" {
+			baseURL = "http://localhost:1234/v1"
+		}
+		return llm.NewOpenAIProvider("", baseURL, cfg.Model)
 	case "anthropic":
 		return llm.NewAnthropicProvider(cfg.AnthropicKey, cfg.Model)
 	case "ollama":
