@@ -23,6 +23,9 @@ func main() {
 	// Create LLMService with config from environment variables
 	llmService := services.NewLLMService(services.LoadConfig())
 
+	// Create TerminalService for tmux pane discovery and capture
+	terminal := services.NewTerminalService()
+
 	// Create application with options
 	err := wails.Run(&options.App{
 		Title:  "PairAdmin",
@@ -36,11 +39,13 @@ func main() {
 			app.startup(ctx)
 			commands.Startup(ctx)
 			llmService.Startup(ctx)
+			terminal.Startup(ctx)
 		},
 		Bind: []interface{}{
 			app,
 			commands,
 			llmService,
+			terminal,
 		},
 	})
 
