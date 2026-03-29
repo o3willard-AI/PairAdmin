@@ -21,6 +21,21 @@ export function ChatPane() {
       return;
     }
 
+    if (text.trim().startsWith("/filter")) {
+      import(/* @vite-ignore */ "../../wailsjs/go/services/LLMService")
+        .then(({ FilterCommand }) => FilterCommand(text.trim()))
+        .then((response: string) => {
+          useChatStore.getState().addSystemMessage(activeTabId, response);
+        })
+        .catch((err: Error) => {
+          useChatStore.getState().addSystemMessage(
+            activeTabId,
+            `Filter error: ${err?.message ?? "Unknown error"}`
+          );
+        });
+      return;
+    }
+
     // Get terminal context (empty string if terminal not yet initialized)
     const term = useTerminalStore.getState().getTermRef(activeTabId);
     const terminalContext = readTerminalLines(term, 200);

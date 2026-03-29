@@ -30,6 +30,9 @@ func main() {
 	atspiAdapter := capture.NewATSPIAdapter()
 	manager := capture.NewCaptureManager([]capture.TerminalAdapter{tmuxAdapter, atspiAdapter}, runtime.EventsEmit)
 
+	// Wire CaptureManager to LLMService so FilterCommand can trigger pipeline rebuilds
+	llmService.SetCaptureManager(manager)
+
 	// Create application with options
 	err := wails.Run(&options.App{
 		Title:  "PairAdmin",

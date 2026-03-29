@@ -4,7 +4,7 @@ import { devtools } from "zustand/middleware";
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
   isStreaming: boolean;
   tokenCount?: number;
@@ -15,6 +15,7 @@ interface ChatState {
   messagesByTab: Record<string, ChatMessage[]>;
   addUserMessage: (tabId: string, text: string) => string;
   addAssistantMessage: (tabId: string, content: string) => string;
+  addSystemMessage: (tabId: string, text: string) => void;
   clearTab: (tabId: string) => void;
   startStreamingMessage: (tabId: string) => string;
   appendChunk: (tabId: string, msgId: string, text: string) => void;
@@ -41,6 +42,17 @@ export const useChatStore = create<ChatState>()(
           state.messagesByTab[tabId].push({ id, role: "assistant", content, isStreaming: false });
         });
         return id;
+      },
+      addSystemMessage: (tabId, text) => {
+        set((state) => {
+          if (!state.messagesByTab[tabId]) state.messagesByTab[tabId] = [];
+          state.messagesByTab[tabId].push({
+            id: crypto.randomUUID(),
+            role: "system",
+            content: text,
+            isStreaming: false,
+          });
+        });
       },
       clearTab: (tabId) => {
         set((state) => {

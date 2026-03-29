@@ -31,60 +31,71 @@ export function ChatMessageList({ onRetry }: ChatMessageListProps) {
           </p>
         </div>
       ) : (
-        messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-          >
+        messages.map((msg) => {
+          if (msg.role === "system") {
+            return (
+              <div key={msg.id} className="flex justify-start px-4 py-1">
+                <div className="text-zinc-500 italic text-sm whitespace-pre-wrap">
+                  {msg.content}
+                </div>
+              </div>
+            );
+          }
+          return (
             <div
-              className={[
-                "max-w-[80%] rounded-lg px-4 py-2 text-sm",
-                msg.role === "user"
-                  ? "bg-primary text-primary-foreground"
-                  : msg.isError
-                    ? "bg-amber-950/50 border border-amber-600/50 text-amber-200"
-                    : "bg-muted text-foreground",
-              ].join(" ")}
+              key={msg.id}
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              {msg.isError && <span className="mr-1">⚠</span>}
-              <ReactMarkdown
-                components={{
-                  code({ children, className, node, ...props }) {
-                    const match = /language-(\w+)/.exec(className ?? "");
-                    // Determine if this is a block (fenced) code vs inline code
-                    // react-markdown passes inline=true for backtick-inline code
-                    const isInline = (props as { inline?: boolean }).inline === true;
-                    const codeStr = String(children).replace(/\n$/, "");
-                    if (match && !isInline) {
-                      return (
-                        <CodeBlock
-                          code={codeStr}
-                          language={match[1]}
-                          isStreaming={msg.isStreaming}
-                        />
-                      );
-                    }
-                    return (
-                      <code className="bg-muted-foreground/20 px-1 rounded text-xs">
-                        {children}
-                      </code>
-                    );
-                  },
-                }}
+              <div
+                className={[
+                  "max-w-[80%] rounded-lg px-4 py-2 text-sm",
+                  msg.role === "user"
+                    ? "bg-primary text-primary-foreground"
+                    : msg.isError
+                      ? "bg-amber-950/50 border border-amber-600/50 text-amber-200"
+                      : "bg-muted text-foreground",
+                ].join(" ")}
               >
-                {msg.content}
-              </ReactMarkdown>
-              {msg.isError && msg.content.includes("Rate limit") && onRetry && (
-                <button
-                  onClick={onRetry}
-                  className="mt-2 text-xs underline hover:no-underline block"
+                {msg.isError && <span className="mr-1">⚠</span>}
+                <ReactMarkdown
+                  components={{
+                    code({ children, className, node, ...props }) {
+                      const match = /language-(\w+)/.exec(className ?? "");
+                      // Determine if this is a block (fenced) code vs inline code
+                      // react-markdown passes inline=true for backtick-inline code
+                      const isInline = (props as { inline?: boolean }).inline === true;
+                      const codeStr = String(children).replace(/\n$/, "");
+                      if (match && !isInline) {
+                        return (
+                          <CodeBlock
+                            code={codeStr}
+                            language={match[1]}
+                            isStreaming={msg.isStreaming}
+                          />
+                        );
+                      }
+                      return (
+                        <code className="bg-muted-foreground/20 px-1 rounded text-xs">
+                          {children}
+                        </code>
+                      );
+                    },
+                  }}
                 >
-                  Retry
-                </button>
-              )}
+                  {msg.content}
+                </ReactMarkdown>
+                {msg.isError && msg.content.includes("Rate limit") && onRetry && (
+                  <button
+                    onClick={onRetry}
+                    className="mt-2 text-xs underline hover:no-underline block"
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        ))
+          );
+        })
       )}
     </div>
   );
