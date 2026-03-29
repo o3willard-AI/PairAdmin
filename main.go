@@ -7,7 +7,9 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"pairadmin/services"
+	"pairadmin/services/capture"
 )
 
 //go:embed all:frontend/dist
@@ -23,8 +25,9 @@ func main() {
 	// Create LLMService with config from environment variables
 	llmService := services.NewLLMService(services.LoadConfig())
 
-	// Create TerminalService for tmux pane discovery and capture
-	terminal := services.NewTerminalService()
+	// Create CaptureManager with TmuxAdapter for terminal pane discovery and capture
+	tmuxAdapter := capture.NewTmuxAdapter()
+	manager := capture.NewCaptureManager([]capture.TerminalAdapter{tmuxAdapter}, runtime.EventsEmit)
 
 	// Create application with options
 	err := wails.Run(&options.App{
@@ -39,13 +42,12 @@ func main() {
 			app.startup(ctx)
 			commands.Startup(ctx)
 			llmService.Startup(ctx)
-			terminal.Startup(ctx)
+			manager.Startup(ctx)
 		},
 		Bind: []interface{}{
 			app,
 			commands,
 			llmService,
-			terminal,
 		},
 	})
 
