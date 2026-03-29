@@ -13,6 +13,21 @@ export function TerminalPreview({ tabId }: TerminalPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
 
+  // No-tmux empty state (D-03)
+  if (!tabId) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-[#0d0d0d] text-zinc-400">
+        <div className="text-center space-y-2">
+          <p>No tmux session detected.</p>
+          <p>Start a tmux session to begin.</p>
+          <code className="block mt-4 px-3 py-1.5 bg-zinc-800 rounded text-sm text-green-400 font-mono">
+            $ tmux new-session
+          </code>
+        </div>
+      </div>
+    );
+  }
+
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -45,19 +60,6 @@ export function TerminalPreview({ tabId }: TerminalPreviewProps) {
     }
 
     fitAddon.fit();
-
-    // Write mock terminal content
-    term.writeln("\x1b[32m$ \x1b[0mls -la /home/admin");
-    term.writeln("total 48");
-    term.writeln("drwxr-xr-x  6 admin admin 4096 Mar 26 09:12 .");
-    term.writeln("drwxr-xr-x  3 root  root  4096 Mar 20 14:30 ..");
-    term.writeln("-rw-r--r--  1 admin admin  220 Mar 20 14:30 .bash_logout");
-    term.writeln("-rw-r--r--  1 admin admin 3771 Mar 20 14:30 .bashrc");
-    term.writeln("\x1b[32m$ \x1b[0mgit status");
-    term.writeln("On branch main");
-    term.writeln("nothing to commit, working tree clean");
-    term.writeln("");
-    term.writeln("\x1b[33m[No terminal connected — Phase 1 mock]\x1b[0m");
 
     termRef.current = term;
 
