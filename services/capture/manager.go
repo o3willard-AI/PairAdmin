@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"pairadmin/services/config"
 	"pairadmin/services/llm/filter"
 
 	"golang.org/x/sync/semaphore"
@@ -30,11 +31,12 @@ type CaptureManager struct {
 	active   []TerminalAdapter // adapters that passed IsAvailable check
 	emitFn   func(ctx context.Context, eventName string, optionalData ...interface{})
 
-	ctx    context.Context
-	cancel context.CancelFunc
-	mu     sync.Mutex
-	panes  map[string]*captureState // keyed by namespaced pane ID
-	sem    *semaphore.Weighted
+	ctx      context.Context
+	cancel   context.CancelFunc
+	mu       sync.Mutex
+	panes    map[string]*captureState // keyed by namespaced pane ID
+	sem      *semaphore.Weighted
+	pipeline *filter.Pipeline // custom filter pipeline including CustomFilter patterns
 }
 
 // NewCaptureManager creates a CaptureManager with bounded concurrency of 4.
@@ -47,7 +49,7 @@ func NewCaptureManager(adapters []TerminalAdapter, emitFn func(ctx context.Conte
 	}
 }
 
-// Startup filters adapters by IsAvailable, then starts the poll loop.
+// Startup filters adapters by IsAvailable, builds the initial filter pipeline, then starts the poll loop.
 // Called by Wails after the application context is available.
 func (m *CaptureManager) Startup(ctx context.Context) {
 	m.ctx, m.cancel = context.WithCancel(ctx)
@@ -58,6 +60,8 @@ func (m *CaptureManager) Startup(ctx context.Context) {
 			m.active = append(m.active, a)
 		}
 	}
+
+	m.pipeline = m.buildFilterPipeline()
 
 	go m.pollLoop()
 }
@@ -173,12 +177,19 @@ func (m *CaptureManager) tick() {
 		if !exists {
 			continue
 		}
-		h := hashContent(r.content)
+		// Apply custom filter pipeline (includes CustomFilter patterns from AppConfig)
+		content := r.content
+		if m.pipeline != nil {
+			if filtered, err := m.pipeline.Apply(content); err == nil {
+				content = filtered
+			}
+		}
+		h := hashContent(content)
 		if h != state.lastHash {
 			state.lastHash = h
 			m.emitFn(m.ctx, "terminal:update", TerminalUpdateEvent{
 				PaneID:  r.pane.ID,
-				Content: r.content,
+				Content: content,
 			})
 		}
 	}
@@ -234,6 +245,7 @@ func hashContent(s string) uint64 {
 
 // applyFilterPipeline applies the ANSI + credential filter pipeline to content.
 // On failure, returns unfiltered content (degraded behavior — terminal availability > filter failure).
+// Used by individual adapters (ATSPIAdapter) for per-capture ANSI stripping and credential redaction.
 func applyFilterPipeline(content string) string {
 	credFilter, err := filter.NewCredentialFilter()
 	if err != nil {
@@ -245,4 +257,41 @@ func applyFilterPipeline(content string) string {
 		return content
 	}
 	return filtered
+}
+
+// buildFilterPipeline creates the custom filter pipeline including CustomFilter patterns from AppConfig.
+// The pipeline is applied by CaptureManager to captured content before emitting terminal:update events.
+// Note: individual adapters (TmuxAdapter, ATSPIAdapter) apply their own ANSI + credential filtering;
+// this pipeline adds user-configured CustomFilter patterns on top.
+func (m *CaptureManager) buildFilterPipeline() *filter.Pipeline {
+	var filters []filter.Filter
+
+	cfg, err := config.LoadAppConfig()
+	if err == nil && len(cfg.CustomPatterns) > 0 {
+		inputs := make([]filter.CustomPatternInput, len(cfg.CustomPatterns))
+		for i, p := range cfg.CustomPatterns {
+			inputs[i] = filter.CustomPatternInput{
+				Name:   p.Name,
+				Regex:  p.Regex,
+				Action: p.Action,
+			}
+		}
+		customFilter, err := filter.NewCustomFilter(inputs)
+		if err == nil {
+			filters = append(filters, customFilter)
+		}
+	}
+
+	if len(filters) == 0 {
+		return nil // no custom patterns — skip pipeline to avoid unnecessary allocation
+	}
+	return filter.NewPipeline(filters...)
+}
+
+// RebuildFilterPipeline reloads custom patterns from AppConfig and rebuilds the filter pipeline.
+// Called by LLMService after /filter add or /filter remove commands.
+func (m *CaptureManager) RebuildFilterPipeline() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pipeline = m.buildFilterPipeline()
 }

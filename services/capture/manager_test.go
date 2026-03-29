@@ -2,8 +2,11 @@ package capture
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
+
+	"pairadmin/services/config"
 )
 
 // mockAdapter is a test double for TerminalAdapter.
@@ -364,5 +367,212 @@ func TestCaptureManagerSkipsDegradedPanes(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("normal pane tmux:%%0 should have emitted terminal:update")
+	}
+}
+
+// TestCaptureManagerBuildFilterPipelineWithPatterns verifies that buildFilterPipeline
+// returns a non-nil pipeline when AppConfig has custom patterns.
+func TestCaptureManagerBuildFilterPipelineWithPatterns(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	cfg := &config.AppConfig{
+		CustomPatterns: []config.CustomPattern{
+			{Name: "mytoken", Regex: `mytoken-\w+`, Action: "redact"},
+		},
+	}
+	if err := config.SaveAppConfig(cfg); err != nil {
+		t.Fatalf("SaveAppConfig: %v", err)
+	}
+
+	mgr := newTestCaptureManager(nil, func(ctx context.Context, eventName string, optionalData ...interface{}) {})
+	pipeline := mgr.buildFilterPipeline()
+	if pipeline == nil {
+		t.Fatal("expected non-nil pipeline when AppConfig has custom patterns")
+	}
+
+	result, err := pipeline.Apply("output: mytoken-abc123")
+	if err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+	if strings.Contains(result, "mytoken-abc123") {
+		t.Errorf("expected pattern to be redacted, got: %s", result)
+	}
+	if !strings.Contains(result, "[REDACTED:mytoken]") {
+		t.Errorf("expected [REDACTED:mytoken] in output, got: %s", result)
+	}
+}
+
+// TestCaptureManagerBuildFilterPipelineNoPatterns verifies that buildFilterPipeline
+// returns nil when AppConfig has no custom patterns.
+func TestCaptureManagerBuildFilterPipelineNoPatterns(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	// No config file written — LoadAppConfig returns empty patterns
+	mgr := newTestCaptureManager(nil, func(ctx context.Context, eventName string, optionalData ...interface{}) {})
+	pipeline := mgr.buildFilterPipeline()
+	if pipeline != nil {
+		t.Error("expected nil pipeline when AppConfig has no custom patterns")
+	}
+}
+
+// TestCaptureManagerRebuildFilterPipeline verifies that RebuildFilterPipeline picks up
+// new patterns added via SaveAppConfig after initial construction.
+func TestCaptureManagerRebuildFilterPipeline(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	// Start with no patterns
+	mgr := newTestCaptureManager(nil, func(ctx context.Context, eventName string, optionalData ...interface{}) {})
+	mgr.pipeline = mgr.buildFilterPipeline()
+	if mgr.pipeline != nil {
+		t.Error("expected nil pipeline before adding any patterns")
+	}
+
+	// Add a pattern via config
+	cfg := &config.AppConfig{
+		CustomPatterns: []config.CustomPattern{
+			{Name: "secret", Regex: `SECRET_\w+`, Action: "remove"},
+		},
+	}
+	if err := config.SaveAppConfig(cfg); err != nil {
+		t.Fatalf("SaveAppConfig: %v", err)
+	}
+
+	mgr.RebuildFilterPipeline()
+	if mgr.pipeline == nil {
+		t.Fatal("expected non-nil pipeline after RebuildFilterPipeline with new patterns")
+	}
+
+	result, err := mgr.pipeline.Apply("line1\nSECRET_KEY=abc\nline3")
+	if err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+	if strings.Contains(result, "SECRET_KEY") {
+		t.Errorf("expected SECRET_KEY line to be removed, got: %s", result)
+	}
+	if !strings.Contains(result, "line1") || !strings.Contains(result, "line3") {
+		t.Errorf("expected non-secret lines preserved, got: %s", result)
+	}
+}
+
+// TestCaptureManagerCustomFilterRedactAppliedDuringTick verifies that captured terminal
+// content with a custom redact pattern has matches replaced in the emitted terminal:update event.
+func TestCaptureManagerCustomFilterRedactAppliedDuringTick(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	// Configure a custom redact pattern
+	cfg := &config.AppConfig{
+		CustomPatterns: []config.CustomPattern{
+			{Name: "apikey", Regex: `API_KEY=\S+`, Action: "redact"},
+		},
+	}
+	if err := config.SaveAppConfig(cfg); err != nil {
+		t.Fatalf("SaveAppConfig: %v", err)
+	}
+
+	adapter := &mockAdapter{
+		name:      "tmux",
+		available: true,
+		panes: []PaneInfo{
+			{ID: "tmux:%0", AdapterType: "tmux", DisplayName: "main"},
+		},
+		captureData: map[string]string{
+			"tmux:%0": "$ env | grep key\nAPI_KEY=supersecret123\n$ ",
+		},
+	}
+
+	var mu sync.Mutex
+	var updateEvents []TerminalUpdateEvent
+	emitFn := func(ctx context.Context, eventName string, optionalData ...interface{}) {
+		if eventName == "terminal:update" && len(optionalData) > 0 {
+			if ev, ok := optionalData[0].(TerminalUpdateEvent); ok {
+				mu.Lock()
+				updateEvents = append(updateEvents, ev)
+				mu.Unlock()
+			}
+		}
+	}
+
+	mgr := newTestCaptureManager([]TerminalAdapter{adapter}, emitFn)
+	mgr.pipeline = mgr.buildFilterPipeline()
+	defer mgr.cancel()
+
+	mgr.tick()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(updateEvents) == 0 {
+		t.Fatal("expected terminal:update event from tick")
+	}
+	content := updateEvents[0].Content
+	if strings.Contains(content, "supersecret123") {
+		t.Errorf("expected secret to be redacted, got: %s", content)
+	}
+	if !strings.Contains(content, "[REDACTED:apikey]") {
+		t.Errorf("expected [REDACTED:apikey] in content, got: %s", content)
+	}
+}
+
+// TestCaptureManagerCustomFilterRemoveAppliedDuringTick verifies that captured terminal
+// content with a custom remove pattern has matching lines stripped in the emitted event.
+func TestCaptureManagerCustomFilterRemoveAppliedDuringTick(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	// Configure a custom remove pattern
+	cfg := &config.AppConfig{
+		CustomPatterns: []config.CustomPattern{
+			{Name: "password", Regex: `password:`, Action: "remove"},
+		},
+	}
+	if err := config.SaveAppConfig(cfg); err != nil {
+		t.Fatalf("SaveAppConfig: %v", err)
+	}
+
+	adapter := &mockAdapter{
+		name:      "tmux",
+		available: true,
+		panes: []PaneInfo{
+			{ID: "tmux:%0", AdapterType: "tmux", DisplayName: "main"},
+		},
+		captureData: map[string]string{
+			"tmux:%0": "user: admin\npassword: hunter2\nrole: admin",
+		},
+	}
+
+	var mu sync.Mutex
+	var updateEvents []TerminalUpdateEvent
+	emitFn := func(ctx context.Context, eventName string, optionalData ...interface{}) {
+		if eventName == "terminal:update" && len(optionalData) > 0 {
+			if ev, ok := optionalData[0].(TerminalUpdateEvent); ok {
+				mu.Lock()
+				updateEvents = append(updateEvents, ev)
+				mu.Unlock()
+			}
+		}
+	}
+
+	mgr := newTestCaptureManager([]TerminalAdapter{adapter}, emitFn)
+	mgr.pipeline = mgr.buildFilterPipeline()
+	defer mgr.cancel()
+
+	mgr.tick()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(updateEvents) == 0 {
+		t.Fatal("expected terminal:update event from tick")
+	}
+	content := updateEvents[0].Content
+	if strings.Contains(content, "password:") {
+		t.Errorf("expected password line to be removed, got: %s", content)
+	}
+	if !strings.Contains(content, "user: admin") || !strings.Contains(content, "role: admin") {
+		t.Errorf("expected non-password lines preserved, got: %s", content)
 	}
 }
