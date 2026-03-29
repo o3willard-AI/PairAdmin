@@ -199,6 +199,75 @@ func TestATSPICaptureAppliesFilterPipeline(t *testing.T) {
 	}
 }
 
+// Test 11: ATSPIAdapter.Discover marks Konsole windows as Degraded=true when GetText fails
+func TestATSPIAdapter_KonsoleDegradation(t *testing.T) {
+	a := newTestATSPIAdapter(
+		func() (string, error) { return "unix:path=/tmp/test", nil },
+		func() ([]string, error) { return []string{":1.200"}, nil },
+		func(busName string) ([]CacheItem, error) {
+			return []CacheItem{
+				{
+					Ref:  ObjectRef{Name: ":1.200", Path: "/org/a11y/atspi/accessible/0"},
+					Name: "Konsole",
+					Role: RoleTerminal,
+				},
+			}, nil
+		},
+		func(busName string, path dbus.ObjectPath) (string, error) {
+			// Simulate Konsole type mismatch / text extraction failure
+			return "", errors.New("dbus: cannot unmarshal")
+		},
+	)
+
+	panes, err := a.Discover(context.Background())
+	if err != nil {
+		t.Fatalf("Discover() returned error: %v", err)
+	}
+	if len(panes) != 1 {
+		t.Fatalf("expected 1 pane, got %d", len(panes))
+	}
+	if !panes[0].Degraded {
+		t.Error("expected Degraded=true for Konsole with failing GetText")
+	}
+	if panes[0].DegradedMsg != "Konsole text extraction not available on this system." {
+		t.Errorf("unexpected DegradedMsg: %q", panes[0].DegradedMsg)
+	}
+}
+
+// Test 12: ATSPIAdapter.Discover does NOT mark as degraded when GetText succeeds
+func TestATSPIAdapter_KonsoleSuccess(t *testing.T) {
+	a := newTestATSPIAdapter(
+		func() (string, error) { return "unix:path=/tmp/test", nil },
+		func() ([]string, error) { return []string{":1.200"}, nil },
+		func(busName string) ([]CacheItem, error) {
+			return []CacheItem{
+				{
+					Ref:  ObjectRef{Name: ":1.200", Path: "/org/a11y/atspi/accessible/0"},
+					Name: "Konsole",
+					Role: RoleTerminal,
+				},
+			}, nil
+		},
+		func(busName string, path dbus.ObjectPath) (string, error) {
+			return "$ ls -la\ntotal 42\n", nil
+		},
+	)
+
+	panes, err := a.Discover(context.Background())
+	if err != nil {
+		t.Fatalf("Discover() returned error: %v", err)
+	}
+	if len(panes) != 1 {
+		t.Fatalf("expected 1 pane, got %d", len(panes))
+	}
+	if panes[0].Degraded {
+		t.Error("expected Degraded=false when GetText succeeds")
+	}
+	if panes[0].DegradedMsg != "" {
+		t.Errorf("expected empty DegradedMsg when not degraded, got %q", panes[0].DegradedMsg)
+	}
+}
+
 // Test 10: ATSPIAdapter.Close closes the accessibility bus connection
 func TestATSPIClose(t *testing.T) {
 	a := NewATSPIAdapter()
