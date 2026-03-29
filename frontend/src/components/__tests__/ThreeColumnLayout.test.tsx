@@ -29,6 +29,13 @@ vi.mock("@xterm/addon-canvas", () => {
 // Mock the CSS import
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
+// Mock the Wails runtime so useTerminalCapture (mounted in ThreeColumnLayout) doesn't
+// call window.runtime.EventsOnMultiple in jsdom.
+// Path resolves from frontend/src/components/__tests__/ → frontend/wailsjs/runtime/runtime
+vi.mock("../../../wailsjs/runtime/runtime", () => ({
+  EventsOn: vi.fn(() => vi.fn()),
+}));
+
 beforeEach(() => {
   // ResizeObserver is not available in jsdom — must use a class
   class ResizeObserverMock {

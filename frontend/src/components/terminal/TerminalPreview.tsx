@@ -13,23 +13,8 @@ export function TerminalPreview({ tabId }: TerminalPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
 
-  // No-tmux empty state (D-03)
-  if (!tabId) {
-    return (
-      <div className="h-full w-full flex items-center justify-center bg-[#0d0d0d] text-zinc-400">
-        <div className="text-center space-y-2">
-          <p>No tmux session detected.</p>
-          <p>Start a tmux session to begin.</p>
-          <code className="block mt-4 px-3 py-1.5 bg-zinc-800 rounded text-sm text-green-400 font-mono">
-            $ tmux new-session
-          </code>
-        </div>
-      </div>
-    );
-  }
-
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!tabId || !containerRef.current) return;
 
     const term = new Terminal({
       theme: {
@@ -73,6 +58,21 @@ export function TerminalPreview({ tabId }: TerminalPreviewProps) {
       term.dispose();
     };
   }, [tabId]);
+
+  // No-tmux empty state (D-03)
+  if (!tabId) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-[#0d0d0d] text-zinc-400">
+        <div className="text-center space-y-2">
+          <p>No tmux session detected.</p>
+          <p>Start a tmux session to begin.</p>
+          <code className="block mt-4 px-3 py-1.5 bg-zinc-800 rounded text-sm text-green-400 font-mono">
+            $ tmux new-session
+          </code>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
