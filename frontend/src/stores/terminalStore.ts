@@ -6,13 +6,15 @@ import type { Terminal } from "@xterm/xterm";
 export interface TerminalTab {
   id: string;
   name: string;
+  degraded?: boolean;
+  degradedMsg?: string;
 }
 
 interface TerminalState {
   tabs: TerminalTab[];
   activeTabId: string;
   setActiveTab: (tabId: string) => void;
-  addTab: (id: string, name: string) => void;
+  addTab: (id: string, name: string, degraded?: boolean, degradedMsg?: string) => void;
   removeTab: (id: string) => void;
   clearTabs: () => void;
   setTermRef: (tabId: string, term: Terminal) => void;
@@ -32,12 +34,12 @@ export const useTerminalStore = create<TerminalState>()(
           state.activeTabId = tabId;
         });
       },
-      addTab: (id, name) => {
+      addTab: (id, name, degraded, degradedMsg) => {
         set((state) => {
           if (state.tabs.some((t) => t.id === id)) return; // duplicate guard
-          state.tabs.push({ id, name });
-          if (state.tabs.length === 1) {
-            state.activeTabId = id; // first tab becomes active
+          state.tabs.push({ id, name, degraded, degradedMsg });
+          if (state.tabs.length === 1 && !degraded) {
+            state.activeTabId = id; // first non-degraded tab becomes active
           }
         });
       },

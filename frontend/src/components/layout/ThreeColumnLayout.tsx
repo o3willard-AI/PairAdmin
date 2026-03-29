@@ -1,9 +1,15 @@
-import type { ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useTerminalCapture } from "@/hooks/useTerminalCapture";
 import { TerminalTabList } from "@/components/terminal/TerminalTabList";
 import { TerminalPreview } from "@/components/terminal/TerminalPreview";
 import { StatusBar } from "./StatusBar";
+
+interface AdapterStatusInfo {
+  name: string;
+  status: string;
+  message: string;
+}
 
 interface ThreeColumnLayoutProps {
   children?: ReactNode;
@@ -14,6 +20,14 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
   useTerminalCapture(); // Subscribe to terminal events from Go service
 
   const activeTabId = useTerminalStore((state) => state.activeTabId);
+  const [adapterStatus, setAdapterStatus] = useState<AdapterStatusInfo[]>([]);
+
+  useEffect(() => {
+    import(/* @vite-ignore */ "../../../wailsjs/go/services/capture/CaptureManager")
+      .then(({ GetAdapterStatus }) => GetAdapterStatus())
+      .then(setAdapterStatus)
+      .catch(() => {}); // Wails runtime unavailable in test/dev environments
+  }, []);
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden">
@@ -30,7 +44,7 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
 
           {/* Lower: xterm.js terminal preview */}
           <div className="h-[30%] border-t border-zinc-800">
-            <TerminalPreview tabId={activeTabId} />
+            <TerminalPreview tabId={activeTabId} adapterStatus={adapterStatus} />
           </div>
         </main>
 

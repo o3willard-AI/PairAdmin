@@ -5,11 +5,18 @@ import { CanvasAddon } from "@xterm/addon-canvas";
 import "@xterm/xterm/css/xterm.css";
 import { useTerminalStore } from "@/stores/terminalStore";
 
-interface TerminalPreviewProps {
-  tabId: string;
+interface AdapterStatusInfo {
+  name: string;
+  status: string;
+  message: string;
 }
 
-export function TerminalPreview({ tabId }: TerminalPreviewProps) {
+interface TerminalPreviewProps {
+  tabId: string;
+  adapterStatus?: AdapterStatusInfo[];
+}
+
+export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
 
@@ -59,16 +66,33 @@ export function TerminalPreview({ tabId }: TerminalPreviewProps) {
     };
   }, [tabId]);
 
-  // No-tmux empty state (D-03)
+  // Extended empty state (D-06/D-07): shows AT-SPI2 onboarding when applicable
   if (!tabId) {
+    const atspiOnboarding = adapterStatus?.find(
+      (a) => a.name === "atspi" && a.status === "onboarding"
+    );
+
     return (
       <div className="h-full w-full flex items-center justify-center bg-[#0d0d0d] text-zinc-400">
-        <div className="text-center space-y-2">
-          <p>No tmux session detected.</p>
-          <p>Start a tmux session to begin.</p>
-          <code className="block mt-4 px-3 py-1.5 bg-zinc-800 rounded text-sm text-green-400 font-mono">
-            $ tmux new-session
-          </code>
+        <div className="text-center space-y-4 max-w-md">
+          <p className="text-lg">No terminal sessions detected.</p>
+
+          <div className="space-y-2">
+            <p className="text-sm text-zinc-500">Option 1: Start a tmux session</p>
+            <code className="block px-3 py-1.5 bg-zinc-800 rounded text-sm text-green-400 font-mono">
+              $ tmux new-session
+            </code>
+          </div>
+
+          {atspiOnboarding && (
+            <div className="space-y-2">
+              <p className="text-sm text-zinc-500">Option 2: Enable accessibility for GUI terminals</p>
+              <code className="block px-3 py-1.5 bg-zinc-800 rounded text-sm text-green-400 font-mono">
+                $ gsettings set org.gnome.desktop.interface toolkit-accessibility true
+              </code>
+              <p className="text-xs text-zinc-600">Then restart your terminal application.</p>
+            </div>
+          )}
         </div>
       </div>
     );

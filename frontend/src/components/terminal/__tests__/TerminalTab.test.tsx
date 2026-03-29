@@ -14,11 +14,11 @@ describe("TerminalTab", () => {
     };
     render(<TerminalTab tab={tab} isActive={false} onClick={vi.fn()} />);
 
-    // Warning icon should be present (⚠ character or role)
-    const button = screen.getByRole("button");
-    expect(button).toBeInTheDocument();
-    // The warning icon (⚠ or warning text) should appear somewhere
-    expect(button.textContent).toMatch(/⚠|Konsole/);
+    // The warning icon button should be present (Tooltip.Trigger renders as a button)
+    const warningButton = screen.getByText("⚠");
+    expect(warningButton).toBeInTheDocument();
+    // Tab name should still be visible
+    expect(screen.getByText("Konsole")).toBeInTheDocument();
   });
 
   it("does NOT render warning badge for non-degraded tabs", () => {

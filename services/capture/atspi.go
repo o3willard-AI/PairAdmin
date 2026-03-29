@@ -227,10 +227,22 @@ func (a *ATSPIAdapter) Discover(ctx context.Context) ([]PaneInfo, error) {
 			if name == "" {
 				name = busName
 			}
+
+			// Probe GetText during discovery to detect Konsole-style type mismatches.
+			// If the probe fails, mark as degraded rather than silently skipping capture.
+			var degraded bool
+			var degradedMsg string
+			if _, err := a.getText(item.Ref.Name, item.Ref.Path); err != nil {
+				degraded = true
+				degradedMsg = "Konsole text extraction not available on this system."
+			}
+
 			panes = append(panes, PaneInfo{
 				ID:          id,
 				AdapterType: "atspi",
 				DisplayName: name,
+				Degraded:    degraded,
+				DegradedMsg: degradedMsg,
 			})
 		}
 	}

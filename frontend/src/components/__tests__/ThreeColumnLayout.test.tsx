@@ -36,6 +36,12 @@ vi.mock("../../../wailsjs/runtime/runtime", () => ({
   EventsOn: vi.fn(() => vi.fn()),
 }));
 
+// Mock the CaptureManager Wails binding (ThreeColumnLayout fetches adapter status on mount)
+// Path resolves from frontend/src/components/__tests__/ → frontend/wailsjs/go/services/capture/CaptureManager
+vi.mock("../../../../wailsjs/go/services/capture/CaptureManager", () => ({
+  GetAdapterStatus: vi.fn(() => Promise.resolve([])),
+}));
+
 beforeEach(() => {
   // ResizeObserver is not available in jsdom — must use a class
   class ResizeObserverMock {
