@@ -25,9 +25,10 @@ func main() {
 	// Create LLMService with config from environment variables
 	llmService := services.NewLLMService(services.LoadConfig())
 
-	// Create CaptureManager with TmuxAdapter for terminal pane discovery and capture
+	// Create CaptureManager with TmuxAdapter and ATSPIAdapter for terminal discovery and capture
 	tmuxAdapter := capture.NewTmuxAdapter()
-	manager := capture.NewCaptureManager([]capture.TerminalAdapter{tmuxAdapter}, runtime.EventsEmit)
+	atspiAdapter := capture.NewATSPIAdapter()
+	manager := capture.NewCaptureManager([]capture.TerminalAdapter{tmuxAdapter, atspiAdapter}, runtime.EventsEmit)
 
 	// Create application with options
 	err := wails.Run(&options.App{
@@ -48,6 +49,7 @@ func main() {
 			app,
 			commands,
 			llmService,
+			manager,
 		},
 	})
 

@@ -184,6 +184,47 @@ func (m *CaptureManager) tick() {
 	}
 }
 
+// AdapterStatusInfo holds the status of a single adapter for the frontend onboarding UI.
+type AdapterStatusInfo struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`  // "active" | "unavailable" | "onboarding"
+	Message string `json:"message"` // onboarding instructions if applicable
+}
+
+// GetAdapterStatus returns the current status of all registered adapters.
+// Possible status values:
+//   - "active"      — adapter is available and running
+//   - "unavailable" — adapter's backend is not reachable
+//   - "onboarding"  — adapter bus is running but GSettings accessibility is not enabled
+func (m *CaptureManager) GetAdapterStatus() []AdapterStatusInfo {
+	activeSet := make(map[string]bool, len(m.active))
+	for _, a := range m.active {
+		activeSet[a.Name()] = true
+	}
+
+	result := make([]AdapterStatusInfo, 0, len(m.adapters))
+	for _, a := range m.adapters {
+		info := AdapterStatusInfo{Name: a.Name()}
+		if !activeSet[a.Name()] {
+			info.Status = "unavailable"
+			result = append(result, info)
+			continue
+		}
+		// Check onboarding status for AT-SPI2 adapter if it supports it.
+		type onboardingChecker interface {
+			OnboardingRequired(ctx context.Context) bool
+		}
+		if oc, ok := a.(onboardingChecker); ok && oc.OnboardingRequired(m.ctx) {
+			info.Status = "onboarding"
+			info.Message = "Enable accessibility: gsettings set org.gnome.desktop.interface toolkit-accessibility true"
+		} else {
+			info.Status = "active"
+		}
+		result = append(result, info)
+	}
+	return result
+}
+
 // hashContent computes a FNV-64a hash of the given string for deduplication.
 func hashContent(s string) uint64 {
 	h := fnv.New64a()
