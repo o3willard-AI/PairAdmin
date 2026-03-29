@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useTerminalStore } from "@/stores/terminalStore";
+import { useTerminalCapture } from "@/hooks/useTerminalCapture";
 import { TerminalTabList } from "@/components/terminal/TerminalTabList";
 import { TerminalPreview } from "@/components/terminal/TerminalPreview";
 import { StatusBar } from "./StatusBar";
@@ -10,6 +11,8 @@ interface ThreeColumnLayoutProps {
 }
 
 export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps) {
+  useTerminalCapture(); // Subscribe to terminal events from Go service
+
   const activeTabId = useTerminalStore((state) => state.activeTabId);
 
   return (
