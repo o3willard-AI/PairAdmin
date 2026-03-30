@@ -38,6 +38,7 @@ func main() {
 	keychainClient := keychain.New()
 	settingsService := services.NewSettingsService(keychainClient)
 	settingsService.SetLLMService(llmService)
+	settingsService.SetCaptureManager(manager)
 
 	// Create application with options
 	err := wails.Run(&options.App{
