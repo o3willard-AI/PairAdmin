@@ -8,3 +8,4 @@ frontend/wailsjs/
 !frontend/wailsjs/runtime/runtime.js
 !frontend/wailsjs/runtime/runtime.d.ts
 !frontend/wailsjs/go/services/capture/CaptureManager.js
+!frontend/wailsjs/go/services/SettingsService.js
