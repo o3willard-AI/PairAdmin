@@ -295,3 +295,9 @@ func (m *CaptureManager) RebuildFilterPipeline() {
 	defer m.mu.Unlock()
 	m.pipeline = m.buildFilterPipeline()
 }
+
+// ForceCapture triggers an immediate tick outside the 500ms poll interval.
+// Called by SettingsService.ForceRefresh via the /refresh slash command.
+func (m *CaptureManager) ForceCapture() {
+	m.tick()
+}
