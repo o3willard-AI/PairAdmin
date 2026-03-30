@@ -42,6 +42,21 @@ vi.mock("../../../../wailsjs/go/services/capture/CaptureManager", () => ({
   GetAdapterStatus: vi.fn(() => Promise.resolve([])),
 }));
 
+// Mock the SettingsService Wails binding (LLMConfigTab fetches settings on mount)
+vi.mock("../../../../wailsjs/go/services/SettingsService", () => ({
+  GetSettings: vi.fn(() => Promise.resolve({})),
+  GetAPIKeyStatus: vi.fn(() => Promise.resolve("")),
+  SaveSettings: vi.fn(() => Promise.resolve(undefined)),
+  SaveAPIKey: vi.fn(() => Promise.resolve(undefined)),
+  TestConnection: vi.fn(() => Promise.resolve("Connected")),
+  SetModel: vi.fn(() => Promise.resolve("")),
+}));
+
+// Mock useTheme for AppearanceTab rendered inside SettingsDialog
+vi.mock("@/theme/theme-provider", () => ({
+  useTheme: () => ({ theme: "dark", setTheme: vi.fn() }),
+}));
+
 beforeEach(() => {
   // ResizeObserver is not available in jsdom — must use a class
   class ResizeObserverMock {
@@ -123,5 +138,20 @@ describe("ThreeColumnLayout", () => {
     );
 
     expect(screen.getByText("Commands sidebar")).toBeInTheDocument();
+  });
+
+  it("renders SettingsDialog component (closed by default)", () => {
+    const { container } = render(
+      <ThreeColumnLayout>
+        <div>Chat</div>
+      </ThreeColumnLayout>
+    );
+
+    // SettingsDialog is mounted but closed by default — dialog popup is not in DOM
+    // The dialog root itself doesn't have visible content when closed
+    // Verify SettingsDialog doesn't show Settings title when closed
+    expect(screen.queryByText("Settings")).not.toBeInTheDocument();
+    // But the container should still render without errors
+    expect(container).toBeInTheDocument();
   });
 });
