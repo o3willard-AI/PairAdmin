@@ -7,3 +7,4 @@ frontend/wailsjs/
 # but .js stubs needed by vitest are committed)
 !frontend/wailsjs/runtime/runtime.js
 !frontend/wailsjs/runtime/runtime.d.ts
+!frontend/wailsjs/go/services/capture/CaptureManager.js
