@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 
 	"pairadmin/services/keychain"
@@ -262,5 +264,268 @@ func TestSettingsService_TestConnection_NilProvider(t *testing.T) {
 	_, err := svc.TestConnection("unknown-provider", "")
 	if err == nil {
 		t.Fatal("TestConnection() expected error for nil provider, got nil")
+	}
+}
+
+// --- SetModel tests ---
+
+// TestSettingsService_SetModel_OpenAI saves provider/model for "openai:gpt-4".
+func TestSettingsService_SetModel_OpenAI(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.emitFn = nil
+	svc.ctx = context.Background()
+
+	result, err := svc.SetModel("openai:gpt-4")
+	if err != nil {
+		t.Fatalf("SetModel() unexpected error: %v", err)
+	}
+	if result != "Model set to openai:gpt-4" {
+		t.Errorf("SetModel() expected 'Model set to openai:gpt-4', got %q", result)
+	}
+
+	cfg, _ := svc.GetSettings()
+	if cfg.Provider != "openai" {
+		t.Errorf("Provider: expected 'openai', got %q", cfg.Provider)
+	}
+	if cfg.Model != "gpt-4" {
+		t.Errorf("Model: expected 'gpt-4', got %q", cfg.Model)
+	}
+}
+
+// TestSettingsService_SetModel_Ollama saves provider/model for "ollama:llama3".
+func TestSettingsService_SetModel_Ollama(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.emitFn = nil
+	svc.ctx = context.Background()
+
+	result, err := svc.SetModel("ollama:llama3")
+	if err != nil {
+		t.Fatalf("SetModel() unexpected error: %v", err)
+	}
+	if result != "Model set to ollama:llama3" {
+		t.Errorf("SetModel() expected 'Model set to ollama:llama3', got %q", result)
+	}
+
+	cfg, _ := svc.GetSettings()
+	if cfg.Provider != "ollama" {
+		t.Errorf("Provider: expected 'ollama', got %q", cfg.Provider)
+	}
+	if cfg.Model != "llama3" {
+		t.Errorf("Model: expected 'llama3', got %q", cfg.Model)
+	}
+}
+
+// TestSettingsService_SetModel_InvalidFormat returns error when no colon.
+func TestSettingsService_SetModel_InvalidFormat(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.emitFn = nil
+
+	_, err := svc.SetModel("invalid")
+	if err == nil {
+		t.Fatal("SetModel('invalid') expected error, got nil")
+	}
+}
+
+// --- SetContextLines tests ---
+
+// TestSettingsService_SetContextLines_Valid saves ContextLines=300.
+func TestSettingsService_SetContextLines_Valid(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.emitFn = nil
+	svc.ctx = context.Background()
+
+	result, err := svc.SetContextLines(300)
+	if err != nil {
+		t.Fatalf("SetContextLines() unexpected error: %v", err)
+	}
+	if result != "Context set to 300 lines" {
+		t.Errorf("SetContextLines() expected 'Context set to 300 lines', got %q", result)
+	}
+
+	cfg, _ := svc.GetSettings()
+	if cfg.ContextLines != 300 {
+		t.Errorf("ContextLines: expected 300, got %d", cfg.ContextLines)
+	}
+}
+
+// TestSettingsService_SetContextLines_Zero returns error for zero.
+func TestSettingsService_SetContextLines_Zero(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+
+	_, err := svc.SetContextLines(0)
+	if err == nil {
+		t.Fatal("SetContextLines(0) expected error, got nil")
+	}
+}
+
+// TestSettingsService_SetContextLines_Negative returns error for negative.
+func TestSettingsService_SetContextLines_Negative(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+
+	_, err := svc.SetContextLines(-1)
+	if err == nil {
+		t.Fatal("SetContextLines(-1) expected error, got nil")
+	}
+}
+
+// --- ForceRefresh tests ---
+
+// mockCaptureManager is a test double for the captureManagerForceCapture interface.
+type mockCaptureManager struct {
+	forceCaptureCount int
+}
+
+func (m *mockCaptureManager) ForceCapture() {
+	m.forceCaptureCount++
+}
+
+// TestSettingsService_ForceRefresh_WithManager calls ForceCapture and returns success.
+func TestSettingsService_ForceRefresh_WithManager(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.emitFn = nil
+
+	mock := &mockCaptureManager{}
+	svc.SetCaptureManager(mock)
+
+	result, err := svc.ForceRefresh()
+	if err != nil {
+		t.Fatalf("ForceRefresh() unexpected error: %v", err)
+	}
+	if result != "Terminal content refreshed" {
+		t.Errorf("ForceRefresh() expected 'Terminal content refreshed', got %q", result)
+	}
+	if mock.forceCaptureCount != 1 {
+		t.Errorf("ForceCapture() expected 1 call, got %d", mock.forceCaptureCount)
+	}
+}
+
+// TestSettingsService_ForceRefresh_NoManager returns error when captureManager is nil.
+func TestSettingsService_ForceRefresh_NoManager(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.emitFn = nil
+
+	_, err := svc.ForceRefresh()
+	if err == nil {
+		t.Fatal("ForceRefresh() with nil manager expected error, got nil")
+	}
+}
+
+// --- ExportChat tests ---
+
+// TestSettingsService_ExportChat_JSON writes JSON file and returns path.
+func TestSettingsService_ExportChat_JSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.emitFn = nil
+
+	msgs := []ExportMessage{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "world"},
+	}
+
+	result, err := svc.ExportChat("tab1", "json", msgs)
+	if err != nil {
+		t.Fatalf("ExportChat() unexpected error: %v", err)
+	}
+	if result == "" {
+		t.Fatal("ExportChat() returned empty path")
+	}
+
+	// Verify file exists and contains JSON
+	data, err := os.ReadFile(result)
+	if err != nil {
+		t.Fatalf("ExportChat() file not found at %q: %v", result, err)
+	}
+	if len(data) == 0 {
+		t.Error("ExportChat() wrote empty file")
+	}
+}
+
+// TestSettingsService_ExportChat_TXT writes plain text file and returns path.
+func TestSettingsService_ExportChat_TXT(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.emitFn = nil
+
+	msgs := []ExportMessage{
+		{Role: "user", Content: "hello"},
+	}
+
+	result, err := svc.ExportChat("tab1", "txt", msgs)
+	if err != nil {
+		t.Fatalf("ExportChat() unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(result)
+	if err != nil {
+		t.Fatalf("ExportChat() txt file not found at %q: %v", result, err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "[user]:") {
+		t.Errorf("ExportChat() txt missing '[user]:' in %q", content)
+	}
+}
+
+// --- RenameTab tests ---
+
+// TestSettingsService_RenameTab emits terminal:rename event and returns success message.
+func TestSettingsService_RenameTab(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.ctx = context.Background()
+
+	var emittedEvent string
+	var emittedData interface{}
+	svc.emitFn = func(_ context.Context, event string, data ...interface{}) {
+		emittedEvent = event
+		if len(data) > 0 {
+			emittedData = data[0]
+		}
+	}
+
+	result, err := svc.RenameTab("tab1", "myterm")
+	if err != nil {
+		t.Fatalf("RenameTab() unexpected error: %v", err)
+	}
+	if result != "Tab renamed to myterm" {
+		t.Errorf("RenameTab() expected 'Tab renamed to myterm', got %q", result)
+	}
+	if emittedEvent != "terminal:rename" {
+		t.Errorf("RenameTab() expected event 'terminal:rename', got %q", emittedEvent)
+	}
+	if emittedData == nil {
+		t.Error("RenameTab() expected emitted data, got nil")
 	}
 }
