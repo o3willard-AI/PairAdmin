@@ -1,9 +1,11 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { useTerminalStore } from "@/stores/terminalStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { useTerminalCapture } from "@/hooks/useTerminalCapture";
 import { TerminalTabList } from "@/components/terminal/TerminalTabList";
 import { TerminalPreview } from "@/components/terminal/TerminalPreview";
 import { StatusBar } from "./StatusBar";
+import { SettingsDialog } from "@/components/settings/SettingsDialog";
 
 interface AdapterStatusInfo {
   name: string;
@@ -20,6 +22,8 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
   useTerminalCapture(); // Subscribe to terminal events from Go service
 
   const activeTabId = useTerminalStore((state) => state.activeTabId);
+  const settingsOpen = useSettingsStore((s) => s.settingsOpen);
+  const setSettingsOpen = useSettingsStore((s) => s.setSettingsOpen);
   const [adapterStatus, setAdapterStatus] = useState<AdapterStatusInfo[]>([]);
 
   useEffect(() => {
@@ -55,6 +59,7 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
       </div>
 
       <StatusBar />
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

@@ -1,9 +1,12 @@
 import { Settings } from "lucide-react";
 import { useChatStore } from "@/stores/chatStore";
 import { useTerminalStore } from "@/stores/terminalStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 export function StatusBar() {
   const activeTabId = useTerminalStore((s) => s.activeTabId);
+  const activeModel = useSettingsStore((s) => s.activeModel);
+  const setSettingsOpen = useSettingsStore((s) => s.setSettingsOpen);
   const lastTokenCount = useChatStore((s) => {
     const msgs = s.messagesByTab[activeTabId];
     if (!msgs || msgs.length === 0) return undefined;
@@ -18,7 +21,7 @@ export function StatusBar() {
       {/* Left: model indicator */}
       <div className="flex items-center gap-1.5">
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-zinc-600" />
-        <span>No model</span>
+        <span>{activeModel || "No model"}</span>
       </div>
 
       {/* Center: connection status */}
@@ -29,7 +32,11 @@ export function StatusBar() {
       {/* Right: token meter */}
       <div className="flex items-center gap-3">
         <span>{lastTokenCount != null ? `Tokens: ${lastTokenCount}` : "Tokens: —"}</span>
-        <button className="hover:text-zinc-300 transition-colors" disabled>
+        <button
+          className="hover:text-zinc-300 transition-colors"
+          onClick={() => setSettingsOpen(true)}
+          aria-label="Settings"
+        >
           <Settings size={14} />
         </button>
       </div>
