@@ -25,6 +25,12 @@ func New() *Client {
 	}
 }
 
+// NewWithOpenFunc creates a Client with an injectable open function.
+// Used by tests outside this package to inject a mock keyring.
+func NewWithOpenFunc(openFn func(keyring.Config) (keyring.Keyring, error)) *Client {
+	return &Client{open: openFn}
+}
+
 // ring opens the keyring using the configured open function.
 func (c *Client) ring() (keyring.Keyring, error) {
 	home, _ := os.UserHomeDir()

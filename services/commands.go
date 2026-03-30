@@ -3,8 +3,12 @@ package services
 import (
 	"context"
 	"os/exec"
+	"sync"
+	"time"
 
 	"os"
+
+	"pairadmin/services/config"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -20,7 +24,9 @@ type WaylandWarning struct {
 
 // CommandService provides clipboard and system command operations for the frontend.
 type CommandService struct {
-	ctx context.Context
+	ctx        context.Context
+	clearTimer *time.Timer
+	clearMu    sync.Mutex
 }
 
 // NewCommandService creates a new CommandService.
@@ -60,11 +66,43 @@ func CheckWayland() *WaylandWarning {
 
 // CopyToClipboard copies text to the system clipboard.
 // On Wayland, it uses wl-copy. On X11, it uses the Wails runtime clipboard API.
+// After a successful copy, a timer is started (using ClipboardClearSecs from config)
+// to clear the clipboard. Any previous pending clear timer is cancelled first.
 func (c *CommandService) CopyToClipboard(text string) error {
+	var copyErr error
 	if isWayland() {
-		return copyViaWlCopy(text)
+		copyErr = copyViaWlCopy(text)
+	} else {
+		runtime.ClipboardSetText(c.ctx, text)
 	}
-	runtime.ClipboardSetText(c.ctx, text)
+	if copyErr != nil {
+		return copyErr
+	}
+
+	// Schedule clipboard auto-clear after configurable interval.
+	cfg, _ := config.LoadAppConfig()
+	secs := 0
+	if cfg != nil {
+		secs = cfg.ClipboardClearSecs
+	}
+	if secs <= 0 {
+		secs = 60
+	}
+
+	c.clearMu.Lock()
+	if c.clearTimer != nil {
+		c.clearTimer.Stop()
+	}
+	ctx := c.ctx
+	c.clearTimer = time.AfterFunc(time.Duration(secs)*time.Second, func() {
+		if isWayland() {
+			_ = copyViaWlCopy("")
+		} else if ctx != nil {
+			runtime.ClipboardSetText(ctx, "")
+		}
+	})
+	c.clearMu.Unlock()
+
 	return nil
 }
 
