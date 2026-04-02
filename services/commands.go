@@ -25,16 +25,20 @@ type WaylandWarning struct {
 
 // CommandService provides clipboard and system command operations for the frontend.
 type CommandService struct {
-	ctx         context.Context
-	clearTimer  *time.Timer
-	clearMu     sync.Mutex
-	auditLogger *audit.AuditLogger
-	sessionID   string
+	ctx            context.Context
+	clearTimer     *time.Timer
+	clearMu        sync.Mutex
+	auditLogger    *audit.AuditLogger
+	sessionID      string
+	// clipboardSetFn is the X11 clipboard setter; injectable for test isolation.
+	clipboardSetFn func(ctx context.Context, text string) error
 }
 
 // NewCommandService creates a new CommandService.
 func NewCommandService() *CommandService {
-	return &CommandService{}
+	return &CommandService{
+		clipboardSetFn: runtime.ClipboardSetText,
+	}
 }
 
 // SetAuditLogger injects an AuditLogger and session ID into the CommandService.
@@ -82,7 +86,9 @@ func (c *CommandService) CopyToClipboard(text string) error {
 	if isWayland() {
 		copyErr = copyViaWlCopy(text)
 	} else {
-		runtime.ClipboardSetText(c.ctx, text)
+		if c.clipboardSetFn != nil {
+			_ = c.clipboardSetFn(c.ctx, text)
+		}
 	}
 	if copyErr != nil {
 		return copyErr
@@ -112,11 +118,12 @@ func (c *CommandService) CopyToClipboard(text string) error {
 		c.clearTimer.Stop()
 	}
 	ctx := c.ctx
+	clipFn := c.clipboardSetFn
 	c.clearTimer = time.AfterFunc(time.Duration(secs)*time.Second, func() {
 		if isWayland() {
 			_ = copyViaWlCopy("")
-		} else if ctx != nil {
-			runtime.ClipboardSetText(ctx, "")
+		} else if ctx != nil && clipFn != nil {
+			_ = clipFn(ctx, "")
 		}
 	})
 	c.clearMu.Unlock()
