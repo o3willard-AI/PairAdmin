@@ -8,6 +8,7 @@ import (
 
 	"os"
 
+	"pairadmin/services/audit"
 	"pairadmin/services/config"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -24,14 +25,22 @@ type WaylandWarning struct {
 
 // CommandService provides clipboard and system command operations for the frontend.
 type CommandService struct {
-	ctx        context.Context
-	clearTimer *time.Timer
-	clearMu    sync.Mutex
+	ctx         context.Context
+	clearTimer  *time.Timer
+	clearMu     sync.Mutex
+	auditLogger *audit.AuditLogger
+	sessionID   string
 }
 
 // NewCommandService creates a new CommandService.
 func NewCommandService() *CommandService {
 	return &CommandService{}
+}
+
+// SetAuditLogger injects an AuditLogger and session ID into the CommandService.
+func (c *CommandService) SetAuditLogger(logger *audit.AuditLogger, sessionID string) {
+	c.auditLogger = logger
+	c.sessionID = sessionID
 }
 
 // Startup is called by Wails after the application context is available.
@@ -77,6 +86,15 @@ func (c *CommandService) CopyToClipboard(text string) error {
 	}
 	if copyErr != nil {
 		return copyErr
+	}
+
+	// Write command_copied audit entry after successful copy.
+	if c.auditLogger != nil {
+		c.auditLogger.Write(audit.AuditEntry{
+			Event:     "command_copied",
+			SessionID: c.sessionID,
+			Content:   text,
+		})
 	}
 
 	// Schedule clipboard auto-clear after configurable interval.

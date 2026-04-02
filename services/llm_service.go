@@ -8,10 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"pairadmin/services/audit"
 	"pairadmin/services/config"
 	"pairadmin/services/llm"
 	"pairadmin/services/llm/filter"
 
+	"github.com/awnumar/memguard"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -65,6 +67,11 @@ type LLMService struct {
 	cfg            Config
 	activeProvider llm.Provider
 	captureManager filterPipelineRebuilder
+	auditLogger    *audit.AuditLogger
+	sessionID      string
+	apiKeyEnclaves map[string]*memguard.Enclave // provider name -> sealed API key
+	// emitFn is the Wails events emitter; injectable for test isolation.
+	emitFn func(ctx context.Context, event string, optionalData ...interface{})
 }
 
 // SetCaptureManager wires the CaptureManager so FilterCommand can trigger pipeline rebuilds.
@@ -74,9 +81,73 @@ func (s *LLMService) SetCaptureManager(mgr filterPipelineRebuilder) {
 
 // NewLLMService creates a new LLMService and initializes the active provider based on cfg.
 func NewLLMService(cfg Config) *LLMService {
-	svc := &LLMService{cfg: cfg}
-	svc.activeProvider = buildProvider(cfg)
+	svc := &LLMService{
+		cfg:    cfg,
+		emitFn: runtime.EventsEmit,
+	}
+	svc.activeProvider = buildProvider(cfg, nil)
 	return svc
+}
+
+// SetAuditLogger injects an AuditLogger and session ID into the LLMService.
+func (s *LLMService) SetAuditLogger(logger *audit.AuditLogger, sessionID string) {
+	s.auditLogger = logger
+	s.sessionID = sessionID
+}
+
+// SetAPIKeyEnclave stores a sealed memguard Enclave for the given provider.
+func (s *LLMService) SetAPIKeyEnclave(provider string, enc *memguard.Enclave) {
+	if s.apiKeyEnclaves == nil {
+		s.apiKeyEnclaves = make(map[string]*memguard.Enclave)
+	}
+	s.apiKeyEnclaves[provider] = enc
+}
+
+// getAPIKeyString opens the Enclave for the given provider, extracts the key, destroys the buffer,
+// and returns the key string. Returns "" if no Enclave is set or the Enclave cannot be opened.
+func (s *LLMService) getAPIKeyString(provider string) string {
+	if s.apiKeyEnclaves == nil {
+		return ""
+	}
+	enc, ok := s.apiKeyEnclaves[provider]
+	if !ok || enc == nil {
+		return ""
+	}
+	buf, err := enc.Open()
+	if err != nil {
+		return ""
+	}
+	key := string(buf.Bytes())
+	buf.Destroy()
+	return key
+}
+
+// RebuildProvider rebuilds the active LLM provider using current config and Enclave keys.
+// Call this after saving a new API key via settings.
+func (s *LLMService) RebuildProvider() {
+	s.activeProvider = buildProvider(s.cfg, s.getAPIKeyString)
+}
+
+// writeAIResponseAudit runs the assembled LLM response through the credential filter
+// and writes an ai_response audit entry. The user-displayed response is unaffected.
+func (s *LLMService) writeAIResponseAudit(tabId, assembled string) {
+	if s.auditLogger == nil {
+		return
+	}
+	credFilter, err := filter.NewCredentialFilter()
+	if err != nil {
+		// Degrade: log unfiltered on filter init failure
+		s.auditLogger.Write(audit.AuditEntry{
+			Event: "ai_response", SessionID: s.sessionID,
+			TerminalID: tabId, Content: assembled,
+		})
+		return
+	}
+	filtered, _ := credFilter.Apply(assembled)
+	s.auditLogger.Write(audit.AuditEntry{
+		Event: "ai_response", SessionID: s.sessionID,
+		TerminalID: tabId, Content: filtered,
+	})
 }
 
 // Startup is called by Wails after the application context is available.
@@ -102,13 +173,23 @@ func (s *LLMService) SendMessage(tabId, userInput, terminalContext string) error
 
 	messages := llm.BuildMessages(llm.SystemPrompt, filteredContext, userInput)
 
+	// Write user_message audit entry before goroutine launch (user text only, NOT terminalContext).
+	if s.auditLogger != nil {
+		s.auditLogger.Write(audit.AuditEntry{
+			Event:      "user_message",
+			SessionID:  s.sessionID,
+			TerminalID: tabId,
+			Content:    userInput,
+		})
+	}
+
 	go func() {
 		ctx, cancel := context.WithTimeout(s.ctx, 5*time.Minute)
 		defer cancel()
 
 		ch, err := s.activeProvider.Stream(ctx, messages)
 		if err != nil {
-			runtime.EventsEmit(s.ctx, "llm:error", ChatTokenEvent{
+			s.emitFn(s.ctx, "llm:error", ChatTokenEvent{
 				Error: err.Error(), Done: true,
 			})
 			return
@@ -116,6 +197,7 @@ func (s *LLMService) SendMessage(tabId, userInput, terminalContext string) error
 
 		seq := 0
 		var batch []string
+		var assembledParts []string
 		ticker := time.NewTicker(50 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -123,7 +205,7 @@ func (s *LLMService) SendMessage(tabId, userInput, terminalContext string) error
 			if len(batch) == 0 {
 				return
 			}
-			runtime.EventsEmit(s.ctx, "llm:chunk", ChatTokenEvent{
+			s.emitFn(s.ctx, "llm:chunk", ChatTokenEvent{
 				Seq:  seq,
 				Text: strings.Join(batch, ""),
 			})
@@ -137,22 +219,25 @@ func (s *LLMService) SendMessage(tabId, userInput, terminalContext string) error
 				if !ok {
 					// Channel closed — stream ended without explicit Done
 					flush()
-					runtime.EventsEmit(s.ctx, "llm:done", ChatTokenEvent{Seq: seq, Done: true})
+					s.writeAIResponseAudit(tabId, strings.Join(assembledParts, ""))
+					s.emitFn(s.ctx, "llm:done", ChatTokenEvent{Seq: seq, Done: true})
 					return
 				}
 				if chunk.Error != nil {
 					flush()
-					runtime.EventsEmit(s.ctx, "llm:error", ChatTokenEvent{
+					s.emitFn(s.ctx, "llm:error", ChatTokenEvent{
 						Seq: seq, Error: chunk.Error.Error(), Done: true,
 					})
 					return
 				}
 				if chunk.Done {
 					flush()
-					runtime.EventsEmit(s.ctx, "llm:done", ChatTokenEvent{Seq: seq, Done: true})
+					s.writeAIResponseAudit(tabId, strings.Join(assembledParts, ""))
+					s.emitFn(s.ctx, "llm:done", ChatTokenEvent{Seq: seq, Done: true})
 					return
 				}
 				batch = append(batch, chunk.Text)
+				assembledParts = append(assembledParts, chunk.Text)
 			case <-ticker.C:
 				flush()
 			case <-ctx.Done():
@@ -253,13 +338,28 @@ func (s *LLMService) FilterCommand(command string) (string, error) {
 }
 
 // buildProvider creates the appropriate LLM provider based on the config.
+// keyFn, if non-nil, is called to retrieve an API key from an Enclave for the given provider name.
+// When keyFn returns a non-empty string it takes precedence over the corresponding Config field.
 // Returns nil for unknown or empty providers rather than panicking.
-func buildProvider(cfg Config) llm.Provider {
+func buildProvider(cfg Config, keyFn func(string) string) llm.Provider {
 	switch cfg.Provider {
 	case "openai":
-		return llm.NewOpenAIProvider(cfg.OpenAIKey, "", cfg.Model)
+		key := ""
+		if keyFn != nil {
+			key = keyFn("openai")
+		}
+		if key == "" {
+			key = cfg.OpenAIKey
+		}
+		return llm.NewOpenAIProvider(key, "", cfg.Model)
 	case "openrouter":
-		key := cfg.OpenRouterKey
+		key := ""
+		if keyFn != nil {
+			key = keyFn("openrouter")
+		}
+		if key == "" {
+			key = cfg.OpenRouterKey
+		}
 		if key == "" {
 			key = cfg.OpenAIKey // fallback
 		}
@@ -271,7 +371,14 @@ func buildProvider(cfg Config) llm.Provider {
 		}
 		return llm.NewOpenAIProvider("", baseURL, cfg.Model)
 	case "anthropic":
-		return llm.NewAnthropicProvider(cfg.AnthropicKey, cfg.Model)
+		key := ""
+		if keyFn != nil {
+			key = keyFn("anthropic")
+		}
+		if key == "" {
+			key = cfg.AnthropicKey
+		}
+		return llm.NewAnthropicProvider(key, cfg.Model)
 	case "ollama":
 		p, err := llm.NewOllamaProvider(cfg.OllamaHost, cfg.Model)
 		if err != nil {

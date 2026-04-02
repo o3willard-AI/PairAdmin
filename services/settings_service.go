@@ -13,12 +13,13 @@ import (
 	"pairadmin/services/keychain"
 	"pairadmin/services/llm"
 
+	"github.com/awnumar/memguard"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // buildProviderFn is the function used to construct an LLM provider.
 // Tests may replace this to inject a mock provider.
-var buildProviderFn func(Config) llm.Provider = buildProvider
+var buildProviderFn func(Config, func(string) string) llm.Provider = buildProvider
 
 // captureManagerForceCapture is implemented by CaptureManager to allow forcing an immediate capture.
 type captureManagerForceCapture interface {
@@ -92,11 +93,21 @@ func (s *SettingsService) GetAPIKeyStatus(provider string) (string, error) {
 
 // SaveAPIKey writes the API key for the given provider to the OS keychain.
 // Passing an empty key removes the stored key.
+// After a successful keychain write, the Enclave on LLMService is updated and provider rebuilt.
 func (s *SettingsService) SaveAPIKey(provider, key string) error {
 	if key == "" {
 		return s.keychainClient.Remove(provider)
 	}
-	return s.keychainClient.Set(provider, key)
+	if err := s.keychainClient.Set(provider, key); err != nil {
+		return err
+	}
+	// If LLMService is wired, update its Enclave and rebuild provider.
+	if s.llmService != nil && key != "" {
+		buf := memguard.NewBufferFromBytes([]byte(key))
+		s.llmService.SetAPIKeyEnclave(provider, buf.Seal())
+		s.llmService.RebuildProvider()
+	}
+	return nil
 }
 
 // TestConnection tests the LLM connection for the given provider and model.
@@ -136,7 +147,7 @@ func (s *SettingsService) TestConnection(provider, model string) (string, error)
 		}
 	}
 
-	p := buildProviderFn(cfg)
+	p := buildProviderFn(cfg, nil)
 	if p == nil {
 		return "", fmt.Errorf("unsupported or unconfigured provider: %s", provider)
 	}

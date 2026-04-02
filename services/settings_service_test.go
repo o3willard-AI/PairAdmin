@@ -211,7 +211,7 @@ func TestSettingsService_TestConnection_Success(t *testing.T) {
 	// Swap buildProvider for test with a mock that succeeds.
 	orig := buildProviderFn
 	defer func() { buildProviderFn = orig }()
-	buildProviderFn = func(_ Config) llm.Provider {
+	buildProviderFn = func(_ Config, _ func(string) string) llm.Provider {
 		return &mockProvider{name: "mock", connErr: nil}
 	}
 
@@ -236,7 +236,7 @@ func TestSettingsService_TestConnection_Failure(t *testing.T) {
 	orig := buildProviderFn
 	defer func() { buildProviderFn = orig }()
 	connErr := errors.New("connection refused")
-	buildProviderFn = func(_ Config) llm.Provider {
+	buildProviderFn = func(_ Config, _ func(string) string) llm.Provider {
 		return &mockProvider{name: "mock", connErr: connErr}
 	}
 
@@ -257,7 +257,7 @@ func TestSettingsService_TestConnection_NilProvider(t *testing.T) {
 	// Swap buildProvider for test with a function that returns nil.
 	orig := buildProviderFn
 	defer func() { buildProviderFn = orig }()
-	buildProviderFn = func(_ Config) llm.Provider {
+	buildProviderFn = func(_ Config, _ func(string) string) llm.Provider {
 		return nil
 	}
 
