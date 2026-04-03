@@ -1,0 +1,30 @@
+name: pairadmin
+arch: amd64
+platform: linux
+version: "${VERSION}"
+version_schema: semver
+release: "1"
+maintainer: PairAdmin Dev <sblanken@pairadmin.local>
+description: AI pair programming assistant for terminal workflows
+homepage: https://github.com/sblanken/pairadmin
+license: MIT
+
+depends:
+  - libwebkit2gtk-4.1-0
+  - at-spi2-core
+
+overrides:
+  rpm:
+    depends:
+      - webkit2gtk4.1
+      - at-spi2-atk
+
+contents:
+  - src: build/bin/pairadmin
+    dst: /usr/local/bin/pairadmin
+    file_info:
+      mode: 0755
+  - src: build/linux/pairadmin.desktop
+    dst: /usr/share/applications/pairadmin.desktop
+  - src: build/linux/pairadmin.png
+    dst: /usr/share/icons/hicolor/256x256/apps/pairadmin.png

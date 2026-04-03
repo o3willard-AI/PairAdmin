@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=PairAdmin
+Comment=AI pair programming assistant for terminal workflows
+Exec=/usr/local/bin/pairadmin
+Icon=pairadmin
+Type=Application
+Categories=Development;Utility;
+Terminal=false
