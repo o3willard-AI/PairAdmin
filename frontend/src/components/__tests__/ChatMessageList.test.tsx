@@ -5,8 +5,8 @@ import { ChatMessageList } from "../chat/ChatMessageList";
 
 // Mock react-shiki
 vi.mock("react-shiki", () => ({
-  default: ({ code }: { code: string }) => (
-    <pre data-testid="code-highlight">{code}</pre>
+  default: ({ children }: { children: React.ReactNode }) => (
+    <pre data-testid="code-highlight">{children}</pre>
   ),
 }));
 
