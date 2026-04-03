@@ -27,7 +27,7 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
   const [adapterStatus, setAdapterStatus] = useState<AdapterStatusInfo[]>([]);
 
   useEffect(() => {
-    import(/* @vite-ignore */ "../../../wailsjs/go/services/capture/CaptureManager")
+    import(/* @vite-ignore */ "../../../wailsjs/go/capture/CaptureManager")
       .then(({ GetAdapterStatus }) => GetAdapterStatus())
       .then(setAdapterStatus)
       .catch(() => {}); // Wails runtime unavailable in test/dev environments

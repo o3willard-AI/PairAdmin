@@ -71,7 +71,7 @@ export function HotkeysTab() {
       const { SaveSettings } = await import(
         /* @vite-ignore */ "../../../wailsjs/go/services/SettingsService"
       );
-      await SaveSettings({ hotkeyCopyLast, hotkeyFocusWindow });
+      await SaveSettings({ HotkeyCopyLast: hotkeyCopyLast, HotkeyFocusWindow: hotkeyFocusWindow } as import("../../../wailsjs/go/models").config.AppConfig);
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch {

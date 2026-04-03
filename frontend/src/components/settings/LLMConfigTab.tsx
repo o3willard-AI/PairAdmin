@@ -24,9 +24,9 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
   useEffect(() => {
     import(/* @vite-ignore */ "../../../wailsjs/go/services/SettingsService")
       .then(({ GetSettings, GetAPIKeyStatus }) => {
-        GetSettings().then((cfg: Record<string, unknown>) => {
-          if (cfg.provider) setProvider(cfg.provider as Provider);
-          if (cfg.model) setModel(cfg.model as string);
+        GetSettings().then((cfg) => {
+          if (cfg.Provider) setProvider(cfg.Provider as Provider);
+          if (cfg.Model) setModel(cfg.Model as string);
         });
         GetAPIKeyStatus(provider).then((status: string) => {
           setKeyPlaceholder(status ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (stored)" : "");
@@ -55,7 +55,7 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
       const { TestConnection } = await import(
         /* @vite-ignore */ "../../../wailsjs/go/services/SettingsService"
       );
-      const result = await TestConnection();
+      const result = await TestConnection(provider, model);
       setTestStatus("ok");
       setTestMessage(result || "Connected");
     } catch (err) {
@@ -70,7 +70,7 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
       const { SaveSettings, SaveAPIKey, SetModel } = await import(
         /* @vite-ignore */ "../../../wailsjs/go/services/SettingsService"
       );
-      await SaveSettings({ provider, model });
+      await SaveSettings({ Provider: provider, Model: model } as import("../../../wailsjs/go/models").config.AppConfig);
       if (apiKey) {
         await SaveAPIKey(provider, apiKey);
       }

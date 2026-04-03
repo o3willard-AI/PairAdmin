@@ -11,7 +11,7 @@ export function TerminalsTab() {
       const { SaveSettings } = await import(
         /* @vite-ignore */ "../../../wailsjs/go/services/SettingsService"
       );
-      await SaveSettings({ atspiPollingMs, clipboardClearSecs });
+      await SaveSettings({ ATSPIPollingMs: atspiPollingMs, ClipboardClearSecs: clipboardClearSecs } as import("../../../wailsjs/go/models").config.AppConfig);
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch {

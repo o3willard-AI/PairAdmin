@@ -15,7 +15,7 @@ export function PromptsTab() {
       const { SaveSettings } = await import(
         /* @vite-ignore */ "../../../wailsjs/go/services/SettingsService"
       );
-      await SaveSettings({ customPrompt });
+      await SaveSettings({ CustomPrompt: customPrompt } as import("../../../wailsjs/go/models").config.AppConfig);
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch {

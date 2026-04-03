@@ -12,7 +12,7 @@ export function AppearanceTab() {
       const { SaveSettings } = await import(
         /* @vite-ignore */ "../../../wailsjs/go/services/SettingsService"
       );
-      await SaveSettings({ theme, fontSize });
+      await SaveSettings({ Theme: theme, FontSize: fontSize } as import("../../../wailsjs/go/models").config.AppConfig);
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch {

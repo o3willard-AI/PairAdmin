@@ -5,7 +5,9 @@ go 1.24.11
 require (
 	github.com/99designs/keyring v1.2.2
 	github.com/anthropics/anthropic-sdk-go v1.27.1
+	github.com/awnumar/memguard v0.23.0
 	github.com/godbus/dbus/v5 v5.1.0
+	github.com/google/uuid v1.6.0
 	github.com/ollama/ollama v0.18.3
 	github.com/openai/openai-go/v3 v3.30.0
 	github.com/spf13/viper v1.21.0
@@ -18,7 +20,6 @@ require (
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/awnumar/memcall v0.4.0 // indirect
-	github.com/awnumar/memguard v0.23.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
@@ -29,7 +30,6 @@ require (
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/godbus/dbus v0.0.0-20190726142602-4481cbc300e2 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/gsterjov/go-libsecret v0.0.0-20161001094733-a6f4afe4910c // indirect
 	github.com/jchv/go-winloader v0.0.0-20210711035445-715c2860da7e // indirect

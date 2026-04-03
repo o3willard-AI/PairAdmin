@@ -32,7 +32,7 @@ export function CodeBlock({ code, language = "text", isStreaming }: CodeBlockPro
           </button>
         )}
       </div>
-      <CodeHighlighter language={language} code={code} delay={50} />
+      <CodeHighlighter language={language} theme="github-dark" delay={50}>{code}</CodeHighlighter>
     </div>
   );
 }
