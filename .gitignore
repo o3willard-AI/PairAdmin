@@ -1,4 +1,7 @@
 build/bin/
+*.deb
+*.rpm
+*.AppImage
 frontend/node_modules/
 frontend/dist/
 frontend/wailsjs/
