@@ -8,48 +8,52 @@ PairAdmin is a desktop application that brings AI assistance directly into your 
 
 ## Installation
 
-### Debian/Ubuntu (.deb) — Recommended
+### One-line installer (Linux)
 
 ```bash
-# Install runtime dependencies
+# Install (auto-detects .deb / .rpm / AppImage)
+curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin-anth-CC-gsd/master/install.sh | bash
+
+# Upgrade to latest version
+curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin-anth-CC-gsd/master/install.sh | bash -s upgrade
+
+# Uninstall
+curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin-anth-CC-gsd/master/install.sh | bash -s uninstall
+```
+
+The installer detects your distro and picks the right package format automatically (`.deb` for Debian/Ubuntu, `.rpm` for Fedora/RHEL, `.AppImage` fallback for others). `sudo` is required during install/uninstall.
+
+> **macOS:** Native builds are coming soon.
+
+### Manual install
+
+Download the latest release from the [Releases page](https://github.com/o3willard-AI/PairAdmin-anth-CC-gsd/releases/latest), then:
+
+**Debian/Ubuntu (.deb)**
+```bash
 sudo apt install -y libwebkit2gtk-4.1-0 at-spi2-core
-
-# Install PairAdmin
-sudo dpkg -i pairadmin_1.0.0_linux_amd64.deb
-
-# Launch
-pairadmin
+sudo dpkg -i pairadmin_*_linux_amd64.deb
 ```
 
-### Fedora/RHEL (.rpm)
-
+**Fedora/RHEL (.rpm)**
 ```bash
-# Install runtime dependencies
 sudo dnf install -y webkit2gtk4.1 at-spi2-atk
-
-# Install PairAdmin
-sudo rpm -i pairadmin_1.0.0_linux_amd64.rpm
-
-# Launch
-pairadmin
+sudo rpm -Uvh pairadmin_*_linux_amd64.rpm
 ```
 
-### AppImage
-
+**AppImage**
 ```bash
-chmod +x pairadmin_1.0.0_linux_amd64.AppImage
-./pairadmin_1.0.0_linux_amd64.AppImage
+chmod +x pairadmin_*_linux_amd64.AppImage
+./pairadmin_*_linux_amd64.AppImage
 ```
 
-> **Note:** The AppImage may fail to launch due to WebKit2GTK subprocess path limitations ([Wails Issue #4313](https://github.com/wailsapp/wails/issues/4313)). If you encounter errors, use the `.deb` or `.rpm` package instead.
+> **Note:** The AppImage may fail to launch due to WebKit2GTK subprocess path limitations ([Wails Issue #4313](https://github.com/wailsapp/wails/issues/4313)). Use `.deb` or `.rpm` if you hit issues.
 
 ## Verifying Downloads
 
 ```bash
 sha256sum --check SHA256SUMS
 ```
-
-> **Note:** GPG signing is planned for future releases.
 
 ## Prerequisites
 

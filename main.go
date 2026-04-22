@@ -22,6 +22,10 @@ import (
 var assets embed.FS
 
 func main() {
+	// Disable WebKit GPU compositing so the app starts on systems without hardware acceleration
+	// (VMs, headless, missing Mesa drivers). Must be set before wails.Run() initializes WebKit.
+	os.Setenv("WEBKIT_DISABLE_COMPOSITING_MODE", "1")
+
 	// CatchInterrupt registers a signal handler so that memguard Enclaves are purged on SIGINT/SIGTERM.
 	// Must be called before any Enclave creation.
 	memguard.CatchInterrupt()
