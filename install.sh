@@ -71,13 +71,7 @@ do_install() {
       sudo rpm -Uvh "${tmpdir}/${file}"
       ;;
     appimage)
-      local file="${BINARY_NAME}_${version}_linux_${ARCH}.AppImage"
-      info "Downloading ${file}..."
-      curl -fsSL -o "${tmpdir}/${file}" \
-        "https://github.com/${REPO}/releases/download/v${version}/${file}"
-      chmod +x "${tmpdir}/${file}"
-      info "Installing to ${INSTALL_DIR} (requires sudo)..."
-      sudo mv "${tmpdir}/${file}" "${INSTALL_DIR}/${BINARY_NAME}"
+      error "No supported package manager found (dpkg or rpm required).\nSupported distros: Debian, Ubuntu, Fedora, RHEL, and derivatives."
       ;;
   esac
 
@@ -105,11 +99,7 @@ do_uninstall() {
       fi
       ;;
     appimage)
-      if [ -f "${INSTALL_DIR}/${BINARY_NAME}" ]; then
-        sudo rm -f "${INSTALL_DIR}/${BINARY_NAME}" && info "Uninstalled."
-      else
-        warn "PairAdmin not found at ${INSTALL_DIR}/${BINARY_NAME}."
-      fi
+      warn "No supported package manager found. Nothing to uninstall."
       ;;
   esac
 }

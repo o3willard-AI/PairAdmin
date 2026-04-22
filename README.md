@@ -41,13 +41,7 @@ sudo dnf install -y webkit2gtk4.1 at-spi2-atk
 sudo rpm -Uvh pairadmin_*_linux_amd64.rpm
 ```
 
-**AppImage**
-```bash
-chmod +x pairadmin_*_linux_amd64.AppImage
-./pairadmin_*_linux_amd64.AppImage
-```
-
-> **Note:** The AppImage may fail to launch due to WebKit2GTK subprocess path limitations ([Wails Issue #4313](https://github.com/wailsapp/wails/issues/4313)). Use `.deb` or `.rpm` if you hit issues.
+> **AppImage / macOS / Windows:** Coming in a future release.
 
 ## Verifying Downloads
 
