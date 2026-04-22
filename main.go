@@ -22,8 +22,11 @@ import (
 var assets embed.FS
 
 func main() {
-	// Disable WebKit GPU compositing so the app starts on systems without hardware acceleration
-	// (VMs, headless, missing Mesa drivers). Must be set before wails.Run() initializes WebKit.
+	// Force software rendering so the app starts on systems without hardware acceleration
+	// (VMs, headless, missing Mesa/Vulkan drivers). LIBGL_ALWAYS_SOFTWARE bypasses the
+	// Zink/Vulkan path that causes Mesa to hang; WEBKIT_DISABLE_COMPOSITING_MODE stops
+	// WebKit from attempting GPU compositing. Both must be set before wails.Run().
+	os.Setenv("LIBGL_ALWAYS_SOFTWARE", "1")
 	os.Setenv("WEBKIT_DISABLE_COMPOSITING_MODE", "1")
 
 	// CatchInterrupt registers a signal handler so that memguard Enclaves are purged on SIGINT/SIGTERM.

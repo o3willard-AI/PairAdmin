@@ -51,7 +51,9 @@ do_install() {
   local pkg_mgr tmpdir
   pkg_mgr="$(detect_pkg_manager)"
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' EXIT
+  # Expand $tmpdir now (double quotes) so the value is baked into the trap string.
+  # Using single quotes would defer expansion to EXIT time when the local var is out of scope.
+  trap "rm -rf '$tmpdir'" EXIT
 
   case "$pkg_mgr" in
     deb)
