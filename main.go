@@ -22,12 +22,18 @@ import (
 var assets embed.FS
 
 func main() {
-	// Force software rendering so the app starts on systems without hardware acceleration
-	// (VMs, headless, missing Mesa/Vulkan drivers). LIBGL_ALWAYS_SOFTWARE bypasses the
-	// Zink/Vulkan path that causes Mesa to hang; WEBKIT_DISABLE_COMPOSITING_MODE stops
-	// WebKit from attempting GPU compositing. Both must be set before wails.Run().
+	// Force software rendering and disable WebKit subsystems that silently fail on systems
+	// without full GPU/kernel support (VMs, no-dGPU desktops, headless).
+	// LIBGL_ALWAYS_SOFTWARE: bypasses Mesa/Zink Vulkan path that hangs without a GPU.
+	// WEBKIT_DISABLE_COMPOSITING_MODE: stops WebKit GPU compositing (prevents blank window).
+	// WEBKIT_FORCE_SANDBOX=0: WebKit's content-process sandbox is blocked by many Linux
+	//   seccomp/namespacing configs — disabling it allows the content process to render.
+	// WEBKIT_DISABLE_DMABUF_RENDERER=1: DMA-BUF renderer silently fails on Intel/AMD
+	//   without matching kernel DRM support, producing a blank window; software path works.
 	os.Setenv("LIBGL_ALWAYS_SOFTWARE", "1")
 	os.Setenv("WEBKIT_DISABLE_COMPOSITING_MODE", "1")
+	os.Setenv("WEBKIT_FORCE_SANDBOX", "0")
+	os.Setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
 
 	// CatchInterrupt registers a signal handler so that memguard Enclaves are purged on SIGINT/SIGTERM.
 	// Must be called before any Enclave creation.
