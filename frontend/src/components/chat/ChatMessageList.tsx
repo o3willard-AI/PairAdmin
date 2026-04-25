@@ -1,8 +1,10 @@
 import ReactMarkdown from "react-markdown";
 import { CodeBlock } from "./CodeBlock";
-import { useChatStore } from "@/stores/chatStore";
+import { useChatStore, type ChatMessage } from "@/stores/chatStore";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useEffect, useRef } from "react";
+
+const EMPTY_MESSAGES: ChatMessage[] = [];
 
 interface ChatMessageListProps {
   onRetry?: () => void;
@@ -10,7 +12,7 @@ interface ChatMessageListProps {
 
 export function ChatMessageList({ onRetry }: ChatMessageListProps) {
   const activeTabId = useTerminalStore((s) => s.activeTabId);
-  const messages = useChatStore((s) => s.messagesByTab[activeTabId] ?? []);
+  const messages = useChatStore((s) => s.messagesByTab[activeTabId] ?? EMPTY_MESSAGES);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

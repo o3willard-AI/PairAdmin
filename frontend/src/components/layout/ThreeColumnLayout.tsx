@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTerminalCapture } from "@/hooks/useTerminalCapture";
@@ -25,6 +25,7 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
   const settingsOpen = useSettingsStore((s) => s.settingsOpen);
   const setSettingsOpen = useSettingsStore((s) => s.setSettingsOpen);
   const [adapterStatus, setAdapterStatus] = useState<AdapterStatusInfo[]>([]);
+  const handleCloseSettings = useCallback(() => setSettingsOpen(false), [setSettingsOpen]);
 
   useEffect(() => {
     import(/* @vite-ignore */ "../../../wailsjs/go/capture/CaptureManager")
@@ -59,7 +60,7 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
       </div>
 
       <StatusBar />
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDialog open={settingsOpen} onClose={handleCloseSettings} />
     </div>
   );
 }

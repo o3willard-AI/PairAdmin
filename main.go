@@ -26,19 +26,15 @@ func main() {
 	// (VMs with VirtIO/Virtio GPU, no-dGPU desktops, headless).
 	// All vars must be set before wails.Run() so GTK/WebKit pick them up at init.
 	//
-	// GDK_BACKEND=x11: force GTK onto the X11/XWayland path. Native Wayland + VirtIO GPU
-	//   silently fails at the GTK window compositor level, producing a blank interactive
-	//   window. X11 is the stable fallback on all Linux desktops (Wayland runs XWayland).
-	// GSK_RENDERER=cairo: force GTK's scene-graph renderer to Cairo (CPU). The default
-	//   NGL/Vulkan renderers fail silently on VirtIO and software-GL stacks.
 	// LIBGL_ALWAYS_SOFTWARE: Mesa bypasses the Zink/Vulkan path that hangs on no-GPU systems.
 	// WEBKIT_DISABLE_COMPOSITING_MODE: stops WebKit GPU compositing.
 	// WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1: WebKit ≥2.40 sandbox rename; the sandbox
 	//   is blocked by seccomp/namespace restrictions on many Linux configs (blank window).
 	// WEBKIT_DISABLE_DMABUF_RENDERER=1: DMA-BUF renderer silently fails on VirtIO/Intel/AMD
 	//   without full kernel DRM support.
-	os.Setenv("GDK_BACKEND", "x11")
-	os.Setenv("GSK_RENDERER", "cairo")
+	// GDK_BACKEND=x11 and GSK_RENDERER=cairo are intentionally NOT set: forcing X11 on
+	// a native-Wayland session prevents the brief blink of content that proves rendering
+	// works on the Wayland path; xWayland compositing is worse, not better, on VirtIO.
 	os.Setenv("LIBGL_ALWAYS_SOFTWARE", "1")
 	os.Setenv("WEBKIT_DISABLE_COMPOSITING_MODE", "1")
 	os.Setenv("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1")
