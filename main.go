@@ -26,13 +26,14 @@ func main() {
 	// without full GPU/kernel support (VMs, no-dGPU desktops, headless).
 	// LIBGL_ALWAYS_SOFTWARE: bypasses Mesa/Zink Vulkan path that hangs without a GPU.
 	// WEBKIT_DISABLE_COMPOSITING_MODE: stops WebKit GPU compositing (prevents blank window).
-	// WEBKIT_FORCE_SANDBOX=0: WebKit's content-process sandbox is blocked by many Linux
-	//   seccomp/namespacing configs — disabling it allows the content process to render.
+	// WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1: WebKit ≥2.40 renamed WEBKIT_FORCE_SANDBOX;
+	//   the sandbox is blocked by seccomp/namespace restrictions on many desktop Linux configs,
+	//   preventing the content process from rendering (blank window).
 	// WEBKIT_DISABLE_DMABUF_RENDERER=1: DMA-BUF renderer silently fails on Intel/AMD
 	//   without matching kernel DRM support, producing a blank window; software path works.
 	os.Setenv("LIBGL_ALWAYS_SOFTWARE", "1")
 	os.Setenv("WEBKIT_DISABLE_COMPOSITING_MODE", "1")
-	os.Setenv("WEBKIT_FORCE_SANDBOX", "0")
+	os.Setenv("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1")
 	os.Setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
 
 	// CatchInterrupt registers a signal handler so that memguard Enclaves are purged on SIGINT/SIGTERM.
