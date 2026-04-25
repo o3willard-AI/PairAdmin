@@ -55,12 +55,39 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
 
     termRef.current = term;
 
+    // PTY output → xterm
+    let unsubPtyOutput: (() => void) | null = null;
+    import(/* @vite-ignore */ "../../../wailsjs/runtime/runtime").then((rt) => {
+      unsubPtyOutput = rt.EventsOn("pty:output", ((event: { tabId: string; data: string }) => {
+        if (event.tabId === tabId) {
+          term.write(event.data);
+        }
+      }) as (...args: unknown[]) => void);
+    }).catch(() => {});
+
+    // xterm input → PTY
+    const onDataDisposable = term.onData((data) => {
+      import(/* @vite-ignore */ "../../../wailsjs/go/services/PTYService")
+        .then(({ WriteInput }) => WriteInput(tabId, data))
+        .catch(() => {});
+    });
+
+    // xterm resize → PTY
+    const onResizeDisposable = term.onResize(({ cols, rows }) => {
+      import(/* @vite-ignore */ "../../../wailsjs/go/services/PTYService")
+        .then(({ ResizeTerminal }) => ResizeTerminal(tabId, cols, rows))
+        .catch(() => {});
+    });
+
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
     });
     resizeObserver.observe(containerRef.current);
 
     return () => {
+      unsubPtyOutput?.();
+      onDataDisposable.dispose();
+      onResizeDisposable.dispose();
       resizeObserver.disconnect();
       term.dispose();
     };

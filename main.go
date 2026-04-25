@@ -61,6 +61,9 @@ func main() {
 	// Wire CaptureManager to LLMService so FilterCommand can trigger pipeline rebuilds
 	llmService.SetCaptureManager(manager)
 
+	// Create PTYService for interactive shell sessions in + New terminal tabs
+	ptyService := services.NewPTYService()
+
 	// Create SettingsService with OS keychain for secure API key storage
 	keychainClient := keychain.New()
 	settingsService := services.NewSettingsService(keychainClient)
@@ -112,6 +115,7 @@ func main() {
 			llmService.Startup(ctx)
 			manager.Startup(ctx)
 			settingsService.Startup(ctx)
+			ptyService.Startup(ctx)
 		},
 		OnBeforeClose: func(ctx context.Context) bool {
 			if auditLogger != nil {
@@ -126,6 +130,7 @@ func main() {
 			llmService,
 			manager,
 			settingsService,
+			ptyService,
 		},
 	})
 

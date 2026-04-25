@@ -19,6 +19,7 @@ export function useTerminalCapture() {
   useEffect(() => {
     let unsubUpdate: (() => void) | null = null;
     let unsubTabs: (() => void) | null = null;
+    let unsubPtyClosed: (() => void) | null = null;
 
     import(/* @vite-ignore */ "../../wailsjs/runtime/runtime").then((rt) => {
       unsubTabs = rt.EventsOn(
@@ -53,11 +54,19 @@ export function useTerminalCapture() {
           term.write(event.content);
         }) as (...args: unknown[]) => void
       );
+
+      unsubPtyClosed = rt.EventsOn(
+        "pty:closed",
+        ((event: { tabId: string }) => {
+          useTerminalStore.getState().removeTab(event.tabId);
+        }) as (...args: unknown[]) => void
+      );
     });
 
     return () => {
       unsubUpdate?.();
       unsubTabs?.();
+      unsubPtyClosed?.();
     };
   }, []);
 }

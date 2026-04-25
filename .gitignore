@@ -16,4 +16,6 @@ frontend/wailsjs/
 !frontend/wailsjs/go/services/SettingsService.d.ts
 !frontend/wailsjs/go/services/LLMService.js
 !frontend/wailsjs/go/services/LLMService.d.ts
+!frontend/wailsjs/go/services/PTYService.js
+!frontend/wailsjs/go/services/PTYService.d.ts
 !frontend/wailsjs/go/models.ts
