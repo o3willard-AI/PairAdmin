@@ -49,6 +49,11 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
   }, [provider]);
 
   const handleTestConnection = async () => {
+    if (model.includes("\\")) {
+      setTestStatus("error");
+      setTestMessage('Model ID contains a backslash — use a forward slash (e.g. google/gemma-3-27b-it)');
+      return;
+    }
     setTestStatus("testing");
     setTestMessage("");
     try {
@@ -65,6 +70,11 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
   };
 
   const handleSave = async () => {
+    if (model.includes("\\")) {
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus("idle"), 3000);
+      return;
+    }
     setSaveStatus("saving");
     try {
       const { SaveSettings, SaveAPIKey, SetModel } = await import(

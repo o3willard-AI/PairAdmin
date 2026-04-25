@@ -183,6 +183,9 @@ func (s *SettingsService) SetModel(providerModel string) (string, error) {
 	}
 	provider := providerModel[:idx]
 	model := providerModel[idx+1:]
+	if strings.Contains(model, `\`) {
+		return "", fmt.Errorf("Invalid model ID %q: use a forward slash, not a backslash (e.g. google/gemma-3-27b-it)", model)
+	}
 
 	cfg, err := config.LoadAppConfig()
 	if err != nil {
