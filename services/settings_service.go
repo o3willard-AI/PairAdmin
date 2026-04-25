@@ -67,10 +67,16 @@ func (s *SettingsService) GetSettings() (*config.AppConfig, error) {
 	return config.LoadAppConfig()
 }
 
-// SaveSettings persists the given configuration to disk and emits a settings:changed event.
+// SaveSettings persists the given configuration to disk, rebuilds the LLM provider,
+// and emits a settings:changed event.
 func (s *SettingsService) SaveSettings(cfg *config.AppConfig) error {
 	if err := config.SaveAppConfig(cfg); err != nil {
 		return err
+	}
+	// Rebuild so provider/model changes take effect without requiring an app restart.
+	// RebuildProvider re-reads config from disk so it sees the values just written.
+	if s.llmService != nil {
+		s.llmService.RebuildProvider()
 	}
 	if s.ctx != nil && s.emitFn != nil {
 		s.emitFn(s.ctx, "settings:changed", cfg)
@@ -188,6 +194,9 @@ func (s *SettingsService) SetModel(providerModel string) (string, error) {
 		return "", fmt.Errorf("failed to save config: %w", err)
 	}
 
+	if s.llmService != nil {
+		s.llmService.RebuildProvider()
+	}
 	if s.ctx != nil && s.emitFn != nil {
 		s.emitFn(s.ctx, "settings:model-changed", providerModel)
 	}

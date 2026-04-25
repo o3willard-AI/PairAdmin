@@ -122,10 +122,12 @@ func (s *LLMService) getAPIKeyString(provider string) string {
 	return key
 }
 
-// RebuildProvider rebuilds the active LLM provider using current config and Enclave keys.
-// Call this after saving a new API key via settings.
+// RebuildProvider rebuilds the active LLM provider by re-reading config from disk.
+// Always re-reads so it picks up provider/model saved by SettingsService.SaveSettings.
 func (s *LLMService) RebuildProvider() {
-	s.activeProvider = buildProvider(s.cfg, s.getAPIKeyString)
+	cfg := LoadConfigWithViper()
+	s.cfg = cfg
+	s.activeProvider = buildProvider(cfg, s.getAPIKeyString)
 }
 
 // writeAIResponseAudit runs the assembled LLM response through the credential filter
