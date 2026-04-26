@@ -94,11 +94,16 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
 
     return () => {
       disposed.current = true; // must be first — blocks all in-flight callbacks
+      resizeObserver.disconnect();
       unsubPtyOutput?.();
       onDataDisposable.dispose();
       onResizeDisposable.dispose();
-      resizeObserver.disconnect();
-      term.dispose();
+      // xterm buffers writes asynchronously via setTimeout. Calling dispose()
+      // immediately destroys _linkifier2 while a buffered write may still be
+      // pending, causing the "undefined is not an object (_linkifier2)" crash.
+      // Writing an empty string with a callback flushes the queue in FIFO
+      // order; dispose fires only after all queued writes have rendered.
+      term.write("", () => term.dispose());
     };
   }, [tabId]);
 
