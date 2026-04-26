@@ -14,29 +14,30 @@ export function ChatMessageList({ onRetry }: ChatMessageListProps) {
   const activeTabId = useTerminalStore((s) => s.activeTabId);
   const messages = useChatStore((s) => s.messagesByTab[activeTabId] ?? EMPTY_MESSAGES);
   const containerRef = useRef<HTMLDivElement>(null);
-  const rafRef = useRef<number | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const lastScrollTimeRef = useRef(0);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distFromBottom > 100) return;
+
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (dist > 100) return; // user scrolled up — don't interrupt
 
     const isStreaming = messages.some((m) => m.isStreaming);
 
-    // Cancel any pending scroll from the previous render before scheduling a new one.
-    // This batches rapid chunk updates to one scroll per animation frame.
-    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = null;
-      const e = containerRef.current;
-      if (!e) return;
-      if (isStreaming) {
-        e.scrollTop = e.scrollHeight;
-      } else {
-        e.scrollTo({ top: e.scrollHeight, behavior: "smooth" });
-      }
-    });
+    if (isStreaming) {
+      // Throttle to one scroll update per 150ms during streaming.
+      // At typical LLM output speeds this lands roughly once per line,
+      // preventing the per-character scrollbar jitter caused by rapid
+      // markdown re-parses changing scrollHeight on every chunk.
+      const now = Date.now();
+      if (now - lastScrollTimeRef.current < 150) return;
+      lastScrollTimeRef.current = now;
+      bottomRef.current?.scrollIntoView({ block: "end" });
+    } else {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
   }, [messages]);
 
   return (
@@ -114,6 +115,7 @@ export function ChatMessageList({ onRetry }: ChatMessageListProps) {
           );
         })
       )}
+      <div ref={bottomRef} />
     </div>
   );
 }
