@@ -23,6 +23,12 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
   useEffect(() => {
     if (!tabId || !containerRef.current) return;
 
+    // Raised at the very start of cleanup so every async callback can bail
+    // out before touching the terminal. Guards the race between React unmount,
+    // the ResizeObserver, and in-flight pty:output events that arrive after
+    // the shell exits but before disposal completes.
+    const disposed = { current: false };
+
     const term = new Terminal({
       theme: {
         background: "#0d0d0d",
@@ -59,7 +65,7 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
     let unsubPtyOutput: (() => void) | null = null;
     import(/* @vite-ignore */ "../../../wailsjs/runtime/runtime").then((rt) => {
       unsubPtyOutput = rt.EventsOn("pty:output", ((event: { tabId: string; data: string }) => {
-        if (event.tabId === tabId) {
+        if (event.tabId === tabId && !disposed.current) {
           term.write(event.data);
         }
       }) as (...args: unknown[]) => void);
@@ -67,6 +73,7 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
 
     // xterm input → PTY
     const onDataDisposable = term.onData((data) => {
+      if (disposed.current) return;
       import(/* @vite-ignore */ "../../../wailsjs/go/services/PTYService")
         .then(({ WriteInput }) => WriteInput(tabId, data))
         .catch(() => {});
@@ -74,17 +81,19 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
 
     // xterm resize → PTY
     const onResizeDisposable = term.onResize(({ cols, rows }) => {
+      if (disposed.current) return;
       import(/* @vite-ignore */ "../../../wailsjs/go/services/PTYService")
         .then(({ ResizeTerminal }) => ResizeTerminal(tabId, cols, rows))
         .catch(() => {});
     });
 
     const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit();
+      if (!disposed.current) fitAddon.fit();
     });
     resizeObserver.observe(containerRef.current);
 
     return () => {
+      disposed.current = true; // must be first — blocks all in-flight callbacks
       unsubPtyOutput?.();
       onDataDisposable.dispose();
       onResizeDisposable.dispose();
