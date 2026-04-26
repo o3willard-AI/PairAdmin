@@ -14,14 +14,29 @@ export function ChatMessageList({ onRetry }: ChatMessageListProps) {
   const activeTabId = useTerminalStore((s) => s.activeTabId);
   const messages = useChatStore((s) => s.messagesByTab[activeTabId] ?? EMPTY_MESSAGES);
   const containerRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distFromBottom <= 100) {
-      el.scrollTop = el.scrollHeight;
-    }
+    if (distFromBottom > 100) return;
+
+    const isStreaming = messages.some((m) => m.isStreaming);
+
+    // Cancel any pending scroll from the previous render before scheduling a new one.
+    // This batches rapid chunk updates to one scroll per animation frame.
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      const e = containerRef.current;
+      if (!e) return;
+      if (isStreaming) {
+        e.scrollTop = e.scrollHeight;
+      } else {
+        e.scrollTo({ top: e.scrollHeight, behavior: "smooth" });
+      }
+    });
   }, [messages]);
 
   return (

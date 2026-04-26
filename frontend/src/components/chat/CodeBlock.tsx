@@ -11,11 +11,16 @@ interface CodeBlockProps {
 export function CodeBlock({ code, language = "text", isStreaming }: CodeBlockProps) {
   const activeTabId = useTerminalStore((s) => s.activeTabId);
 
-  const handleCopyToTerminal = () => {
-    useCommandStore.getState().addCommand(activeTabId, {
-      command: code,
-      originalQuestion: "",
-    });
+  const sendToTerminal = (execute: boolean) => {
+    import(/* @vite-ignore */ "../../../wailsjs/go/services/PTYService")
+      .then(({ WriteInput }) => WriteInput(activeTabId, execute ? code + "\n" : code))
+      .catch(() => {});
+    if (execute) {
+      useCommandStore.getState().addCommand(activeTabId, {
+        command: code,
+        originalQuestion: "",
+      });
+    }
   };
 
   return (
@@ -23,13 +28,22 @@ export function CodeBlock({ code, language = "text", isStreaming }: CodeBlockPro
       <div className="flex items-center justify-between px-3 py-1 bg-muted text-xs text-muted-foreground">
         <span>{language}</span>
         {!isStreaming && (
-          <button
-            onClick={handleCopyToTerminal}
-            className="hover:text-foreground transition-colors"
-            aria-label="Copy to Terminal"
-          >
-            Copy to Terminal
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => sendToTerminal(false)}
+              className="hover:text-foreground transition-colors"
+              aria-label="Copy to Terminal"
+            >
+              Copy to Terminal
+            </button>
+            <button
+              onClick={() => sendToTerminal(true)}
+              className="hover:text-foreground transition-colors"
+              aria-label="Execute in Terminal"
+            >
+              Execute in Terminal
+            </button>
+          </div>
         )}
       </div>
       <CodeHighlighter language={language} theme="github-dark" delay={50}>{code}</CodeHighlighter>
