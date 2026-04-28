@@ -53,10 +53,9 @@ func main() {
 	// Create LLMService using Viper-first config (D-04: Viper > env var priority)
 	llmService := services.NewLLMService(services.LoadConfigWithViper())
 
-	// Create CaptureManager with TmuxAdapter and ATSPIAdapter for terminal discovery and capture
-	tmuxAdapter := capture.NewTmuxAdapter()
-	atspiAdapter := capture.NewATSPIAdapter()
-	manager := capture.NewCaptureManager([]capture.TerminalAdapter{tmuxAdapter, atspiAdapter}, runtime.EventsEmit)
+	// Create CaptureManager with platform-specific adapters (Tmux, ATSPI, Windows)
+	adapters := capture.GetDefaultAdapters()
+	manager := capture.NewCaptureManager(adapters, runtime.EventsEmit)
 
 	// Wire CaptureManager to LLMService so FilterCommand can trigger pipeline rebuilds
 	llmService.SetCaptureManager(manager)
