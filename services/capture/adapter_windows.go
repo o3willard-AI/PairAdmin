@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"syscall"
 	"unicode/utf16"
 	"unsafe"
@@ -24,9 +25,16 @@ var (
 	procGetStdHandle               = modkernel32.NewProc("GetStdHandle")
 	procGetConsoleScreenBufferInfo = modkernel32.NewProc("GetConsoleScreenBufferInfo")
 	procReadConsoleOutputCharacter = modkernel32.NewProc("ReadConsoleOutputCharacterW")
+	procCreateFileW                = modkernel32.NewProc("CreateFileW")
+	procCloseHandle                = modkernel32.NewProc("CloseHandle")
 )
 
 const STD_OUTPUT_HANDLE = uint32(0xFFFFFFF5) // -11
+const GENERIC_READ = 0x80000000
+const GENERIC_WRITE = 0x40000000
+const FILE_SHARE_READ = 0x00000001
+const FILE_SHARE_WRITE = 0x00000002
+const OPEN_EXISTING = 3
 
 type consoleScreenBufferInfo struct {
 	Size              coord
@@ -48,7 +56,9 @@ type smallRect struct {
 	Bottom int16
 }
 
-type WindowsAdapter struct{}
+type WindowsAdapter struct {
+	mu sync.Mutex
+}
 
 func NewWindowsAdapter() *WindowsAdapter {
 	return &WindowsAdapter{}
@@ -93,6 +103,9 @@ func (a *WindowsAdapter) Discover(ctx context.Context) ([]PaneInfo, error) {
 }
 
 func (a *WindowsAdapter) Capture(ctx context.Context, pane PaneInfo) (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	var pid uint32
 	if _, err := fmt.Sscanf(pane.ID, "windows:%d", &pid); err != nil {
 		return "", err
@@ -109,10 +122,12 @@ func (a *WindowsAdapter) Capture(ctx context.Context, pane PaneInfo) (string, er
 	// Always detach when done
 	defer syscall.SyscallN(procFreeConsole.Addr())
 
-	hConsole, _, _ := syscall.SyscallN(procGetStdHandle.Addr(), uintptr(STD_OUTPUT_HANDLE))
+	conoutName, _ := syscall.UTF16PtrFromString("CONOUT$")
+	hConsole, _, _ := syscall.SyscallN(procCreateFileW.Addr(), uintptr(unsafe.Pointer(conoutName)), GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0)
 	if hConsole == 0 || hConsole == uintptr(syscall.InvalidHandle) {
-		return "", fmt.Errorf("GetStdHandle failed")
+		return "", fmt.Errorf("CreateFile CONOUT$ failed")
 	}
+	defer syscall.SyscallN(procCloseHandle.Addr(), hConsole)
 
 	var info consoleScreenBufferInfo
 	r1, _, _ := syscall.SyscallN(procGetConsoleScreenBufferInfo.Addr(), hConsole, uintptr(unsafe.Pointer(&info)))
@@ -140,6 +155,7 @@ func (a *WindowsAdapter) Capture(ctx context.Context, pane PaneInfo) (string, er
 	}
 
 	text := string(utf16.Decode(buf[:charsRead]))
+	text = strings.ReplaceAll(text, "\x00", " ")
 
 	var sb strings.Builder
 	for i := 0; i < len(text); i += width {

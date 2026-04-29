@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 
 	"github.com/creack/pty"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type ptySession struct {
@@ -32,7 +33,7 @@ type PTYService struct {
 func NewPTYService() *PTYService {
 	return &PTYService{
 		sessions: make(map[string]*ptySession),
-		emitFn:   runtime.EventsEmit,
+		emitFn:   wailsruntime.EventsEmit,
 	}
 }
 
@@ -43,7 +44,11 @@ func (s *PTYService) Startup(ctx context.Context) {
 func (s *PTYService) OpenNewTerminal(tabId string) error {
 	shell := os.Getenv("SHELL")
 	if shell == "" {
-		shell = "/bin/bash"
+		if runtime.GOOS == "windows" {
+			shell = "cmd.exe"
+		} else {
+			shell = "/bin/bash"
+		}
 	}
 	cmd := exec.Command(shell)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
