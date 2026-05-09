@@ -49,6 +49,10 @@ func (m *mockAdapter) Capture(ctx context.Context, pane PaneInfo) (string, error
 	return "mock content", nil
 }
 
+func (m *mockAdapter) WriteInput(ctx context.Context, pane PaneInfo, data string) error {
+	return nil
+}
+
 func (m *mockAdapter) Close() error { return nil }
 
 // setCapture atomically updates the content for a pane ID (used between ticks).

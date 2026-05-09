@@ -28,7 +28,17 @@ export function TerminalTabList() {
           store.addTab(id, `Terminal ${num}`);
           store.setActiveTab(id);
           import(/* @vite-ignore */ "../../../wailsjs/go/services/PTYService")
-            .then(({ OpenNewTerminal }) => OpenNewTerminal(id))
+            .then(({ OpenNewTerminal }) => {
+              OpenNewTerminal(id)
+                .then((isPty: boolean) => {
+                  if (isPty === false) {
+                    store.removeTab(id);
+                  }
+                })
+                .catch(() => {
+                  store.removeTab(id);
+                });
+            })
             .catch(() => {}); // Wails runtime unavailable in dev mode
         }}
         className="w-full px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"

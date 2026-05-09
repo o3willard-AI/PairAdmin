@@ -17,3 +17,7 @@ export function RebuildFilterPipeline() {
 export function Startup(arg1) {
   return window['go']['capture']['CaptureManager']['Startup'](arg1);
 }
+
+export function WriteInput(arg1, arg2) {
+  return window['go']['capture']['CaptureManager']['WriteInput'](arg1, arg2);
+}

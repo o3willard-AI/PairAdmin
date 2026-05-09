@@ -301,7 +301,7 @@ func TestTmuxAdapterNewPane(t *testing.T) {
 	mu.Unlock()
 
 	if count < 2 {
-		t.Errorf("expected at least 2 terminal:tabs events, got %d", count)
+		t.Fatalf("expected at least 2 terminal:tabs events, got %d", count)
 	}
 
 	mu.Lock()
@@ -353,7 +353,7 @@ func TestTmuxAdapterRemovedPane(t *testing.T) {
 	mu.Unlock()
 
 	if count < 2 {
-		t.Errorf("expected at least 2 terminal:tabs events, got %d", count)
+		t.Fatalf("expected at least 2 terminal:tabs events, got %d", count)
 	}
 
 	mu.Lock()

@@ -276,6 +276,11 @@ func (a *ATSPIAdapter) Capture(ctx context.Context, pane PaneInfo) (string, erro
 	return applyFilterPipeline(text), nil
 }
 
+// WriteInput is not currently supported for AT-SPI2 natively without synthesizing system-wide keystrokes.
+func (a *ATSPIAdapter) WriteInput(ctx context.Context, pane PaneInfo, data string) error {
+	return fmt.Errorf("WriteInput is not supported for AT-SPI2 terminals")
+}
+
 // Close releases the accessibility bus connection if held.
 func (a *ATSPIAdapter) Close() error {
 	if a.closeConn != nil {

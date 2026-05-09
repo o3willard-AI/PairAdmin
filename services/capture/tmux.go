@@ -2,6 +2,7 @@ package capture
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"strings"
 
@@ -101,6 +102,17 @@ func (a *TmuxAdapter) Capture(ctx context.Context, pane PaneInfo) (string, error
 		return content, nil // degraded: return unfiltered rather than crash
 	}
 	return filtered, nil
+}
+
+// WriteInput sends the given string data as keystrokes to the tmux pane.
+func (a *TmuxAdapter) WriteInput(ctx context.Context, pane PaneInfo, data string) error {
+	rawID := strings.TrimPrefix(pane.ID, "tmux:")
+	cmd := a.execCommand(ctx, "tmux", "send-keys", "-l", "-t", rawID, data)
+	_, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("send-keys failed for pane %s: %w", pane.ID, err)
+	}
+	return nil
 }
 
 // Close releases any resources held by the adapter. TmuxAdapter has none.

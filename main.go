@@ -62,6 +62,7 @@ func main() {
 
 	// Create PTYService for interactive shell sessions in + New terminal tabs
 	ptyService := services.NewPTYService()
+	ptyService.SetCaptureManager(manager)
 
 	// Create SettingsService with OS keychain for secure API key storage
 	keychainClient := keychain.New()
