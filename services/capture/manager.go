@@ -2,7 +2,9 @@ package capture
 
 import (
 	"context"
+	"fmt"
 	"hash/fnv"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,7 +16,8 @@ import (
 
 // captureState tracks the last known hash of a pane's content for deduplication.
 type captureState struct {
-	lastHash uint64
+	lastHash  uint64
+	missCount int
 }
 
 // captureResult holds the result of a single pane capture.
@@ -107,10 +110,15 @@ func (m *CaptureManager) tick() {
 			membershipChanged = true
 		}
 	}
-	for id := range m.panes {
+	for id, state := range m.panes {
 		if _, exists := currentSet[id]; !exists {
-			delete(m.panes, id)
-			membershipChanged = true
+			state.missCount++
+			if state.missCount >= 3 {
+				delete(m.panes, id)
+				membershipChanged = true
+			}
+		} else {
+			state.missCount = 0
 		}
 	}
 	m.mu.Unlock()
@@ -300,4 +308,35 @@ func (m *CaptureManager) RebuildFilterPipeline() {
 // Called by SettingsService.ForceRefresh via the /refresh slash command.
 func (m *CaptureManager) ForceCapture() {
 	m.tick()
+}
+
+// WriteInput sends keystrokes to the specified pane.
+func (m *CaptureManager) WriteInput(tabId string, data string) error {
+	adapterType := ""
+	if strings.HasPrefix(tabId, "windows:") {
+		adapterType = "windows"
+	} else if strings.HasPrefix(tabId, "tmux:") {
+		adapterType = "tmux"
+	} else if strings.HasPrefix(tabId, "atspi:") {
+		adapterType = "atspi"
+	} else {
+		return fmt.Errorf("unknown adapter for tabId: %s", tabId)
+	}
+
+	var adapter TerminalAdapter
+	for _, a := range m.active {
+		if a.Name() == adapterType {
+			adapter = a
+			break
+		}
+	}
+	if adapter == nil {
+		return fmt.Errorf("adapter %s is not active", adapterType)
+	}
+
+	pane := PaneInfo{
+		ID:          tabId,
+		AdapterType: adapterType,
+	}
+	return adapter.WriteInput(m.ctx, pane, data)
 }

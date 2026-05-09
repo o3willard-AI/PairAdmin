@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"sync"
 
+	"pairadmin/services/capture"
+
 	"github.com/creack/pty"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -24,10 +26,11 @@ type PTYOutputEvent struct {
 
 // PTYService manages interactive shell sessions backed by pseudoterminals.
 type PTYService struct {
-	ctx      context.Context
-	mu       sync.Mutex
-	sessions map[string]*ptySession
-	emitFn   func(ctx context.Context, event string, optionalData ...interface{})
+	ctx            context.Context
+	mu             sync.Mutex
+	sessions       map[string]*ptySession
+	emitFn         func(ctx context.Context, event string, optionalData ...interface{})
+	captureManager *capture.CaptureManager
 }
 
 func NewPTYService() *PTYService {
@@ -37,25 +40,34 @@ func NewPTYService() *PTYService {
 	}
 }
 
+func (s *PTYService) SetCaptureManager(manager *capture.CaptureManager) {
+	s.captureManager = manager
+}
+
 func (s *PTYService) Startup(ctx context.Context) {
 	s.ctx = ctx
 }
 
-func (s *PTYService) OpenNewTerminal(tabId string) error {
+func (s *PTYService) OpenNewTerminal(tabId string) (bool, error) {
+	if runtime.GOOS == "windows" {
+		// creack/pty is broken on Windows for interactive shells. 
+		// Instead of a fake PTY, launch a real native window. 
+		// The CaptureManager will automatically discover and attach to it.
+		cmd := exec.Command("cmd.exe", "/c", "start", "cmd.exe")
+		err := cmd.Run()
+		return false, err
+	}
+
 	shell := os.Getenv("SHELL")
 	if shell == "" {
-		if runtime.GOOS == "windows" {
-			shell = "cmd.exe"
-		} else {
-			shell = "/bin/bash"
-		}
+		shell = "bash"
 	}
 	cmd := exec.Command(shell)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
-		return fmt.Errorf("failed to start terminal: %w", err)
+		return false, fmt.Errorf("failed to start terminal: %w", err)
 	}
 
 	s.mu.Lock()
@@ -83,7 +95,7 @@ func (s *PTYService) OpenNewTerminal(tabId string) error {
 		}
 	}()
 
-	return nil
+	return true, nil
 }
 
 func (s *PTYService) WriteInput(tabId string, data string) error {
@@ -91,7 +103,11 @@ func (s *PTYService) WriteInput(tabId string, data string) error {
 	session, ok := s.sessions[tabId]
 	s.mu.Unlock()
 	if !ok {
-		return nil // not a PTY tab — silently ignore
+		// Fallback to CaptureManager for non-PTY tabs
+		if s.captureManager != nil {
+			return s.captureManager.WriteInput(tabId, data)
+		}
+		return nil
 	}
 	_, err := session.ptmx.Write([]byte(data))
 	return err

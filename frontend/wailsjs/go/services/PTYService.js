@@ -10,6 +10,10 @@ export function ResizeTerminal(arg1, arg2, arg3) {
   return window['go']['services']['PTYService']['ResizeTerminal'](arg1, arg2, arg3);
 }
 
+export function SetCaptureManager(arg1) {
+  return window['go']['services']['PTYService']['SetCaptureManager'](arg1);
+}
+
 export function Startup(arg1) {
   return window['go']['services']['PTYService']['Startup'](arg1);
 }

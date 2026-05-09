@@ -24,6 +24,8 @@ type TerminalAdapter interface {
 	// Capture retrieves the visible content of the given pane.
 	// Only called for panes where Degraded==false.
 	Capture(ctx context.Context, pane PaneInfo) (string, error)
+	// WriteInput sends the given string data as keystrokes to the pane.
+	WriteInput(ctx context.Context, pane PaneInfo, data string) error
 	// Close releases any resources held by the adapter.
 	Close() error
 }

@@ -20,11 +20,13 @@ var (
 	procGetClassName               = moduser32.NewProc("GetClassNameW")
 	procGetWindowThreadProcessId   = moduser32.NewProc("GetWindowThreadProcessId")
 	procGetWindowText              = moduser32.NewProc("GetWindowTextW")
+	procPostMessage                = moduser32.NewProc("PostMessageW")
 	procAttachConsole              = modkernel32.NewProc("AttachConsole")
 	procFreeConsole                = modkernel32.NewProc("FreeConsole")
 	procGetStdHandle               = modkernel32.NewProc("GetStdHandle")
 	procGetConsoleScreenBufferInfo = modkernel32.NewProc("GetConsoleScreenBufferInfo")
 	procReadConsoleOutputCharacter = modkernel32.NewProc("ReadConsoleOutputCharacterW")
+	procWriteConsoleInput          = modkernel32.NewProc("WriteConsoleInputW")
 	procCreateFileW                = modkernel32.NewProc("CreateFileW")
 	procCloseHandle                = modkernel32.NewProc("CloseHandle")
 )
@@ -70,36 +72,91 @@ func (a *WindowsAdapter) IsAvailable(ctx context.Context) bool {
 	return true
 }
 
+var enumWindowsCallback = syscall.NewCallback(enumWindowsProc)
+
+func enumWindowsProc(hwnd syscall.Handle, lparam uintptr) uintptr {
+	panes := (*[]PaneInfo)(unsafe.Pointer(lparam))
+	buf := make([]uint16, 256)
+	r0, _, _ := syscall.SyscallN(procGetClassName.Addr(), uintptr(hwnd), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if r0 > 0 {
+		className := syscall.UTF16ToString(buf[:r0])
+		if className == "ConsoleWindowClass" {
+			var pid uint32
+			syscall.SyscallN(procGetWindowThreadProcessId.Addr(), uintptr(hwnd), uintptr(unsafe.Pointer(&pid)))
+
+			textBuf := make([]uint16, 256)
+			r1, _, _ := syscall.SyscallN(procGetWindowText.Addr(), uintptr(hwnd), uintptr(unsafe.Pointer(&textBuf[0])), uintptr(len(textBuf)))
+			title := "Windows Console"
+			if r1 > 0 {
+				title = syscall.UTF16ToString(textBuf[:r1])
+			}
+
+			*panes = append(*panes, PaneInfo{
+				ID:          fmt.Sprintf("windows:%d", pid),
+				AdapterType: "windows",
+				DisplayName: title,
+			})
+		}
+	}
+	return 1 // continue enumeration
+}
+
 func (a *WindowsAdapter) Discover(ctx context.Context) ([]PaneInfo, error) {
 	var panes []PaneInfo
-	cb := syscall.NewCallback(func(hwnd syscall.Handle, lparam uintptr) uintptr {
+	syscall.SyscallN(procEnumWindows.Addr(), enumWindowsCallback, uintptr(unsafe.Pointer(&panes)))
+	return panes, nil
+}
+
+type findHwndArgs struct {
+	pid  uint32
+	hwnd syscall.Handle
+}
+
+var writeInputCallback = syscall.NewCallback(writeInputProc)
+
+func writeInputProc(hwnd syscall.Handle, lparam uintptr) uintptr {
+	args := (*findHwndArgs)(unsafe.Pointer(lparam))
+	var wpid uint32
+	syscall.SyscallN(procGetWindowThreadProcessId.Addr(), uintptr(hwnd), uintptr(unsafe.Pointer(&wpid)))
+	if wpid == args.pid {
 		buf := make([]uint16, 256)
 		r0, _, _ := syscall.SyscallN(procGetClassName.Addr(), uintptr(hwnd), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
-		if r0 > 0 {
-			className := syscall.UTF16ToString(buf[:r0])
-			if className == "ConsoleWindowClass" {
-				var pid uint32
-				syscall.SyscallN(procGetWindowThreadProcessId.Addr(), uintptr(hwnd), uintptr(unsafe.Pointer(&pid)))
-
-				textBuf := make([]uint16, 256)
-				r1, _, _ := syscall.SyscallN(procGetWindowText.Addr(), uintptr(hwnd), uintptr(unsafe.Pointer(&textBuf[0])), uintptr(len(textBuf)))
-				title := "Windows Console"
-				if r1 > 0 {
-					title = syscall.UTF16ToString(textBuf[:r1])
-				}
-
-				panes = append(panes, PaneInfo{
-					ID:          fmt.Sprintf("windows:%d", pid),
-					AdapterType: "windows",
-					DisplayName: title,
-				})
-			}
+		if r0 > 0 && syscall.UTF16ToString(buf[:r0]) == "ConsoleWindowClass" {
+			args.hwnd = hwnd
+			return 0 // stop
 		}
-		return 1 // continue enumeration
-	})
+	}
+	return 1
+}
 
-	syscall.SyscallN(procEnumWindows.Addr(), cb, 0)
-	return panes, nil
+func (a *WindowsAdapter) WriteInput(ctx context.Context, pane PaneInfo, data string) error {
+	if len(data) == 0 {
+		return nil
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	var pid uint32
+	if _, err := fmt.Sscanf(pane.ID, "windows:%d", &pid); err != nil {
+		return err
+	}
+
+	args := findHwndArgs{pid: pid}
+	syscall.SyscallN(procEnumWindows.Addr(), writeInputCallback, uintptr(unsafe.Pointer(&args)))
+
+	if args.hwnd == 0 {
+		return fmt.Errorf("console window not found for pid %d", pid)
+	}
+
+	for _, c := range data {
+		if c == '\n' {
+			c = '\r' // Windows console expects \r for Enter
+		}
+		syscall.SyscallN(procPostMessage.Addr(), uintptr(args.hwnd), 0x0102, uintptr(c), 0)
+	}
+
+	return nil
 }
 
 func (a *WindowsAdapter) Capture(ctx context.Context, pane PaneInfo) (string, error) {
@@ -169,6 +226,8 @@ func (a *WindowsAdapter) Capture(ctx context.Context, pane PaneInfo) (string, er
 
 	return applyFilterPipeline(sb.String()), nil
 }
+
+
 
 func (a *WindowsAdapter) Close() error {
 	return nil

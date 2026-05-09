@@ -10,3 +10,5 @@ export function GetAdapterStatus():Promise<Array<capture.AdapterStatusInfo>>;
 export function RebuildFilterPipeline():Promise<void>;
 
 export function Startup(arg1:context.Context):Promise<void>;
+
+export function WriteInput(arg1:string,arg2:string):Promise<void>;

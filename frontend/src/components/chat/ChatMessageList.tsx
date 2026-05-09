@@ -16,21 +16,34 @@ export function ChatMessageList({ onRetry }: ChatMessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const lastScrollTimeRef = useRef(0);
+  const isPinnedRef = useRef(true);
+  const prevMsgCountRef = useRef(messages.length);
 
-  useEffect(() => {
+  const handleScroll = () => {
     const el = containerRef.current;
     if (!el) return;
-
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (dist > 100) return; // user scrolled up — don't interrupt
+    // Consider "pinned to bottom" if within 50px
+    isPinnedRef.current = dist <= 50;
+  };
+
+  useEffect(() => {
+    const isNewMessage = messages.length > prevMsgCountRef.current;
+    prevMsgCountRef.current = messages.length;
+
+    // Always scroll to bottom when a new message appears
+    if (isNewMessage) {
+      isPinnedRef.current = true;
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      return;
+    }
+
+    // Don't auto-scroll if user manually scrolled up
+    if (!isPinnedRef.current) return;
 
     const isStreaming = messages.some((m) => m.isStreaming);
 
     if (isStreaming) {
-      // Throttle to one scroll update per 150ms during streaming.
-      // At typical LLM output speeds this lands roughly once per line,
-      // preventing the per-character scrollbar jitter caused by rapid
-      // markdown re-parses changing scrollHeight on every chunk.
       const now = Date.now();
       if (now - lastScrollTimeRef.current < 150) return;
       lastScrollTimeRef.current = now;
@@ -41,7 +54,11 @@ export function ChatMessageList({ onRetry }: ChatMessageListProps) {
   }, [messages]);
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+    <div 
+      ref={containerRef} 
+      onScroll={handleScroll}
+      className="flex-1 overflow-y-auto p-4 space-y-4"
+    >
       {messages.length === 0 ? (
         <div className="flex items-center justify-center h-full py-8">
           <p className="text-zinc-600 text-sm">
@@ -79,15 +96,13 @@ export function ChatMessageList({ onRetry }: ChatMessageListProps) {
                   components={{
                     code({ children, className, node, ...props }) {
                       const match = /language-(\w+)/.exec(className ?? "");
-                      // Determine if this is a block (fenced) code vs inline code
-                      // react-markdown passes inline=true for backtick-inline code
                       const isInline = (props as { inline?: boolean }).inline === true;
                       const codeStr = String(children).replace(/\n$/, "");
-                      if (match && !isInline) {
+                      if (!isInline) {
                         return (
                           <CodeBlock
                             code={codeStr}
-                            language={match[1]}
+                            language={match ? match[1] : "text"}
                             isStreaming={msg.isStreaming}
                           />
                         );

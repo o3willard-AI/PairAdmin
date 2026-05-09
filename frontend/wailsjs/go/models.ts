@@ -33,6 +33,18 @@ export namespace capture {
 	        this.message = source["message"];
 	    }
 	}
+	export class CaptureManager {
+	
+	
+	    static createFrom(source: any = {}) {
+	        return new CaptureManager(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	
+	    }
+	}
 
 }
 
