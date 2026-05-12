@@ -130,15 +130,15 @@ func TestAppConfig_FullRoundTrip(t *testing.T) {
 	t.Setenv("HOME", tmpDir)
 
 	original := &AppConfig{
-		Provider:          "openai",
-		Model:             "gpt-4",
-		CustomPrompt:      "Be helpful",
-		ATSPIPollingMs:    1000,
+		Provider:           "openai",
+		Model:              "gpt-4",
+		CustomPrompt:       "Be helpful",
+		ATSPIPollingMs:     1000,
 		ClipboardClearSecs: 60,
-		Theme:             "dark",
-		FontSize:          14,
-		ContextLines:      200,
-		CustomPatterns:    []CustomPattern{{Name: "test", Regex: ".*", Action: "redact"}},
+		Theme:              "dark",
+		FontSize:           14,
+		ContextLines:       200,
+		CustomPatterns:     []CustomPattern{{Name: "test", Regex: ".*", Action: "redact"}},
 	}
 
 	if err := SaveAppConfig(original); err != nil {

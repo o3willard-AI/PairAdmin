@@ -25,11 +25,11 @@ type WaylandWarning struct {
 
 // CommandService provides clipboard and system command operations for the frontend.
 type CommandService struct {
-	ctx            context.Context
-	clearTimer     *time.Timer
-	clearMu        sync.Mutex
-	auditLogger    *audit.AuditLogger
-	sessionID      string
+	ctx         context.Context
+	clearTimer  *time.Timer
+	clearMu     sync.Mutex
+	auditLogger *audit.AuditLogger
+	sessionID   string
 	// clipboardSetFn is the X11 clipboard setter; injectable for test isolation.
 	clipboardSetFn func(ctx context.Context, text string) error
 }

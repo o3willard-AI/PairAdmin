@@ -35,9 +35,9 @@ func NewWithOpenFunc(openFn func(keyring.Config) (keyring.Keyring, error)) *Clie
 func (c *Client) ring() (keyring.Keyring, error) {
 	home, _ := os.UserHomeDir()
 	return c.open(keyring.Config{
-		ServiceName:     ServiceName,
-		AllowedBackends: []keyring.BackendType{keyring.SecretServiceBackend, keyring.FileBackend},
-		FileDir:         filepath.Join(home, ".pairadmin", "keyring"),
+		ServiceName:      ServiceName,
+		AllowedBackends:  []keyring.BackendType{keyring.SecretServiceBackend, keyring.FileBackend},
+		FileDir:          filepath.Join(home, ".pairadmin", "keyring"),
 		FilePasswordFunc: keyring.FixedStringPrompt("pairadmin"),
 	})
 }

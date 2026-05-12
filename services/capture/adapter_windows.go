@@ -16,17 +16,16 @@ import (
 var (
 	moduser32                      = syscall.NewLazyDLL("user32.dll")
 	modkernel32                    = syscall.NewLazyDLL("kernel32.dll")
-	procEnumWindows                = moduser32.NewProc("EnumWindows")
 	procGetClassName               = moduser32.NewProc("GetClassNameW")
 	procGetWindowThreadProcessId   = moduser32.NewProc("GetWindowThreadProcessId")
 	procGetWindowText              = moduser32.NewProc("GetWindowTextW")
-	procPostMessage                = moduser32.NewProc("PostMessageW")
+	procSendMessage                = moduser32.NewProc("SendMessageW")
 	procAttachConsole              = modkernel32.NewProc("AttachConsole")
 	procFreeConsole                = modkernel32.NewProc("FreeConsole")
+	procGetConsoleWindow           = modkernel32.NewProc("GetConsoleWindow")
 	procGetStdHandle               = modkernel32.NewProc("GetStdHandle")
 	procGetConsoleScreenBufferInfo = modkernel32.NewProc("GetConsoleScreenBufferInfo")
 	procReadConsoleOutputCharacter = modkernel32.NewProc("ReadConsoleOutputCharacterW")
-	procWriteConsoleInput          = modkernel32.NewProc("WriteConsoleInputW")
 	procCreateFileW                = modkernel32.NewProc("CreateFileW")
 	procCloseHandle                = modkernel32.NewProc("CloseHandle")
 )
@@ -59,11 +58,28 @@ type smallRect struct {
 }
 
 type WindowsAdapter struct {
-	mu sync.Mutex
+	mu          sync.Mutex
+	allowedPids map[uint32]bool
 }
 
 func NewWindowsAdapter() *WindowsAdapter {
-	return &WindowsAdapter{}
+	return &WindowsAdapter{
+		allowedPids: make(map[uint32]bool),
+	}
+}
+
+// AddAllowedPid adds a PID to the whitelist of consoles this adapter is allowed to discover.
+func (a *WindowsAdapter) AddAllowedPid(pid uint32) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.allowedPids[pid] = true
+}
+
+// RemoveAllowedPid removes a PID from the whitelist.
+func (a *WindowsAdapter) RemoveAllowedPid(pid uint32) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	delete(a.allowedPids, pid)
 }
 
 func (a *WindowsAdapter) Name() string { return "windows" }
@@ -72,61 +88,22 @@ func (a *WindowsAdapter) IsAvailable(ctx context.Context) bool {
 	return true
 }
 
-var enumWindowsCallback = syscall.NewCallback(enumWindowsProc)
-
-func enumWindowsProc(hwnd syscall.Handle, lparam uintptr) uintptr {
-	panes := (*[]PaneInfo)(unsafe.Pointer(lparam))
-	buf := make([]uint16, 256)
-	r0, _, _ := syscall.SyscallN(procGetClassName.Addr(), uintptr(hwnd), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
-	if r0 > 0 {
-		className := syscall.UTF16ToString(buf[:r0])
-		if className == "ConsoleWindowClass" {
-			var pid uint32
-			syscall.SyscallN(procGetWindowThreadProcessId.Addr(), uintptr(hwnd), uintptr(unsafe.Pointer(&pid)))
-
-			textBuf := make([]uint16, 256)
-			r1, _, _ := syscall.SyscallN(procGetWindowText.Addr(), uintptr(hwnd), uintptr(unsafe.Pointer(&textBuf[0])), uintptr(len(textBuf)))
-			title := "Windows Console"
-			if r1 > 0 {
-				title = syscall.UTF16ToString(textBuf[:r1])
-			}
-
-			*panes = append(*panes, PaneInfo{
-				ID:          fmt.Sprintf("windows:%d", pid),
-				AdapterType: "windows",
-				DisplayName: title,
-			})
-		}
-	}
-	return 1 // continue enumeration
-}
-
 func (a *WindowsAdapter) Discover(ctx context.Context) ([]PaneInfo, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	var panes []PaneInfo
-	syscall.SyscallN(procEnumWindows.Addr(), enumWindowsCallback, uintptr(unsafe.Pointer(&panes)))
-	return panes, nil
-}
-
-type findHwndArgs struct {
-	pid  uint32
-	hwnd syscall.Handle
-}
-
-var writeInputCallback = syscall.NewCallback(writeInputProc)
-
-func writeInputProc(hwnd syscall.Handle, lparam uintptr) uintptr {
-	args := (*findHwndArgs)(unsafe.Pointer(lparam))
-	var wpid uint32
-	syscall.SyscallN(procGetWindowThreadProcessId.Addr(), uintptr(hwnd), uintptr(unsafe.Pointer(&wpid)))
-	if wpid == args.pid {
-		buf := make([]uint16, 256)
-		r0, _, _ := syscall.SyscallN(procGetClassName.Addr(), uintptr(hwnd), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
-		if r0 > 0 && syscall.UTF16ToString(buf[:r0]) == "ConsoleWindowClass" {
-			args.hwnd = hwnd
-			return 0 // stop
-		}
+	// Directly yield the allowed PIDs. We don't need EnumWindows because we track
+	// the cmd.exe processes we launch directly. This avoids issues matching cmd.exe PIDs
+	// with conhost.exe window owners.
+	for pid := range a.allowedPids {
+		panes = append(panes, PaneInfo{
+			ID:          fmt.Sprintf("windows:%d", pid),
+			AdapterType: "windows",
+			DisplayName: fmt.Sprintf("Terminal %d", pid),
+		})
 	}
-	return 1
+	return panes, nil
 }
 
 func (a *WindowsAdapter) WriteInput(ctx context.Context, pane PaneInfo, data string) error {
@@ -142,42 +119,81 @@ func (a *WindowsAdapter) WriteInput(ctx context.Context, pane PaneInfo, data str
 		return err
 	}
 
-	args := findHwndArgs{pid: pid}
-	syscall.SyscallN(procEnumWindows.Addr(), writeInputCallback, uintptr(unsafe.Pointer(&args)))
+	// Attach to the console to get its HWND
+	currentConsole, _, _ := syscall.SyscallN(procGetConsoleWindow.Addr())
+	alreadyAttached := false
+	if currentConsole != 0 {
+		var currentPid uint32
+		syscall.SyscallN(procGetWindowThreadProcessId.Addr(), currentConsole, uintptr(unsafe.Pointer(&currentPid)))
+		if currentPid == pid {
+			alreadyAttached = true
+		} else {
+			syscall.SyscallN(procFreeConsole.Addr())
+		}
+	}
 
-	if args.hwnd == 0 {
-		return fmt.Errorf("console window not found for pid %d", pid)
+	if !alreadyAttached {
+		r0, _, _ := syscall.SyscallN(procAttachConsole.Addr(), uintptr(pid))
+		if r0 == 0 {
+			return fmt.Errorf("AttachConsole failed for PID %d", pid)
+		}
+		defer syscall.SyscallN(procFreeConsole.Addr())
+	}
+
+	hwnd, _, _ := syscall.SyscallN(procGetConsoleWindow.Addr())
+	if hwnd == 0 {
+		return fmt.Errorf("GetConsoleWindow failed")
 	}
 
 	for _, c := range data {
 		if c == '\n' {
 			c = '\r' // Windows console expects \r for Enter
 		}
-		syscall.SyscallN(procPostMessage.Addr(), uintptr(args.hwnd), 0x0102, uintptr(c), 0)
+		syscall.SyscallN(procSendMessage.Addr(), hwnd, 0x0102, uintptr(c), 0)
 	}
-
 	return nil
 }
 
 func (a *WindowsAdapter) Capture(ctx context.Context, pane PaneInfo) (string, error) {
+	// Refactoring to Pull-Based Model:
+	// To prevent crashes caused by high-frequency AttachConsole/FreeConsole cycles
+	// in the background polling loop, we no longer capture Windows content automatically.
+	// The frontend must call GetCapturedContent(paneID) explicitly for the active tab.
+	return "", nil
+}
+
+// GetCapturedContent provides an on-demand pull mechanism for Windows console content.
+// This is called by the frontend (via PTYService) only for the active tab,
+// ensuring we don't spam the Windows console subsystem with attach/detach cycles.
+func (a *WindowsAdapter) GetCapturedContent(paneID string) (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	var pid uint32
-	if _, err := fmt.Sscanf(pane.ID, "windows:%d", &pid); err != nil {
+	if _, err := fmt.Sscanf(paneID, "windows:%d", &pid); err != nil {
 		return "", err
 	}
 
-	// Free our own console just in case we have one attached
-	syscall.SyscallN(procFreeConsole.Addr())
-
 	// Attach to target console
-	r0, _, err := syscall.SyscallN(procAttachConsole.Addr(), uintptr(pid))
-	if r0 == 0 {
-		return "", fmt.Errorf("AttachConsole failed: %v", err)
+	currentConsole, _, _ := syscall.SyscallN(procGetConsoleWindow.Addr())
+	alreadyAttached := false
+	if currentConsole != 0 {
+		var currentPid uint32
+		syscall.SyscallN(procGetWindowThreadProcessId.Addr(), currentConsole, uintptr(unsafe.Pointer(&currentPid)))
+		if currentPid == pid {
+			alreadyAttached = true
+		} else {
+			syscall.SyscallN(procFreeConsole.Addr())
+		}
 	}
-	// Always detach when done
-	defer syscall.SyscallN(procFreeConsole.Addr())
+
+	if !alreadyAttached {
+		r0, _, _ := syscall.SyscallN(procAttachConsole.Addr(), uintptr(pid))
+		if r0 == 0 {
+			return "", fmt.Errorf("AttachConsole failed for PID %d", pid)
+		}
+		defer syscall.SyscallN(procFreeConsole.Addr())
+	}
 
 	conoutName, _ := syscall.UTF16PtrFromString("CONOUT$")
 	hConsole, _, _ := syscall.SyscallN(procCreateFileW.Addr(), uintptr(unsafe.Pointer(conoutName)), GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0)
@@ -194,40 +210,29 @@ func (a *WindowsAdapter) Capture(ctx context.Context, pane PaneInfo) (string, er
 
 	width := int(info.Window.Right - info.Window.Left + 1)
 	height := int(info.Window.Bottom - info.Window.Top + 1)
-	if width <= 0 || height <= 0 {
-		return "", nil // empty window
+	if width <= 0 || height <= 0 || width > 500 || height > 500 {
+		return "", nil
 	}
-	length := uint32(width * height)
-
-	buf := make([]uint16, length)
-	var charsRead uint32
-	startCoord := coord{X: info.Window.Left, Y: info.Window.Top}
-
-	// coord is a struct packed into a single 32-bit integer for syscall
-	coordPacked := uintptr(*(*uint32)(unsafe.Pointer(&startCoord)))
-
-	r2, _, _ := syscall.SyscallN(procReadConsoleOutputCharacter.Addr(), hConsole, uintptr(unsafe.Pointer(&buf[0])), uintptr(length), coordPacked, uintptr(unsafe.Pointer(&charsRead)))
-	if r2 == 0 {
-		return "", fmt.Errorf("ReadConsoleOutputCharacter failed")
-	}
-
-	text := string(utf16.Decode(buf[:charsRead]))
-	text = strings.ReplaceAll(text, "\x00", " ")
 
 	var sb strings.Builder
-	for i := 0; i < len(text); i += width {
-		end := i + width
-		if end > len(text) {
-			end = len(text)
+	for y := info.Window.Top; y <= info.Window.Bottom; y++ {
+		lineBuf := make([]uint16, width)
+		var charsRead uint32
+		startCoord := coord{X: info.Window.Left, Y: y}
+		coordPacked := uintptr(*(*uint32)(unsafe.Pointer(&startCoord)))
+
+		r2, _, _ := syscall.SyscallN(procReadConsoleOutputCharacter.Addr(), hConsole, uintptr(unsafe.Pointer(&lineBuf[0])), uintptr(width), coordPacked, uintptr(unsafe.Pointer(&charsRead)))
+		if r2 != 0 {
+			line := string(utf16.Decode(lineBuf[:charsRead]))
+			line = strings.ReplaceAll(line, "\x00", " ")
+			sb.WriteString(strings.TrimRight(line, " "))
 		}
-		sb.WriteString(strings.TrimRight(text[i:end], " "))
 		sb.WriteString("\n")
 	}
 
-	return applyFilterPipeline(sb.String()), nil
+	result := applyFilterPipeline(sb.String())
+	return result, nil
 }
-
-
 
 func (a *WindowsAdapter) Close() error {
 	return nil

@@ -4,6 +4,8 @@ import { FitAddon } from "@xterm/addon-fit";
 import { CanvasAddon } from "@xterm/addon-canvas";
 import "@xterm/xterm/css/xterm.css";
 import { useTerminalStore } from "@/stores/terminalStore";
+import { GetWindowsContent, WriteInput, ResizeTerminal } from "../../../wailsjs/go/services/PTYService";
+import { EventsOn } from "../../../wailsjs/runtime/runtime";
 
 interface AdapterStatusInfo {
   name: string;
@@ -17,6 +19,7 @@ interface TerminalPreviewProps {
 }
 
 export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) {
+//...
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
 
@@ -63,28 +66,38 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
 
     // PTY output → xterm
     let unsubPtyOutput: (() => void) | null = null;
-    import(/* @vite-ignore */ "../../../wailsjs/runtime/runtime").then((rt) => {
-      unsubPtyOutput = rt.EventsOn("pty:output", ((event: { tabId: string; data: string }) => {
+    let windowsPullInterval: number | null = null;
+
+    if (tabId.startsWith("windows:")) {
+      // Pull-based model for Windows to prevent background crashes
+      windowsPullInterval = window.setInterval(() => {
+        if (disposed.current) return;
+        GetWindowsContent(tabId).then((content) => {
+          if (content && !disposed.current) {
+            const formatted = content.trimEnd().split('\n').join('\x1b[K\r\n');
+            term.write("\x1b[?7l\x1b[H" + formatted + "\x1b[K\x1b[J");
+          }
+        }).catch(() => {});
+      }, 500);
+    } else {
+      // Push-based model (PTY events) for other platforms/adapters
+      unsubPtyOutput = EventsOn("pty:output", ((event: { tabId: string; data: string }) => {
         if (event.tabId === tabId && !disposed.current) {
           term.write(event.data);
         }
       }) as (...args: unknown[]) => void);
-    }).catch(() => {});
+    }
 
     // xterm input → PTY
     const onDataDisposable = term.onData((data) => {
       if (disposed.current) return;
-      import(/* @vite-ignore */ "../../../wailsjs/go/services/PTYService")
-        .then(({ WriteInput }) => WriteInput(tabId, data))
-        .catch(() => {});
+      WriteInput(tabId, data).catch(() => {});
     });
 
     // xterm resize → PTY
     const onResizeDisposable = term.onResize(({ cols, rows }) => {
       if (disposed.current) return;
-      import(/* @vite-ignore */ "../../../wailsjs/go/services/PTYService")
-        .then(({ ResizeTerminal }) => ResizeTerminal(tabId, cols, rows))
-        .catch(() => {});
+      ResizeTerminal(tabId, cols, rows).catch(() => {});
     });
 
     const resizeObserver = new ResizeObserver(() => {
@@ -96,8 +109,13 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
       disposed.current = true; // must be first — blocks all in-flight callbacks
       resizeObserver.disconnect();
       unsubPtyOutput?.();
+      if (windowsPullInterval) window.clearInterval(windowsPullInterval);
       onDataDisposable.dispose();
       onResizeDisposable.dispose();
+
+      // Clear the ref in store immediately so terminal:update doesn't try to use it
+      useTerminalStore.getState().setTermRef(tabId, null);
+
       // xterm buffers writes asynchronously via setTimeout. Calling dispose()
       // immediately destroys _linkifier2 while a buffered write may still be
       // pending, causing the "undefined is not an object (_linkifier2)" crash.

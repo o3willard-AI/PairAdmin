@@ -3,11 +3,17 @@
 import {capture} from '../models';
 import {context} from '../models';
 
+export function AddAllowedPid(arg1:number):Promise<void>;
+
 export function ForceCapture():Promise<void>;
 
 export function GetAdapterStatus():Promise<Array<capture.AdapterStatusInfo>>;
 
+export function GetWindowsContent(arg1:string):Promise<string>;
+
 export function RebuildFilterPipeline():Promise<void>;
+
+export function RemoveAllowedPid(arg1:number):Promise<void>;
 
 export function Startup(arg1:context.Context):Promise<void>;
 
