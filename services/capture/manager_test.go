@@ -379,6 +379,7 @@ func TestCaptureManagerSkipsDegradedPanes(t *testing.T) {
 func TestCaptureManagerBuildFilterPipelineWithPatterns(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // Required for Windows os.UserHomeDir()
 
 	cfg := &config.AppConfig{
 		CustomPatterns: []config.CustomPattern{
@@ -412,6 +413,7 @@ func TestCaptureManagerBuildFilterPipelineWithPatterns(t *testing.T) {
 func TestCaptureManagerBuildFilterPipelineNoPatterns(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // Required for Windows os.UserHomeDir()
 
 	// No config file written — LoadAppConfig returns empty patterns
 	mgr := newTestCaptureManager(nil, func(ctx context.Context, eventName string, optionalData ...interface{}) {})
@@ -426,6 +428,7 @@ func TestCaptureManagerBuildFilterPipelineNoPatterns(t *testing.T) {
 func TestCaptureManagerRebuildFilterPipeline(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // Required for Windows os.UserHomeDir()
 
 	// Start with no patterns
 	mgr := newTestCaptureManager(nil, func(ctx context.Context, eventName string, optionalData ...interface{}) {})
@@ -466,6 +469,7 @@ func TestCaptureManagerRebuildFilterPipeline(t *testing.T) {
 func TestCaptureManagerCustomFilterRedactAppliedDuringTick(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // Required for Windows os.UserHomeDir()
 
 	// Configure a custom redact pattern
 	cfg := &config.AppConfig{
@@ -526,6 +530,7 @@ func TestCaptureManagerCustomFilterRedactAppliedDuringTick(t *testing.T) {
 func TestCaptureManagerCustomFilterRemoveAppliedDuringTick(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // Required for Windows os.UserHomeDir()
 
 	// Configure a custom remove pattern
 	cfg := &config.AppConfig{

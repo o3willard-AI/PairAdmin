@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"runtime"
 	"sync"
+	"syscall"
 
 	"pairadmin/services/capture"
 
@@ -16,6 +17,7 @@ import (
 
 type ptySession struct {
 	ptmx *os.File
+	cmd  *exec.Cmd // Store cmd to allow killing process on Windows
 }
 
 // PTYOutputEvent is emitted on "pty:output" events.
@@ -48,14 +50,53 @@ func (s *PTYService) Startup(ctx context.Context) {
 	s.ctx = ctx
 }
 
-func (s *PTYService) OpenNewTerminal(tabId string) (bool, error) {
+func (s *PTYService) OpenNewTerminal(tabId string) (string, error) {
 	if runtime.GOOS == "windows" {
-		// creack/pty is broken on Windows for interactive shells. 
-		// Instead of a fake PTY, launch a real native window. 
-		// The CaptureManager will automatically discover and attach to it.
-		cmd := exec.Command("cmd.exe", "/c", "start", "cmd.exe")
-		err := cmd.Run()
-		return false, err
+		cmd := exec.Command("cmd.exe", "/k")
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			CreationFlags: 0x00000010, // CREATE_NEW_CONSOLE
+			HideWindow:    true,       // Do not show the external popup
+		}
+
+		// Assigning os.Stdin prevents Go's exec package from passing os.DevNull,
+		// allowing Windows to assign the new console's native handles to the process.
+		// This is required for cmd.exe to initialize its interactive prompt in the screen buffer.
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		err := cmd.Start()
+		if err == nil {
+			pid := uint32(cmd.Process.Pid)
+
+			// The true ID for Windows tabs is based on the PID
+			winTabId := fmt.Sprintf("windows:%d", pid)
+
+			// Whitelist this PID for discovery
+			if s.captureManager != nil {
+				s.captureManager.AddAllowedPid(pid)
+			}
+
+			s.mu.Lock()
+			s.sessions[winTabId] = &ptySession{cmd: cmd}
+			s.mu.Unlock()
+
+			// Track process exit to clean up
+			go func() {
+				cmd.Wait()
+				s.mu.Lock()
+				delete(s.sessions, winTabId)
+				s.mu.Unlock()
+				if s.captureManager != nil {
+					s.captureManager.RemoveAllowedPid(pid)
+				}
+				s.emitFn(s.ctx, "pty:closed", map[string]string{"tabId": winTabId})
+			}()
+
+			return winTabId, nil
+		} else {
+		}
+		return "", err
 	}
 
 	shell := os.Getenv("SHELL")
@@ -67,11 +108,11 @@ func (s *PTYService) OpenNewTerminal(tabId string) (bool, error) {
 
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
-		return false, fmt.Errorf("failed to start terminal: %w", err)
+		return "", fmt.Errorf("failed to start terminal: %w", err)
 	}
 
 	s.mu.Lock()
-	s.sessions[tabId] = &ptySession{ptmx: ptmx}
+	s.sessions[tabId] = &ptySession{ptmx: ptmx, cmd: cmd}
 	s.mu.Unlock()
 
 	go func() {
@@ -95,20 +136,55 @@ func (s *PTYService) OpenNewTerminal(tabId string) (bool, error) {
 		}
 	}()
 
-	return true, nil
+	return tabId, nil
+}
+
+func (s *PTYService) CloseTerminal(tabId string) error {
+	s.mu.Lock()
+	session, ok := s.sessions[tabId]
+	delete(s.sessions, tabId)
+	s.mu.Unlock()
+
+	if !ok {
+		// If it's a discovered window (not opened via PTYService), we might not be able to "close" it
+		// without a PID. For now, just return.
+		return nil
+	}
+
+	if session.ptmx != nil {
+		session.ptmx.Close()
+	}
+	if session.cmd != nil && session.cmd.Process != nil {
+		pid := uint32(session.cmd.Process.Pid)
+		// Remove from whitelist
+		if s.captureManager != nil {
+			s.captureManager.RemoveAllowedPid(pid)
+		}
+
+		// Force kill the process group on Windows if possible, or just the process.
+		if runtime.GOOS == "windows" {
+			// On Windows, taskkill is often more effective at cleaning up conhost.
+			exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", pid)).Run()
+		} else {
+			session.cmd.Process.Kill()
+		}
+	}
+	return nil
 }
 
 func (s *PTYService) WriteInput(tabId string, data string) error {
 	s.mu.Lock()
 	session, ok := s.sessions[tabId]
 	s.mu.Unlock()
-	if !ok {
-		// Fallback to CaptureManager for non-PTY tabs
+
+	// If it's a native Windows console (no PTY), route to CaptureManager
+	if !ok || session.ptmx == nil {
 		if s.captureManager != nil {
 			return s.captureManager.WriteInput(tabId, data)
 		}
 		return nil
 	}
+
 	_, err := session.ptmx.Write([]byte(data))
 	return err
 }
@@ -124,4 +200,17 @@ func (s *PTYService) ResizeTerminal(tabId string, cols, rows int) error {
 		Cols: uint16(cols),
 		Rows: uint16(rows),
 	})
+}
+
+// GetWindowsContent provides a bridge for the frontend to pull content from Windows console windows.
+// This is only used on Windows and only for non-PTY tabs (native cmd.exe/powershell windows).
+func (s *PTYService) GetWindowsContent(tabId string) (string, error) {
+	if runtime.GOOS != "windows" {
+		return "", nil
+	}
+	if s.captureManager == nil {
+		return "", nil
+	}
+
+	return s.captureManager.GetWindowsContent(tabId)
 }

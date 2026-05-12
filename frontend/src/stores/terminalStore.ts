@@ -17,7 +17,7 @@ interface TerminalState {
   addTab: (id: string, name: string, degraded?: boolean, degradedMsg?: string) => void;
   removeTab: (id: string) => void;
   clearTabs: () => void;
-  setTermRef: (tabId: string, term: Terminal) => void;
+  setTermRef: (tabId: string, term: Terminal | null) => void;
   getTermRef: (tabId: string) => Terminal | undefined;
 }
 
@@ -60,7 +60,11 @@ export const useTerminalStore = create<TerminalState>()(
         termRefsMap.clear();
       },
       setTermRef: (tabId, term) => {
-        termRefsMap.set(tabId, term);
+        if (term) {
+          termRefsMap.set(tabId, term);
+        } else {
+          termRefsMap.delete(tabId);
+        }
       },
       getTermRef: (tabId) => {
         return termRefsMap.get(tabId);
