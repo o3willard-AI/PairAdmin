@@ -15,7 +15,11 @@ import (
 )
 
 type ptySession struct {
-	ptmx *os.File
+	ptmx   *os.File       // Unix: pseudoterminal master; Windows: console output reader
+	ptyOut *os.File       // Windows only: console input writer (nil on Unix)
+	hPC    uintptr        // Windows only: pseudoconsole handle (0 on Unix)
+	pid    int            // Windows only: child process ID (0 on Unix)
+	cmd    *exec.Cmd      // Unix: the shell command (nil on Windows)
 }
 
 // PTYOutputEvent is emitted on "pty:output" events.
@@ -50,12 +54,15 @@ func (s *PTYService) Startup(ctx context.Context) {
 
 func (s *PTYService) OpenNewTerminal(tabId string) (bool, error) {
 	if runtime.GOOS == "windows" {
-		// creack/pty is broken on Windows for interactive shells. 
-		// Instead of a fake PTY, launch a real native window. 
-		// The CaptureManager will automatically discover and attach to it.
+		// Use Windows ConPTY API (Win 10 1809+) for proper pseudoconsole support.
+		// Falls back to launching an external console window if ConPTY fails.
+		ok, err := s.openWindowsConPTY(tabId)
+		if err == nil {
+			return ok, nil
+		}
+		// ConPTY unavailable (pre-Win10 or API failure) — launch external window.
 		cmd := exec.Command("cmd.exe", "/c", "start", "cmd.exe")
-		err := cmd.Run()
-		return false, err
+		return false, cmd.Run()
 	}
 
 	shell := os.Getenv("SHELL")
@@ -109,6 +116,9 @@ func (s *PTYService) WriteInput(tabId string, data string) error {
 		}
 		return nil
 	}
+	if runtime.GOOS == "windows" {
+		return s.writeConPTYInput(tabId, data)
+	}
 	_, err := session.ptmx.Write([]byte(data))
 	return err
 }
@@ -119,6 +129,9 @@ func (s *PTYService) ResizeTerminal(tabId string, cols, rows int) error {
 	s.mu.Unlock()
 	if !ok {
 		return nil // not a PTY tab — silently ignore
+	}
+	if runtime.GOOS == "windows" {
+		return s.resizeConPTY(tabId, cols, rows)
 	}
 	return pty.Setsize(session.ptmx, &pty.Winsize{
 		Cols: uint16(cols),

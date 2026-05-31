@@ -49,14 +49,24 @@ export function useTerminalCapture() {
         "terminal:update",
         ((event: TerminalUpdatePayload) => {
           const term = useTerminalStore.getState().getTermRef(event.paneId);
-          if (!term) return; // tab already removed
+          // Guard against disposed terminal (tab switch during event fire)
+          if (!term) return;
+          try {
+            // @ts-expect-error _core is internal but the only way to detect disposal
+            if (term._core?._isDisposed) return;
+          } catch {
+            // _core access not available — proceed optimistically
+          }
           // Use ANSI escape sequences for double buffering to prevent flickering.
           // \x1b[?7l disables line wrapping so long lines don't push the terminal down.
-          // \x1b[H moves cursor to top left.
-          // \x1b[K clears from cursor to end of line.
+          // \x1b[H moves cursor to top left only on first write per frame.
           // \x1b[J clears from cursor to bottom of screen.
           const formatted = event.content.trimEnd().split('\n').join('\x1b[K\r\n');
-          term.write("\x1b[?7l\x1b[H" + formatted + "\x1b[K\x1b[J");
+          try {
+            term.write("\x1b[?7l\x1b[H" + formatted + "\x1b[J");
+          } catch {
+            // terminal disposed between guard and write — harmless
+          }
         }) as (...args: unknown[]) => void
       );
 

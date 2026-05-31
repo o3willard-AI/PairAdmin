@@ -36,9 +36,12 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
         cursor: "#d4d4d4",
       },
       fontSize: 13,
-      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
       scrollback: 1000,
       convertEol: true,
+      cursorBlink: true,
+      cursorStyle: "bar",
+      allowProposedApi: true,
     });
 
     const fitAddon = new FitAddon();
