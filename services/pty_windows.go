@@ -36,7 +36,7 @@ type _coord struct {
 // openWindowsConPTY creates a pseudoconsole on Windows 10 1809+,
 // spawns the user's preferred shell inside it, and wires the pipes
 // into the PTY session so xterm.js gets a real bidirectional stream.
-func (s *PTYService) openWindowsConPTY(tabId string) (bool, error) {
+func (s *PTYService) openWindowsConPTY(tabId string) (string, error) {
 	// Determine shell: prefer ComSpec, fall back to cmd.exe
 	shell := os.Getenv("ComSpec")
 	if shell == "" {
@@ -48,13 +48,13 @@ func (s *PTYService) openWindowsConPTY(tabId string) (bool, error) {
 	// outR/outW: output pipe (PTYService writes input to the console).
 	inR, inW, errPipe := os.Pipe()
 	if errPipe != nil {
-		return false, fmt.Errorf("input pipe: %w", errPipe)
+		return "", fmt.Errorf("input pipe: %w", errPipe)
 	}
 	outR, outW, errPipe := os.Pipe()
 	if errPipe != nil {
 		inR.Close()
 		inW.Close()
-		return false, fmt.Errorf("output pipe: %w", errPipe)
+		return "", fmt.Errorf("output pipe: %w", errPipe)
 	}
 
 	// Create pseudoconsole (default 120x40, will be resized by xterm).
@@ -69,7 +69,7 @@ func (s *PTYService) openWindowsConPTY(tabId string) (bool, error) {
 	)
 	if r0 != 0 {
 		inR.Close(); inW.Close(); outR.Close(); outW.Close()
-		return false, fmt.Errorf("CreatePseudoConsole failed: hr=0x%x (%v)", r0, e1)
+		return "", fmt.Errorf("CreatePseudoConsole failed: hr=0x%x (%v)", r0, e1)
 	}
 
 	// Prepare STARTUPINFOEX with pseudoconsole attribute.
@@ -78,7 +78,7 @@ func (s *PTYService) openWindowsConPTY(tabId string) (bool, error) {
 	if err != nil {
 		procClosePseudoConsole.Call(uintptr(hPC))
 		inR.Close(); inW.Close(); outR.Close(); outW.Close()
-		return false, fmt.Errorf("startup info: %w", err)
+		return "", fmt.Errorf("startup info: %w", err)
 	}
 
 	// Build process creation flags.
@@ -110,7 +110,7 @@ func (s *PTYService) openWindowsConPTY(tabId string) (bool, error) {
 	if r0 == 0 {
 		procClosePseudoConsole.Call(uintptr(hPC))
 		inR.Close(); inW.Close(); outR.Close(); outW.Close()
-		return false, fmt.Errorf("CreateProcess %s failed: %v", shell, e1)
+		return "", fmt.Errorf("CreateProcess %s failed: %v", shell, e1)
 	}
 
 	// Close the thread handle — we only need the process handle.
@@ -160,7 +160,7 @@ func (s *PTYService) openWindowsConPTY(tabId string) (bool, error) {
 		}
 	}()
 
-	return true, nil
+	return tabId, nil
 }
 
 // _startupInfoExForConPTY allocates a STARTUPINFOEXW with the ConPTY HPCON
@@ -288,4 +288,9 @@ func (s *PTYService) resizeConPTY(tabId string, cols, rows int) error {
 		uintptr(*(*uint32)(unsafe.Pointer(&newSize))),
 	)
 	return nil
+}
+
+// closeConPTY closes the pseudoconsole handle.
+func (s *PTYService) closeConPTY(hPC uintptr) {
+	procClosePseudoConsole.Call(hPC)
 }

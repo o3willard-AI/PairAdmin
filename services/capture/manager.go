@@ -91,9 +91,18 @@ func (m *CaptureManager) tick() {
 	for _, a := range m.active {
 		panes, err := a.Discover(m.ctx)
 		if err != nil {
+			fmt.Printf("[CaptureManager] Discover error from %s: %v\n", a.Name(), err)
 			continue
 		}
 		allPanes = append(allPanes, panes...)
+	}
+
+	if len(allPanes) > 0 {
+		fmt.Printf("[CaptureManager] Discovered %d panes: ", len(allPanes))
+		for _, p := range allPanes {
+			fmt.Printf("%s ", p.ID)
+		}
+		fmt.Println()
 	}
 
 	// Build set of current pane IDs
@@ -106,6 +115,7 @@ func (m *CaptureManager) tick() {
 	var membershipChanged bool
 	for id := range currentSet {
 		if _, exists := m.panes[id]; !exists {
+			fmt.Printf("[CaptureManager] New pane: %s\n", id)
 			m.panes[id] = &captureState{}
 			membershipChanged = true
 		}
@@ -114,6 +124,7 @@ func (m *CaptureManager) tick() {
 		if _, exists := currentSet[id]; !exists {
 			state.missCount++
 			if state.missCount >= 3 {
+				fmt.Printf("[CaptureManager] Removing pane: %s\n", id)
 				delete(m.panes, id)
 				membershipChanged = true
 			}
@@ -137,7 +148,6 @@ func (m *CaptureManager) tick() {
 	}
 
 	// Capture non-degraded panes concurrently (semaphore 4)
-	// Build adapter lookup for capture calls
 	adapterByType := make(map[string]TerminalAdapter, len(m.active))
 	for _, a := range m.active {
 		adapterByType[a.Name()] = a
@@ -165,7 +175,9 @@ func (m *CaptureManager) tick() {
 				rmu.Unlock()
 				return
 			}
+			fmt.Printf("[CaptureManager] Starting capture for %s\n", pane.ID)
 			content, err := adapter.Capture(m.ctx, pane)
+			fmt.Printf("[CaptureManager] Finished capture for %s (err: %v)\n", pane.ID, err)
 			m.sem.Release(1)
 			rmu.Lock()
 			results = append(results, captureResult{pane: pane, content: content, err: err})
@@ -339,4 +351,31 @@ func (m *CaptureManager) WriteInput(tabId string, data string) error {
 		AdapterType: adapterType,
 	}
 	return adapter.WriteInput(m.ctx, pane, data)
+}
+
+// GetWindowsContent finds the WindowsAdapter and pulls content for a specific tab.
+// This is used in the pull-based model to avoid background polling crashes on Windows.
+func (m *CaptureManager) GetWindowsContent(tabId string) (string, error) {
+	for _, a := range m.active {
+		if wa, ok := a.(*WindowsAdapter); ok {
+			return wa.GetCapturedContent(tabId)
+		}
+	}
+	return "", fmt.Errorf("WindowsAdapter not found or not active")
+}
+
+func (m *CaptureManager) AddAllowedPid(pid uint32) {
+	for _, a := range m.adapters {
+		if wa, ok := a.(*WindowsAdapter); ok {
+			wa.AddAllowedPid(pid)
+		}
+	}
+}
+
+func (m *CaptureManager) RemoveAllowedPid(pid uint32) {
+	for _, a := range m.adapters {
+		if wa, ok := a.(*WindowsAdapter); ok {
+			wa.RemoveAllowedPid(pid)
+		}
+	}
 }

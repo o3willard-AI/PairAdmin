@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"os/exec"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -14,10 +15,20 @@ import (
 // mockTmuxCommand returns an execCommand override that produces given stdout and optional error.
 func mockTmuxCommand(output string, exitErr error) func(ctx context.Context, name string, args ...string) *exec.Cmd {
 	return func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		cmd := exec.CommandContext(ctx, "cat")
-		cmd.Stdin = bytes.NewBufferString(output)
 		if exitErr != nil {
-			cmd = exec.CommandContext(ctx, "false")
+			// On Windows, 'false' is not a standard command. Use 'cmd /c exit 1'.
+			if runtime.GOOS == "windows" {
+				cmd := exec.CommandContext(ctx, "cmd", "/c", "exit", "1")
+				pr, pw := io.Pipe()
+				cmd.Stderr = pw
+				go func() {
+					io.WriteString(pw, exitErr.Error())
+					pw.Close()
+				}()
+				_ = pr
+				return cmd
+			}
+			cmd := exec.CommandContext(ctx, "false")
 			pr, pw := io.Pipe()
 			cmd.Stderr = pw
 			go func() {
@@ -25,18 +36,26 @@ func mockTmuxCommand(output string, exitErr error) func(ctx context.Context, nam
 				pw.Close()
 			}()
 			_ = pr
+			return cmd
 		}
+
+		// Use a portable way to pipe stdin to stdout.
+		// On Windows, 'findstr ^' works like 'cat' for stdin.
+		cmdName := "cat"
+		var cmdArgs []string
+		if runtime.GOOS == "windows" {
+			cmdName = "findstr"
+			cmdArgs = []string{"^"}
+		}
+		cmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
+		cmd.Stdin = bytes.NewBufferString(output)
 		return cmd
 	}
 }
 
 // mockTmuxCommandOutput returns an execCommand override that always succeeds with given output.
 func mockTmuxCommandOutput(output string) func(ctx context.Context, name string, args ...string) *exec.Cmd {
-	return func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		cmd := exec.CommandContext(ctx, "cat")
-		cmd.Stdin = bytes.NewBufferString(output)
-		return cmd
-	}
+	return mockTmuxCommand(output, nil)
 }
 
 // TestTmuxAdapterIsAvailableTrue verifies IsAvailable returns true when tmux list-panes succeeds.
@@ -345,6 +364,10 @@ func TestTmuxAdapterRemovedPane(t *testing.T) {
 	mgr := newTestCaptureManager([]TerminalAdapter{adapter}, emitFn)
 	defer mgr.cancel()
 
+	// 1st tick: discovers 2 panes
+	mgr.tick()
+	// 2nd, 3rd, 4th tick: one pane removed, requires 3 misses to delete from m.panes
+	mgr.tick()
 	mgr.tick()
 	mgr.tick()
 
@@ -394,9 +417,7 @@ func TestTmuxAdapterSemaphoreBounds(t *testing.T) {
 		<-release
 		atomic.AddInt64(&concurrent, -1)
 
-		cmd := exec.CommandContext(ctx, "cat")
-		cmd.Stdin = bytes.NewBufferString("content\n")
-		return cmd
+		return mockTmuxCommandOutput("content\n")(ctx, name, args...)
 	}
 
 	var emu sync.Mutex
