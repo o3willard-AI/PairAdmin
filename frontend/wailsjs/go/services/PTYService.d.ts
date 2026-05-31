@@ -3,7 +3,11 @@
 import {capture} from '../models';
 import {context} from '../models';
 
-export function OpenNewTerminal(arg1:string):Promise<boolean>;
+export function CloseTerminal(arg1:string):Promise<void>;
+
+export function GetWindowsContent(arg1:string):Promise<string>;
+
+export function OpenNewTerminal(arg1:string):Promise<string>;
 
 export function ResizeTerminal(arg1:string,arg2:number,arg3:number):Promise<void>;
 

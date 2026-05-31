@@ -1,5 +1,6 @@
 import { useTerminalStore } from "@/stores/terminalStore";
 import { TerminalTab } from "./TerminalTab";
+import { OpenNewTerminal } from "../../../wailsjs/go/services/PTYService";
 
 export function TerminalTabList() {
   const tabs = useTerminalStore((state) => state.tabs);
@@ -24,22 +25,18 @@ export function TerminalTabList() {
         onClick={() => {
           const store = useTerminalStore.getState();
           const id = crypto.randomUUID();
-          const num = store.tabs.length + 1;
-          store.addTab(id, `Terminal ${num}`);
-          store.setActiveTab(id);
-          import(/* @vite-ignore */ "../../../wailsjs/go/services/PTYService")
-            .then(({ OpenNewTerminal }) => {
-              OpenNewTerminal(id)
-                .then((isPty: boolean) => {
-                  if (isPty === false) {
-                    store.removeTab(id);
-                  }
-                })
-                .catch(() => {
-                  store.removeTab(id);
-                });
+          
+          OpenNewTerminal(id)
+            .then((resolvedId: string) => {
+              if (resolvedId) {
+                const num = store.tabs.length + 1;
+                store.addTab(resolvedId, `Terminal ${num}`);
+                store.setActiveTab(resolvedId);
+              }
             })
-            .catch(() => {}); // Wails runtime unavailable in dev mode
+            .catch((err) => {
+              console.error("OpenNewTerminal error:", err);
+            });
         }}
         className="w-full px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
       >

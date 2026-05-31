@@ -77,8 +77,8 @@ func TestLoadConfigDefaults(t *testing.T) {
 
 func TestNewLLMServiceCreation(t *testing.T) {
 	cfg := Config{
-		Provider: "openai",
-		Model:    "gpt-4",
+		Provider:  "openai",
+		Model:     "gpt-4",
 		OpenAIKey: "test-key",
 	}
 	svc := NewLLMService(cfg)
