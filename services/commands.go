@@ -82,14 +82,7 @@ func CheckWayland() *WaylandWarning {
 // After a successful copy, a timer is started (using ClipboardClearSecs from config)
 // to clear the clipboard. Any previous pending clear timer is cancelled first.
 func (c *CommandService) CopyToClipboard(text string) error {
-	var copyErr error
-	if isWayland() {
-		copyErr = copyViaWlCopy(text)
-	} else {
-		if c.clipboardSetFn != nil {
-			_ = c.clipboardSetFn(c.ctx, text)
-		}
-	}
+	copyErr := c.copyToClipboardPlatform(text)
 	if copyErr != nil {
 		return copyErr
 	}
@@ -117,14 +110,8 @@ func (c *CommandService) CopyToClipboard(text string) error {
 	if c.clearTimer != nil {
 		c.clearTimer.Stop()
 	}
-	ctx := c.ctx
-	clipFn := c.clipboardSetFn
 	c.clearTimer = time.AfterFunc(time.Duration(secs)*time.Second, func() {
-		if isWayland() {
-			_ = copyViaWlCopy("")
-		} else if ctx != nil && clipFn != nil {
-			_ = clipFn(ctx, "")
-		}
+		_ = c.copyToClipboardPlatform("")
 	})
 	c.clearMu.Unlock()
 
