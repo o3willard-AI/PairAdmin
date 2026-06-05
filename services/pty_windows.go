@@ -6,7 +6,6 @@ package services
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"syscall"
 	"unsafe"
 )
@@ -20,6 +19,14 @@ var (
 	procUpdateProcThreadAttribute     = modkernel32.NewProc("UpdateProcThreadAttribute")
 	procDeleteProcThreadAttributeList = modkernel32.NewProc("DeleteProcThreadAttributeList")
 )
+
+func logPty(msg string) {
+	f, err := os.OpenFile("pty_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err == nil {
+		defer f.Close()
+		f.WriteString(fmt.Sprintf("[%s] %s\n", os.Getenv("USERNAME"), msg))
+	}
+}
 
 // Windows ConPTY constants.
 const (
@@ -37,6 +44,14 @@ type _coord struct {
 // spawns the user's preferred shell inside it, and wires the pipes
 // into the PTY session so xterm.js gets a real bidirectional stream.
 func (s *PTYService) openWindowsConPTY(tabId string) (string, error) {
+	logPty("openWindowsConPTY called")
+
+	// Check if ConPTY is supported on this Windows version.
+	if err := procCreatePseudoConsole.Find(); err != nil {
+		logPty("ConPTY not supported (CreatePseudoConsole not found)")
+		return "", fmt.Errorf("ConPTY not supported: %w", err)
+	}
+
 	// Determine shell: prefer ComSpec, fall back to cmd.exe
 	shell := os.Getenv("ComSpec")
 	if shell == "" {
@@ -44,92 +59,101 @@ func (s *PTYService) openWindowsConPTY(tabId string) (string, error) {
 	}
 
 	// Create pipes for ConPTY communication.
-	// inR/inW: input pipe (PTYService reads output from the console).
-	// outR/outW: output pipe (PTYService writes input to the console).
-	inR, inW, errPipe := os.Pipe()
-	if errPipe != nil {
-		return "", fmt.Errorf("input pipe: %w", errPipe)
+	// We use syscall.CreatePipe to ensure handles are inheritable (required by ConPTY conhost).
+	var sa syscall.SecurityAttributes
+	sa.Length = uint32(unsafe.Sizeof(sa))
+	sa.InheritHandle = 1 // TRUE
+
+	var inR, inW, outR, outW syscall.Handle
+	if err := syscall.CreatePipe(&inR, &inW, &sa, 0); err != nil {
+		logPty(fmt.Sprintf("Failed to create input pipe: %v", err))
+		return "", fmt.Errorf("input pipe: %w", err)
 	}
-	outR, outW, errPipe := os.Pipe()
-	if errPipe != nil {
-		inR.Close()
-		inW.Close()
-		return "", fmt.Errorf("output pipe: %w", errPipe)
+	if err := syscall.CreatePipe(&outR, &outW, &sa, 0); err != nil {
+		syscall.CloseHandle(inR)
+		syscall.CloseHandle(inW)
+		logPty(fmt.Sprintf("Failed to create output pipe: %v", err))
+		return "", fmt.Errorf("output pipe: %w", err)
 	}
 
-	// Create pseudoconsole (default 120x40, will be resized by xterm).
+	// Create pseudoconsole (default 120x40).
 	var hPC syscall.Handle
 	conSize := _coord{X: 120, Y: 40}
 	r0, _, e1 := procCreatePseudoConsole.Call(
 		uintptr(*(*uint32)(unsafe.Pointer(&conSize))),
-		uintptr(inR.Fd()),
-		uintptr(outW.Fd()),
+		uintptr(inR),  // ConPTY reads from here
+		uintptr(outW), // ConPTY writes to here
 		0,
 		uintptr(unsafe.Pointer(&hPC)),
 	)
 	if r0 != 0 {
-		inR.Close(); inW.Close(); outR.Close(); outW.Close()
+		syscall.CloseHandle(inR); syscall.CloseHandle(inW)
+		syscall.CloseHandle(outR); syscall.CloseHandle(outW)
+		logPty(fmt.Sprintf("CreatePseudoConsole failed: hr=0x%x (%v)", r0, e1))
 		return "", fmt.Errorf("CreatePseudoConsole failed: hr=0x%x (%v)", r0, e1)
 	}
 
 	// Prepare STARTUPINFOEX with pseudoconsole attribute.
-	// We need to allocate an attribute list with one entry for the HPCON.
-	siEx, attrList, err := _startupInfoExForConPTY(hPC)
+	siEx, attrList, err := _startupInfoExForConPTY(&hPC)
 	if err != nil {
 		procClosePseudoConsole.Call(uintptr(hPC))
-		inR.Close(); inW.Close(); outR.Close(); outW.Close()
+		syscall.CloseHandle(inR); syscall.CloseHandle(inW)
+		syscall.CloseHandle(outR); syscall.CloseHandle(outW)
+		logPty(fmt.Sprintf("_startupInfoExForConPTY failed: %v", err))
 		return "", fmt.Errorf("startup info: %w", err)
 	}
 
-	// Build process creation flags.
-	// Go's syscall.StartProcess doesn't handle STARTUPINFOEX with attribute lists,
-	// so we call CreateProcessW directly.
-	shell16, _ := syscall.UTF16PtrFromString(shell)
+	// Build process creation command line.
 	cmdLine16, _ := syscall.UTF16PtrFromString(shell)
 
 	var procInfo _processInformation
 	creationFlags := uint32(_EXTENDED_STARTUPINFO_PRESENT)
 
 	procCreateProcessW := modkernel32.NewProc("CreateProcessW")
-	r0, _, e1 := procCreateProcessW.Call(
-		uintptr(unsafe.Pointer(shell16)),            // lpApplicationName
+	r0, _, e1 = procCreateProcessW.Call(
+		0,                                             // lpApplicationName (nil, use cmdLine)
 		uintptr(unsafe.Pointer(cmdLine16)),           // lpCommandLine
 		0,                                             // lpProcessAttributes
 		0,                                             // lpThreadAttributes
-		0,                                             // bInheritHandles (false — ConPTY manages I/O)
+		0,                                             // bInheritHandles (FALSE, ConPTY handles I/O via HPCON)
 		uintptr(creationFlags),                        // dwCreationFlags
 		0,                                             // lpEnvironment
 		0,                                             // lpCurrentDirectory
 		uintptr(unsafe.Pointer(siEx)),                 // lpStartupInfo
 		uintptr(unsafe.Pointer(&procInfo)),            // lpProcessInformation
 	)
-	// Immediately free the attribute list — the process has its own copy.
+
+	// Now we can close the ConPTY-owned ends.
+	syscall.CloseHandle(inR)
+	syscall.CloseHandle(outW)
+
+	// Free the attribute list.
 	procDeleteProcThreadAttributeList.Call(uintptr(unsafe.Pointer(attrList)))
-	_localFree(unsafe.Pointer(siEx))
+	_localFree(unsafe.Pointer(attrList))
 
 	if r0 == 0 {
 		procClosePseudoConsole.Call(uintptr(hPC))
-		inR.Close(); inW.Close(); outR.Close(); outW.Close()
+		syscall.CloseHandle(inW)
+		syscall.CloseHandle(outR)
+		logPty(fmt.Sprintf("CreateProcessW failed: %v", e1))
 		return "", fmt.Errorf("CreateProcess %s failed: %v", shell, e1)
 	}
 
-	// Close the thread handle — we only need the process handle.
+	logPty(fmt.Sprintf("Successfully started %s (PID: %d)", shell, procInfo.dwProcessId))
+
+	// Close thread handle.
 	syscall.CloseHandle(syscall.Handle(procInfo.hThread))
 
-	pid := int(procInfo.dwProcessId)
+	// Wrap handles in os.File for easy reading/writing.
+	fileInW := os.NewFile(uintptr(inW), "pty_in")
+	fileOutR := os.NewFile(uintptr(outR), "pty_out")
 
-	// Close the ends of the pipes that the child owns.
-	// The child inherited inW (write end of input) and outR (read end of output).
-	inW.Close()
-	outR.Close()
-
-	// We own inR (reads console output) and outW (writes console input).
 	session := &ptySession{
-		ptmx:   inR,   // read from this = console output
-		ptyOut: outW,  // write to this = console input
-		hPC:    hPC,
-		pid:    pid,
-		cmd:    nil, // no exec.Cmd — we used raw syscall
+		ptmx:   fileOutR, // read from this = console output
+		ptyOut: fileInW,  // write to this = console input
+		hPC:    uintptr(hPC),
+		pid:    int(procInfo.dwProcessId),
+		cmd:    nil,
 	}
 
 	s.mu.Lock()
@@ -140,7 +164,7 @@ func (s *PTYService) openWindowsConPTY(tabId string) (string, error) {
 	go func() {
 		buf := make([]byte, 4096)
 		for {
-			n, err := inR.Read(buf)
+			n, err := fileOutR.Read(buf)
 			if n > 0 {
 				s.emitFn(s.ctx, "pty:output", PTYOutputEvent{
 					TabID: tabId,
@@ -148,11 +172,12 @@ func (s *PTYService) openWindowsConPTY(tabId string) (string, error) {
 				})
 			}
 			if err != nil {
+				logPty(fmt.Sprintf("Read goroutine exiting for %s: %v", tabId, err))
 				s.mu.Lock()
 				delete(s.sessions, tabId)
 				s.mu.Unlock()
-				inR.Close()
-				outW.Close()
+				fileOutR.Close()
+				fileInW.Close()
 				procClosePseudoConsole.Call(uintptr(hPC))
 				s.emitFn(s.ctx, "pty:closed", map[string]string{"tabId": tabId})
 				return
@@ -165,15 +190,12 @@ func (s *PTYService) openWindowsConPTY(tabId string) (string, error) {
 
 // _startupInfoExForConPTY allocates a STARTUPINFOEXW with the ConPTY HPCON
 // in its PROC_THREAD_ATTRIBUTE_LIST. Caller must free the returned pointers.
-func _startupInfoExForConPTY(hPC syscall.Handle) (*_startupInfoExW, *_procThreadAttributeList, error) {
+func _startupInfoExForConPTY(hPC *syscall.Handle) (*_startupInfoExW, *_procThreadAttributeList, error) {
 	// First pass: get required attribute list size.
 	var size uintptr
-	r0, _, _ := procInitializeProcThreadAttributeList.Call(
+	procInitializeProcThreadAttributeList.Call(
 		0, 1, 0, uintptr(unsafe.Pointer(&size)),
 	)
-	if r0 == 0 {
-		// size now contains the required byte count.
-	}
 
 	buf := _localAlloc(size)
 	if buf == nil {
@@ -192,8 +214,8 @@ func _startupInfoExForConPTY(hPC syscall.Handle) (*_startupInfoExW, *_procThread
 		uintptr(unsafe.Pointer(buf)),
 		0,
 		_PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
-		uintptr(hPC),
-		unsafe.Sizeof(hPC),
+		uintptr(unsafe.Pointer(hPC)),
+		unsafe.Sizeof(*hPC),
 		0,
 		0,
 	)
@@ -204,7 +226,9 @@ func _startupInfoExForConPTY(hPC syscall.Handle) (*_startupInfoExW, *_procThread
 	}
 
 	siEx := &_startupInfoExW{
-		cb:         uint32(unsafe.Sizeof(_startupInfoExW{})),
+		StartupInfo: syscall.StartupInfo{
+			Cb: uint32(unsafe.Sizeof(_startupInfoExW{})),
+		},
 		lpAttributeList: (*_procThreadAttributeList)(buf),
 	}
 	return siEx, (*_procThreadAttributeList)(buf), nil
@@ -212,29 +236,8 @@ func _startupInfoExForConPTY(hPC syscall.Handle) (*_startupInfoExW, *_procThread
 
 // Windows structs for ConPTY process creation.
 type _startupInfoExW struct {
-	_startupInfoW
+	syscall.StartupInfo
 	lpAttributeList *_procThreadAttributeList
-}
-
-type _startupInfoW struct {
-	cb              uint32
-	_               *uint16 // lpReserved
-	_               *uint16 // lpDesktop
-	_               *uint16 // lpTitle
-	_               uint32  // dwX
-	_               uint32  // dwY
-	_               uint32  // dwXSize
-	_               uint32  // dwYSize
-	_               uint32  // dwXCountChars
-	_               uint32  // dwYCountChars
-	_               uint32  // dwFillAttribute
-	_               uint32  // dwFlags
-	_               uint16  // wShowWindow
-	_               uint16  // cbReserved2
-	_               *byte   // lpReserved2
-	_               syscall.Handle // hStdInput
-	_               syscall.Handle // hStdOutput
-	_               syscall.Handle // hStdError
 }
 
 type _procThreadAttributeList struct{}
