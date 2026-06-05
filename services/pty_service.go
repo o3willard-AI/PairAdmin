@@ -68,13 +68,6 @@ func (s *PTYService) OpenNewTerminal(tabId string) (string, error) {
 			HideWindow:    true,       // Do not show the external popup
 		}
 
-		// Assigning os.Stdin prevents Go's exec package from passing os.DevNull,
-		// allowing Windows to assign the new console's native handles to the process.
-		// This is required for cmd.exe to initialize its interactive prompt in the screen buffer.
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
 		err := cmd.Start()
 		if err == nil {
 			pid := uint32(cmd.Process.Pid)

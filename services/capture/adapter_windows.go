@@ -155,11 +155,7 @@ func (a *WindowsAdapter) WriteInput(ctx context.Context, pane PaneInfo, data str
 }
 
 func (a *WindowsAdapter) Capture(ctx context.Context, pane PaneInfo) (string, error) {
-	// Refactoring to Pull-Based Model:
-	// To prevent crashes caused by high-frequency AttachConsole/FreeConsole cycles
-	// in the background polling loop, we no longer capture Windows content automatically.
-	// The frontend must call GetCapturedContent(paneID) explicitly for the active tab.
-	return "", nil
+	return a.GetCapturedContent(pane.ID)
 }
 
 // GetCapturedContent provides an on-demand pull mechanism for Windows console content.
