@@ -103,8 +103,14 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
       ResizeTerminal(tabId, cols, rows).catch(() => {});
     });
 
-    const resizeObserver = new ResizeObserver(() => {
-      if (!disposed.current) fitAddon.fit();
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (disposed.current) return;
+      // Hidden tabs (ancestor display:none) collapse to 0x0 — fitting to that
+      // sends a near-zero resize to the PTY, which truncates the real
+      // console screen buffer. Skip fitting while not actually visible.
+      const { width, height } = entries[0].contentRect;
+      if (width === 0 || height === 0) return;
+      fitAddon.fit();
     });
     resizeObserver.observe(containerRef.current);
 
@@ -139,16 +145,9 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
         <div className="text-center space-y-4 max-w-md">
           <p className="text-lg">No terminal sessions detected.</p>
 
-          <div className="space-y-2">
-            <p className="text-sm text-zinc-500">Option 1: Start a tmux session</p>
-            <code className="block px-3 py-1.5 bg-zinc-800 rounded text-sm text-green-400 font-mono">
-              $ tmux new-session
-            </code>
-          </div>
-
           {atspiOnboarding && (
             <div className="space-y-2">
-              <p className="text-sm text-zinc-500">Option 2: Enable accessibility for GUI terminals</p>
+              <p className="text-sm text-zinc-500">Enable accessibility for GUI terminals</p>
               <code className="block px-3 py-1.5 bg-zinc-800 rounded text-sm text-green-400 font-mono">
                 $ gsettings set org.gnome.desktop.interface toolkit-accessibility true
               </code>

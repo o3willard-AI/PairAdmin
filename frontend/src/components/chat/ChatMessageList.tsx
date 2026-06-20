@@ -14,12 +14,20 @@ export function ChatMessageList({ onRetry }: ChatMessageListProps) {
   const activeTabId = useTerminalStore((s) => s.activeTabId);
   const messages = useChatStore((s) => s.messagesByTab[activeTabId] ?? EMPTY_MESSAGES);
   const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const lastScrollTimeRef = useRef(0);
   const isPinnedRef = useRef(true);
   const prevMsgCountRef = useRef(messages.length);
+  // scrollIntoView fires its own scroll event, asynchronously, after the
+  // browser finishes the scroll. Without this guard, that event reaches
+  // handleScroll while the scroll position hasn't fully settled yet, which
+  // could miscompute distance-from-bottom and spuriously unpin us right when
+  // we most need to stay locked (e.g. the final auto-scroll once streaming
+  // completes).
+  const ignoreScrollRef = useRef(false);
 
   const handleScroll = () => {
+    if (ignoreScrollRef.current) return;
     const el = containerRef.current;
     if (!el) return;
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -27,38 +35,53 @@ export function ChatMessageList({ onRetry }: ChatMessageListProps) {
     isPinnedRef.current = dist <= 50;
   };
 
+  const scrollToBottom = () => {
+    ignoreScrollRef.current = true;
+    bottomRef.current?.scrollIntoView({ block: "end" });
+    // The resulting scroll event can land a frame or two later than the
+    // scroll itself, so wait a couple of frames before re-arming handleScroll.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        ignoreScrollRef.current = false;
+      });
+    });
+  };
+
+  // Re-pin to the bottom whenever a new message bubble appears.
   useEffect(() => {
     const isNewMessage = messages.length > prevMsgCountRef.current;
     prevMsgCountRef.current = messages.length;
-
-    // Always scroll to bottom when a new message appears
     if (isNewMessage) {
       isPinnedRef.current = true;
-      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-      return;
-    }
-
-    // Don't auto-scroll if user manually scrolled up
-    if (!isPinnedRef.current) return;
-
-    const isStreaming = messages.some((m) => m.isStreaming);
-
-    if (isStreaming) {
-      const now = Date.now();
-      if (now - lastScrollTimeRef.current < 150) return;
-      lastScrollTimeRef.current = now;
-      bottomRef.current?.scrollIntoView({ block: "end" });
-    } else {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     }
   }, [messages]);
 
+  // Drive auto-scroll off actual layout growth rather than the messages
+  // array changing. Streaming text, and async syntax highlighting in code
+  // blocks that lands after the message content settles, both change the
+  // content's height without necessarily changing `messages` at that exact
+  // moment — reacting to height directly keeps the view pinned through both,
+  // with a single instant (non-animated) scroll instead of competing
+  // throttled-jump and smooth-scroll calls that fought each other.
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const observer = new ResizeObserver(() => {
+      if (isPinnedRef.current) {
+        scrollToBottom();
+      }
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <div 
-      ref={containerRef} 
+    <div
+      ref={containerRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto p-4 space-y-4"
+      className="app-scrollbar flex-1 overflow-y-scroll p-4"
     >
+      <div ref={contentRef} className="space-y-4">
       {messages.length === 0 ? (
         <div className="flex items-center justify-center h-full py-8">
           <p className="text-zinc-600 text-sm">
@@ -131,6 +154,7 @@ export function ChatMessageList({ onRetry }: ChatMessageListProps) {
         })
       )}
       <div ref={bottomRef} />
+      </div>
     </div>
   );
 }
