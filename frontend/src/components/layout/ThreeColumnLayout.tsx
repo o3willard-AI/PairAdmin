@@ -43,15 +43,16 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
           <TerminalTabList />
         </aside>
 
-        {/* Center column: chat area + terminal preview */}
+        {/* Center column: terminal preview + chat area, top to bottom.
+            The two are flex-basis-0 so they split the available height evenly
+            — the chat input's own fixed height comes out of the chat
+            section's share, so terminal and chat message area end up
+            approximately equal rather than exactly equal. */}
         <main className="flex flex-1 flex-col overflow-hidden">
-          {/* Upper: chat area */}
-          <div className="flex flex-1 flex-col overflow-hidden">{children}</div>
-
-          {/* Lower: xterm.js terminal preview. Each tab keeps its own persistently
+          {/* Upper: xterm.js terminal preview. Each tab keeps its own persistently
               mounted TerminalPreview so switching tabs doesn't recreate (and lose
               the scrollback/session of) the underlying xterm instance. */}
-          <div className="h-[30%] border-t border-zinc-800 relative">
+          <div key="terminal-section" className="flex-1 basis-0 border-b border-zinc-800 relative">
             {tabs.length === 0 && (
               <TerminalPreview tabId="" adapterStatus={adapterStatus} />
             )}
@@ -65,6 +66,9 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
               </div>
             ))}
           </div>
+
+          {/* Lower: chat area (chat message list + input box) */}
+          <div key="chat-section" className="flex flex-1 basis-0 flex-col overflow-hidden">{children}</div>
         </main>
 
         {/* Right column: command sidebar */}
