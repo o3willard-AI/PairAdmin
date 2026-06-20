@@ -29,7 +29,7 @@ export function TerminalTabList() {
           OpenNewTerminal(id)
             .then((resolvedId: string) => {
               if (resolvedId) {
-                const num = store.tabs.length + 1;
+                const num = store.takeNextTabNumber();
                 store.addTab(resolvedId, `Terminal ${num}`);
                 store.setActiveTab(resolvedId);
               }

@@ -22,6 +22,7 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
   useTerminalCapture(); // Subscribe to terminal events from Go service
 
   const activeTabId = useTerminalStore((state) => state.activeTabId);
+  const tabs = useTerminalStore((state) => state.tabs);
   const settingsOpen = useSettingsStore((s) => s.settingsOpen);
   const setSettingsOpen = useSettingsStore((s) => s.setSettingsOpen);
   const [adapterStatus, setAdapterStatus] = useState<AdapterStatusInfo[]>([]);
@@ -47,9 +48,22 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
           {/* Upper: chat area */}
           <div className="flex flex-1 flex-col overflow-hidden">{children}</div>
 
-          {/* Lower: xterm.js terminal preview */}
-          <div className="h-[30%] border-t border-zinc-800">
-            <TerminalPreview tabId={activeTabId} adapterStatus={adapterStatus} />
+          {/* Lower: xterm.js terminal preview. Each tab keeps its own persistently
+              mounted TerminalPreview so switching tabs doesn't recreate (and lose
+              the scrollback/session of) the underlying xterm instance. */}
+          <div className="h-[30%] border-t border-zinc-800 relative">
+            {tabs.length === 0 && (
+              <TerminalPreview tabId="" adapterStatus={adapterStatus} />
+            )}
+            {tabs.map((tab) => (
+              <div
+                key={tab.id}
+                className="absolute inset-0"
+                style={{ display: tab.id === activeTabId ? "block" : "none" }}
+              >
+                <TerminalPreview tabId={tab.id} adapterStatus={adapterStatus} />
+              </div>
+            ))}
           </div>
         </main>
 

@@ -6,8 +6,6 @@ package services
 import (
 	"fmt"
 	"os"
-
-	"github.com/UserExistsError/conpty"
 )
 
 func logPty(msg string) {
@@ -24,20 +22,15 @@ func logPty(msg string) {
 func (s *PTYService) openWindowsConPTY(tabId string) (string, error) {
 	logPty("openWindowsConPTY called")
 
-	if !conpty.IsConPtyAvailable() {
-		logPty("ConPTY not supported on this Windows version")
-		return "", fmt.Errorf("ConPTY not supported")
-	}
-
 	shell := os.Getenv("ComSpec")
 	if shell == "" {
 		shell = "cmd.exe"
 	}
 
-	cpty, err := conpty.Start(shell, conpty.ConPtyDimensions(120, 40))
+	cpty, err := WinConPtyStart(shell, 120, 40)
 	if err != nil {
-		logPty(fmt.Sprintf("conpty.Start failed: %v", err))
-		return "", fmt.Errorf("conpty.Start: %w", err)
+		logPty(fmt.Sprintf("WinConPtyStart failed: %v", err))
+		return "", fmt.Errorf("WinConPtyStart: %w", err)
 	}
 
 	logPty(fmt.Sprintf("Successfully started %s (PID: %d)", shell, cpty.Pid()))
@@ -51,6 +44,32 @@ func (s *PTYService) openWindowsConPTY(tabId string) (string, error) {
 	s.mu.Lock()
 	s.sessions[tabId] = session
 	s.mu.Unlock()
+
+	// Watcher goroutine — ConPTY's pipes stay open after the shell process
+	// exits (e.g. user types "exit"); nothing closes them until we explicitly
+	// call Close(), so the read loop below would otherwise block forever and
+	// leave the session in limbo. Wait() blocks until the process exits, then
+	// forces a Close() to unblock the read loop and trigger normal cleanup.
+	//
+	// Whichever of this goroutine and the read loop below observes the
+	// session first deletes it from the map under the same lock it checks —
+	// that's what guarantees Close() is called exactly once. Without deleting
+	// here, the read loop (unblocked by this goroutine's Close()) would still
+	// find the session present and call Close() a second time, double-closing
+	// the same Windows handles — this previously caused STATUS_HEAP_CORRUPTION
+	// crashes that took the whole app down with it.
+	go func() {
+		cpty.Wait(s.ctx)
+		s.mu.Lock()
+		_, stillOpen := s.sessions[tabId]
+		if stillOpen {
+			delete(s.sessions, tabId)
+		}
+		s.mu.Unlock()
+		if stillOpen {
+			cpty.Close()
+		}
+	}()
 
 	// Read goroutine — pumps console output to xterm.js.
 	go func() {
@@ -84,7 +103,7 @@ func (s *PTYService) openWindowsConPTY(tabId string) (string, error) {
 
 // writeConPTYInput writes data to the pseudoconsole's input stream.
 func (s *PTYService) writeConPTYInput(winPty interface{}, data string) error {
-	cpty, ok := winPty.(*conpty.ConPty)
+	cpty, ok := winPty.(*WinConPty)
 	if !ok || cpty == nil {
 		return nil
 	}
@@ -94,7 +113,7 @@ func (s *PTYService) writeConPTYInput(winPty interface{}, data string) error {
 
 // resizeConPTY resizes the pseudoconsole to match xterm.js dimensions.
 func (s *PTYService) resizeConPTY(winPty interface{}, cols, rows int) error {
-	cpty, ok := winPty.(*conpty.ConPty)
+	cpty, ok := winPty.(*WinConPty)
 	if !ok || cpty == nil {
 		return nil
 	}
@@ -103,7 +122,7 @@ func (s *PTYService) resizeConPTY(winPty interface{}, cols, rows int) error {
 
 // closeConPTY closes the pseudoconsole and terminates its attached process.
 func (s *PTYService) closeConPTY(winPty interface{}) {
-	cpty, ok := winPty.(*conpty.ConPty)
+	cpty, ok := winPty.(*WinConPty)
 	if !ok || cpty == nil {
 		return
 	}

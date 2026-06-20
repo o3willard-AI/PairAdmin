@@ -13,12 +13,17 @@ export interface TerminalTab {
 interface TerminalState {
   tabs: TerminalTab[];
   activeTabId: string;
+  nextTabNumber: number;
   setActiveTab: (tabId: string) => void;
   addTab: (id: string, name: string, degraded?: boolean, degradedMsg?: string) => void;
   removeTab: (id: string) => void;
   clearTabs: () => void;
   setTermRef: (tabId: string, term: Terminal | null) => void;
   getTermRef: (tabId: string) => Terminal | undefined;
+  /** Returns a number guaranteed unused by any current or past tab in this
+   * session, for use in auto-generated tab names like "Terminal N". Unlike
+   * tabs.length, this never gets reused after a tab is closed. */
+  takeNextTabNumber: () => number;
 }
 
 // Outside the store — NOT in Zustand state (xterm objects are not serializable)
@@ -29,6 +34,7 @@ export const useTerminalStore = create<TerminalState>()(
     immer((set) => ({
       tabs: [],
       activeTabId: "",
+      nextTabNumber: 1,
       setActiveTab: (tabId) => {
         set((state) => {
           state.activeTabId = tabId;
@@ -68,6 +74,14 @@ export const useTerminalStore = create<TerminalState>()(
       },
       getTermRef: (tabId) => {
         return termRefsMap.get(tabId);
+      },
+      takeNextTabNumber: () => {
+        let n = 0;
+        set((state) => {
+          n = state.nextTabNumber;
+          state.nextTabNumber += 1;
+        });
+        return n;
       },
     })),
     { name: "terminal-store" }
