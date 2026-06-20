@@ -12,8 +12,10 @@ export function CodeBlock({ code, language = "text", isStreaming }: CodeBlockPro
   const activeTabId = useTerminalStore((s) => s.activeTabId);
 
   const sendToTerminal = (execute: boolean) => {
+    // Terminals submit a line on carriage return ("\r"), not "\n" — writing
+    // "\n" alone just inserts a newline character without triggering execution.
     import(/* @vite-ignore */ "../../../wailsjs/go/services/PTYService")
-      .then(({ WriteInput }) => WriteInput(activeTabId, execute ? code + "\n" : code))
+      .then(({ WriteInput }) => WriteInput(activeTabId, execute ? code + "\r" : code))
       .catch(() => {});
     if (execute) {
       useCommandStore.getState().addCommand(activeTabId, {
@@ -21,6 +23,9 @@ export function CodeBlock({ code, language = "text", isStreaming }: CodeBlockPro
         originalQuestion: "",
       });
     }
+    // Move focus to the terminal so a subsequent Enter keypress is sent to
+    // the shell instead of re-triggering whatever has DOM focus in the chat pane.
+    useTerminalStore.getState().getTermRef(activeTabId)?.focus();
   };
 
   return (
