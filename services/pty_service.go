@@ -16,11 +16,10 @@ import (
 )
 
 type ptySession struct {
-	ptmx   *os.File  // Unix: pseudoterminal master; Windows: console output reader
-	ptyOut *os.File  // Windows only: console input writer (nil on Unix)
-	hPC    uintptr   // Windows only: pseudoconsole handle (0 on Unix)
-	pid    int       // Windows only: child process ID (0 on Unix)
-	cmd    *exec.Cmd // Store cmd to allow killing process
+	ptmx   *os.File    // Unix: pseudoterminal master
+	winPty interface{} // Windows only: *conpty.ConPty (nil on Unix / non-ConPTY tabs)
+	pid    int         // Windows only: child process ID (0 on Unix)
+	cmd    *exec.Cmd   // Store cmd to allow killing process
 }
 
 // PTYOutputEvent is emitted on "pty:output" events.
@@ -67,6 +66,13 @@ func (s *PTYService) OpenNewTerminal(tabId string) (string, error) {
 			CreationFlags: 0x00000010, // CREATE_NEW_CONSOLE
 			HideWindow:    true,       // Do not show the external popup
 		}
+		// Assigning os.Stdin/Stdout/Stderr prevents Go's exec package from
+		// passing os.DevNull, which lets Windows attach the new console's
+		// native screen buffer to the process — required for cmd.exe to
+		// initialize its interactive prompt.
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 
 		err := cmd.Start()
 		if err == nil {
@@ -145,7 +151,9 @@ func (s *PTYService) OpenNewTerminal(tabId string) (string, error) {
 func (s *PTYService) CloseTerminal(tabId string) error {
 	s.mu.Lock()
 	session, ok := s.sessions[tabId]
-	delete(s.sessions, tabId)
+	if ok {
+		delete(s.sessions, tabId)
+	}
 	s.mu.Unlock()
 
 	if !ok {
@@ -157,12 +165,8 @@ func (s *PTYService) CloseTerminal(tabId string) error {
 	if session.ptmx != nil {
 		session.ptmx.Close()
 	}
-	if session.ptyOut != nil {
-		session.ptyOut.Close()
-	}
-	if session.hPC != 0 {
-		// ConPTY: close pseudoconsole via kernel32
-		s.closeConPTY(session.hPC)
+	if session.winPty != nil {
+		s.closeConPTY(session.winPty)
 	}
 	if session.cmd != nil && session.cmd.Process != nil {
 		pid := uint32(session.cmd.Process.Pid)
@@ -188,14 +192,14 @@ func (s *PTYService) WriteInput(tabId string, data string) error {
 	s.mu.Unlock()
 
 	// If it's a native Windows console (no PTY), route to CaptureManager
-	if !ok || (session.ptmx == nil && session.ptyOut == nil) {
+	if !ok || (session.ptmx == nil && session.winPty == nil) {
 		if s.captureManager != nil {
 			return s.captureManager.WriteInput(tabId, data)
 		}
 		return nil
 	}
-	if runtime.GOOS == "windows" && session.ptyOut != nil {
-		return s.writeConPTYInput(tabId, data)
+	if runtime.GOOS == "windows" && session.winPty != nil {
+		return s.writeConPTYInput(session.winPty, data)
 	}
 	_, err := session.ptmx.Write([]byte(data))
 	return err
@@ -208,8 +212,8 @@ func (s *PTYService) ResizeTerminal(tabId string, cols, rows int) error {
 	if !ok {
 		return nil // not a PTY tab — silently ignore
 	}
-	if runtime.GOOS == "windows" && session.hPC != 0 {
-		return s.resizeConPTY(tabId, cols, rows)
+	if runtime.GOOS == "windows" && session.winPty != nil {
+		return s.resizeConPTY(session.winPty, cols, rows)
 	}
 	return pty.Setsize(session.ptmx, &pty.Winsize{
 		Cols: uint16(cols),

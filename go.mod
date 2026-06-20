@@ -4,6 +4,7 @@ go 1.24.11
 
 require (
 	github.com/99designs/keyring v1.2.2
+	github.com/UserExistsError/conpty v0.1.4
 	github.com/anthropics/anthropic-sdk-go v1.27.1
 	github.com/awnumar/memguard v0.23.0
 	github.com/creack/pty v1.1.24
