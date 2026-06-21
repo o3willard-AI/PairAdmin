@@ -17,6 +17,7 @@ interface TerminalState {
   setActiveTab: (tabId: string) => void;
   addTab: (id: string, name: string, degraded?: boolean, degradedMsg?: string) => void;
   removeTab: (id: string) => void;
+  renameTab: (id: string, name: string) => void;
   clearTabs: () => void;
   setTermRef: (tabId: string, term: Terminal | null) => void;
   getTermRef: (tabId: string) => Terminal | undefined;
@@ -57,6 +58,12 @@ export const useTerminalStore = create<TerminalState>()(
           }
         });
         termRefsMap.delete(id); // cleanup xterm ref
+      },
+      renameTab: (id, name) => {
+        set((state) => {
+          const tab = state.tabs.find((t) => t.id === id);
+          if (tab) tab.name = name;
+        });
       },
       clearTabs: () => {
         set((state) => {

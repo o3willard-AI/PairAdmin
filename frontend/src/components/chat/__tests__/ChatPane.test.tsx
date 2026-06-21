@@ -18,13 +18,20 @@ vi.mock("../../../../wailsjs/go/services/SettingsService", () => ({
   SetContextLines: vi.fn().mockResolvedValue("Context set to 300 lines"),
   ForceRefresh: vi.fn().mockResolvedValue("Terminal content refreshed"),
   ExportChat: vi.fn().mockResolvedValue("/home/user/pairadmin-export.json"),
-  RenameTab: vi.fn().mockResolvedValue("Tab renamed to myterm"),
+}));
+
+// Mock Wails PTYService
+const mockCloseTerminal = vi.fn().mockResolvedValue(undefined);
+vi.mock("../../../../wailsjs/go/services/PTYService", () => ({
+  CloseTerminal: (...args: unknown[]) => mockCloseTerminal(...args),
 }));
 
 // Mock Wails runtime
+const mockQuit = vi.fn();
 vi.mock("../../../../wailsjs/runtime/runtime", () => ({
   EventsOn: vi.fn(() => vi.fn()),
   EventsOff: vi.fn(),
+  Quit: (...args: unknown[]) => mockQuit(...args),
 }));
 
 // Mock useTheme
@@ -57,6 +64,8 @@ function getSystemMessages(tabId = "test-tab") {
 beforeEach(() => {
   vi.clearAllMocks();
   mockSetTheme.mockClear();
+  mockCloseTerminal.mockClear();
+  mockQuit.mockClear();
   // Reset stores — initialize messagesByTab with the active tab key to avoid
   // getSnapshot returning a new [] on every selector call (Zustand infinite loop).
   useChatStore.setState({ messagesByTab: { "test-tab": [] } });
@@ -201,18 +210,36 @@ describe("ChatPane slash command router", () => {
     });
   });
 
-  it("/rename myterm dispatches to SettingsService.RenameTab with label 'myterm'", async () => {
-    const { RenameTab } = await import("../../../../wailsjs/go/services/SettingsService");
+  it("/rename myterm renames the active tab in terminalStore", async () => {
     render(<ChatPane />);
     await sendCommand(getInput(), "/rename myterm");
 
     await waitFor(() => {
-      expect(RenameTab).toHaveBeenCalledWith("test-tab", "myterm");
+      const tab = useTerminalStore.getState().tabs.find((t) => t.id === "test-tab");
+      expect(tab?.name).toBe("myterm");
     });
 
     await waitFor(() => {
       const sysMessages = getSystemMessages();
       expect(sysMessages.some((m) => m.content === "Tab renamed to myterm")).toBe(true);
+    });
+  });
+
+  it("/exit closes every terminal session then quits the app", async () => {
+    useTerminalStore.setState({
+      activeTabId: "test-tab",
+      tabs: [
+        { id: "test-tab", name: "tab1" },
+        { id: "tab-2", name: "tab2" },
+      ],
+    });
+    render(<ChatPane />);
+    await sendCommand(getInput(), "/exit");
+
+    await waitFor(() => {
+      expect(mockCloseTerminal).toHaveBeenCalledWith("test-tab");
+      expect(mockCloseTerminal).toHaveBeenCalledWith("tab-2");
+      expect(mockQuit).toHaveBeenCalled();
     });
   });
 
