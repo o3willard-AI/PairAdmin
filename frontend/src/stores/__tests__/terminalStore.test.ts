@@ -109,6 +109,24 @@ describe("terminalStore", () => {
     expect(useTerminalStore.getState().getTermRef("%0")).toBeUndefined();
   });
 
+  // --- renameTab ---
+  it("renameTab changes the name of the targeted tab only", () => {
+    useTerminalStore.getState().addTab("%0", "main:0.0");
+    useTerminalStore.getState().addTab("%1", "main:0.1");
+    useTerminalStore.getState().renameTab("%0", "My Custom Name");
+    const { tabs } = useTerminalStore.getState();
+    expect(tabs.find((t) => t.id === "%0")?.name).toBe("My Custom Name");
+    expect(tabs.find((t) => t.id === "%1")?.name).toBe("main:0.1");
+  });
+
+  it("renameTab on an unknown id is a no-op", () => {
+    useTerminalStore.getState().addTab("%0", "main:0.0");
+    useTerminalStore.getState().renameTab("does-not-exist", "ignored");
+    expect(useTerminalStore.getState().tabs).toEqual([
+      expect.objectContaining({ id: "%0", name: "main:0.0" }),
+    ]);
+  });
+
   it("clearTabs removes all term refs from termRefsMap", () => {
     const mockTerm0 = { dispose: vi.fn() } as unknown as Terminal;
     const mockTerm1 = { dispose: vi.fn() } as unknown as Terminal;

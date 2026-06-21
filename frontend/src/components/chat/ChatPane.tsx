@@ -16,6 +16,7 @@ const HELP_TEXT = `/clear - Clear chat history for current tab
 /export json|txt - Export current session chat history
 /rename <label> - Rename current terminal tab
 /theme dark|light - Switch color scheme
+/exit - Close all terminal sessions and quit the application
 /help - Show this help message`;
 
 export function ChatPane() {
@@ -136,20 +137,31 @@ export function ChatPane() {
       return;
     }
 
-    // /rename — Go backend call per D-07
+    // /rename — frontend-only tab display name (the same store the new
+    // right-click "Rename" terminal-tab action uses)
     if (trimmed.startsWith("/rename ")) {
       const label = trimmed.slice(8).trim();
       if (!label) {
         useChatStore.getState().addSystemMessage(activeTabId, "Usage: /rename <label>");
         return;
       }
-      import(/* @vite-ignore */ "../../../wailsjs/go/services/SettingsService")
-        .then(({ RenameTab }) => RenameTab(activeTabId, label))
-        .then((response: string) => {
-          useChatStore.getState().addSystemMessage(activeTabId, response);
-        })
-        .catch((err: Error) => {
-          useChatStore.getState().addSystemMessage(activeTabId, `Error: ${err?.message ?? "Unknown error"}`);
+      useTerminalStore.getState().renameTab(activeTabId, label);
+      useChatStore.getState().addSystemMessage(activeTabId, `Tab renamed to ${label}`);
+      return;
+    }
+
+    // /exit — gracefully close every terminal session, then quit the app
+    if (trimmed === "/exit") {
+      const tabs = useTerminalStore.getState().tabs;
+      import(/* @vite-ignore */ "../../../wailsjs/go/services/PTYService")
+        .then(({ CloseTerminal }) =>
+          Promise.allSettled(tabs.map((t) => CloseTerminal(t.id)))
+        )
+        .catch(() => {})
+        .finally(() => {
+          import(/* @vite-ignore */ "../../../wailsjs/runtime/runtime")
+            .then(({ Quit }) => Quit())
+            .catch(() => {});
         });
       return;
     }
