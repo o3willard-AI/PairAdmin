@@ -85,9 +85,10 @@ export const useChatStore = create<ChatState>()(
           if (!msg) return;
           msg.content = msg.content.replace(/▋$/, "");
           msg.isStreaming = false;
-          if (tokenCount !== undefined) {
-            msg.tokenCount = tokenCount;
-          }
+          // The backend doesn't report real usage figures yet, so estimate
+          // from content length (~4 chars/token, the same rule of thumb
+          // services/llm/context.go uses) rather than showing nothing.
+          msg.tokenCount = tokenCount ?? Math.ceil(msg.content.length / 4);
         });
       },
       setStreamError: (tabId, msgId, errorText) => {

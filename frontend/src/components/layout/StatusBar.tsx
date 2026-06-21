@@ -3,9 +3,22 @@ import { useChatStore } from "@/stores/chatStore";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 
+const CONNECTION_LABEL: Record<string, string> = {
+  checking: "Checking…",
+  connected: "Connected",
+  disconnected: "Disconnected",
+};
+
+const CONNECTION_DOT: Record<string, string> = {
+  checking: "bg-zinc-600",
+  connected: "bg-green-500",
+  disconnected: "bg-red-500",
+};
+
 export function StatusBar() {
   const activeTabId = useTerminalStore((s) => s.activeTabId);
   const activeModel = useSettingsStore((s) => s.activeModel);
+  const connectionStatus = useSettingsStore((s) => s.connectionStatus);
   const setSettingsOpen = useSettingsStore((s) => s.setSettingsOpen);
   const lastTokenCount = useChatStore((s) => {
     const msgs = s.messagesByTab[activeTabId];
@@ -25,8 +38,9 @@ export function StatusBar() {
       </div>
 
       {/* Center: connection status */}
-      <div className="flex-1 text-center">
-        <span>Disconnected</span>
+      <div className="flex-1 text-center flex items-center justify-center gap-1.5">
+        <span className={`inline-block w-1.5 h-1.5 rounded-full ${CONNECTION_DOT[connectionStatus]}`} />
+        <span>{CONNECTION_LABEL[connectionStatus]}</span>
       </div>
 
       {/* Right: token meter */}

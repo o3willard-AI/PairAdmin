@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useChatStore } from "@/stores/chatStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 export function useLLMStream(tabId: string) {
   const msgIdRef = useRef<string | null>(null);
@@ -42,6 +43,9 @@ export function useLLMStream(tabId: string) {
       msgIdRef.current = null;
       nextSeqRef.current = 0;
       pendingRef.current.clear();
+      // A successful response confirms the provider is actually reachable,
+      // independent of whatever the startup connectivity check found.
+      useSettingsStore.getState().setConnectionStatus("connected");
     };
 
     const handleError = (event: { error: string }) => {
@@ -49,6 +53,7 @@ export function useLLMStream(tabId: string) {
       msgIdRef.current = null;
       nextSeqRef.current = 0;
       pendingRef.current.clear();
+      useSettingsStore.getState().setConnectionStatus("disconnected");
     };
 
     let unsubChunk: (() => void) | null = null;
