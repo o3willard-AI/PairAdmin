@@ -57,7 +57,9 @@ export const useCommandStore = create<CommandState>()(
       },
       clearAll: () => {
         set((state) => {
-          state.commands = [];
+          // Pinned commands are deliberately kept around — clearing history
+          // shouldn't remove the ones the user explicitly chose to keep.
+          state.commands = state.commands.filter((c) => c.pinned);
         });
       },
       togglePin: (id) => {

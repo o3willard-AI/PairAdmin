@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Copy, RotateCw, Pin, PinOff, Trash2, Pencil, History } from "lucide-react";
 import { useCommandStore, type Command } from "@/stores/commandStore";
 import {
@@ -34,12 +34,26 @@ export function CommandCard({
 }: CommandCardProps) {
   const [editing, setEditing] = useState<"permanent" | "temporary" | null>(null);
   const [editValue, setEditValue] = useState("");
+  const editInputRef = useRef<HTMLInputElement>(null);
   const displayText = command.tempOverride ?? command.command;
 
   const startEdit = (mode: "permanent" | "temporary") => {
     setEditValue(displayText);
     setEditing(mode);
   };
+
+  // The context menu closes when "Edit" is clicked and returns focus to its
+  // trigger asynchronously for accessibility — but entering edit mode
+  // replaces that trigger entirely with this input. autoFocus alone loses
+  // that race intermittently: the menu's focus-return steals focus right
+  // back, firing onBlur (which commits) before the user can type anything,
+  // making edits appear to silently do nothing. Deferring to the next frame
+  // ensures our focus call runs after the menu's own settles.
+  useEffect(() => {
+    if (!editing) return;
+    const id = requestAnimationFrame(() => editInputRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [editing]);
 
   const commitEdit = () => {
     if (editing === "permanent") {
@@ -56,7 +70,7 @@ export function CommandCard({
     return (
       <div className="w-full px-3 py-2 bg-zinc-900 rounded border border-zinc-700">
         <input
-          autoFocus
+          ref={editInputRef}
           value={editValue}
           onChange={(e) => setEditValue(e.target.value)}
           onKeyDown={(e) => {
@@ -119,9 +133,14 @@ export function CommandCard({
               <RotateCw size={12} />
             </button>
           </ContextMenuTrigger>
-          <TooltipContent side="left" className="max-w-[200px]">
-            <p className="text-xs text-zinc-400 mb-0.5">Generated from:</p>
-            <p className="text-xs">{command.originalQuestion}</p>
+          <TooltipContent side="left" className="max-w-[280px]">
+            <p className="text-xs font-mono break-all">{displayText}</p>
+            {command.originalQuestion && (
+              <>
+                <p className="text-xs text-zinc-400 mt-1.5 mb-0.5">Generated from:</p>
+                <p className="text-xs">{command.originalQuestion}</p>
+              </>
+            )}
           </TooltipContent>
         </Tooltip>
         <ContextMenuContent>

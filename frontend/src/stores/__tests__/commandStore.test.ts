@@ -40,11 +40,18 @@ describe("commandStore", () => {
     expect(cmds.map((c) => c.command)).toEqual(["cmd1", "cmd2"]);
   });
 
-  it("clearAll empties the entire shared list", () => {
+  it("clearAll empties unpinned commands but keeps pinned ones", () => {
     useCommandStore.getState().addCommand("tab-1", { command: "cmd1", originalQuestion: "q1" });
     useCommandStore.getState().addCommand("tab-2", { command: "cmd2", originalQuestion: "q2" });
+    const pinnedId = useCommandStore.getState().commands[0].id;
+    useCommandStore.getState().togglePin(pinnedId);
+
     useCommandStore.getState().clearAll();
-    expect(useCommandStore.getState().commands).toHaveLength(0);
+
+    const remaining = useCommandStore.getState().commands;
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].command).toBe("cmd1");
+    expect(remaining[0].pinned).toBe(true);
   });
 
   it("togglePin flips a command's pinned state", () => {
