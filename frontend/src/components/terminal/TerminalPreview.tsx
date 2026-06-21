@@ -67,6 +67,50 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
 
     termRef.current = term;
 
+    // xterm maps Ctrl+C/Ctrl+V to their literal terminal control codes
+    // (\x03 SIGINT, \x16) by default — neither is connected to the OS
+    // clipboard on its own. xterm's hidden textarea *also* has its own
+    // internal listener for the browser's native "paste" event, so handling
+    // Ctrl+V only via this keydown hook isn't enough by itself: that
+    // internal listener can still fire independently and paste a second
+    // time. Capture-and-block the native paste event on the textarea
+    // directly so our explicit handling below is the only thing that ever
+    // runs.
+    const textarea = (term as unknown as { textarea?: HTMLTextAreaElement }).textarea;
+    const blockNativePaste = (e: Event) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+    textarea?.addEventListener("paste", blockNativePaste, { capture: true });
+
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type !== "keydown" || !(event.ctrlKey || event.metaKey)) return true;
+      if (event.shiftKey || event.altKey) return true;
+
+      if (event.key.toLowerCase() === "c") {
+        const selection = term.getSelection();
+        if (selection) {
+          navigator.clipboard.writeText(selection).catch(() => {});
+          return false;
+        }
+        return true;
+      }
+
+      if (event.key.toLowerCase() === "v") {
+        navigator.clipboard
+          .readText()
+          .then((text) => {
+            if (text && !disposed.current) {
+              WriteInput(tabId, text).catch(() => {});
+            }
+          })
+          .catch(() => {});
+        return false;
+      }
+
+      return true;
+    });
+
     // PTY output → xterm
     let unsubPtyOutput: (() => void) | null = null;
     let windowsPullInterval: number | null = null;
@@ -116,6 +160,7 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
 
     return () => {
       disposed.current = true; // must be first — blocks all in-flight callbacks
+      textarea?.removeEventListener("paste", blockNativePaste, { capture: true });
       resizeObserver.disconnect();
       unsubPtyOutput?.();
       if (windowsPullInterval) window.clearInterval(windowsPullInterval);
