@@ -18,37 +18,72 @@ describe("CommandCard", () => {
   it("renders the command text", () => {
     render(
       <TooltipProvider>
-        <CommandCard command={mockCommand} onCopy={vi.fn()} />
+        <CommandCard command={mockCommand} onCopy={vi.fn()} onExecute={vi.fn()} />
       </TooltipProvider>
     );
 
     expect(screen.getByText("sudo systemctl restart nginx")).toBeInTheDocument();
   });
 
-  it("calls onCopy with the command string when clicked", async () => {
+  it("calls onCopy with the command string when the copy icon is clicked", async () => {
     const onCopy = vi.fn();
+    const onExecute = vi.fn();
     const user = userEvent.setup();
     render(
       <TooltipProvider>
-        <CommandCard command={mockCommand} onCopy={onCopy} />
+        <CommandCard command={mockCommand} onCopy={onCopy} onExecute={onExecute} />
       </TooltipProvider>
     );
 
-    await user.click(screen.getAllByRole("button")[0]);
+    await user.click(screen.getByRole("button", { name: /copy to terminal/i }));
 
     expect(onCopy).toHaveBeenCalledWith("sudo systemctl restart nginx");
     expect(onCopy).toHaveBeenCalledTimes(1);
+    expect(onExecute).not.toHaveBeenCalled();
   });
 
-  it("renders tooltip with the originalQuestion text", async () => {
+  it("calls onExecute with the command string when the execute icon is clicked", async () => {
+    const onCopy = vi.fn();
+    const onExecute = vi.fn();
     const user = userEvent.setup();
     render(
       <TooltipProvider>
-        <CommandCard command={mockCommand} onCopy={vi.fn()} />
+        <CommandCard command={mockCommand} onCopy={onCopy} onExecute={onExecute} />
       </TooltipProvider>
     );
 
-    await user.hover(screen.getAllByRole("button")[0]);
+    await user.click(screen.getByRole("button", { name: /execute in terminal/i }));
+
+    expect(onExecute).toHaveBeenCalledWith("sudo systemctl restart nginx");
+    expect(onExecute).toHaveBeenCalledTimes(1);
+    expect(onCopy).not.toHaveBeenCalled();
+  });
+
+  it("clicking the card itself (not an icon) triggers neither action", async () => {
+    const onCopy = vi.fn();
+    const onExecute = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <TooltipProvider>
+        <CommandCard command={mockCommand} onCopy={onCopy} onExecute={onExecute} />
+      </TooltipProvider>
+    );
+
+    await user.click(screen.getByTestId("command-card"));
+
+    expect(onCopy).not.toHaveBeenCalled();
+    expect(onExecute).not.toHaveBeenCalled();
+  });
+
+  it("renders tooltip with the originalQuestion text on hover", async () => {
+    const user = userEvent.setup();
+    render(
+      <TooltipProvider>
+        <CommandCard command={mockCommand} onCopy={vi.fn()} onExecute={vi.fn()} />
+      </TooltipProvider>
+    );
+
+    await user.hover(screen.getByTestId("command-card"));
 
     expect(screen.getByText("How do I restart nginx?")).toBeInTheDocument();
   });

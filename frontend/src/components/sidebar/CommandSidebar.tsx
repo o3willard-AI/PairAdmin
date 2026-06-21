@@ -8,13 +8,12 @@ import { ClearHistoryButton } from "./ClearHistoryButton";
 
 export function CommandSidebar() {
   const activeTabId = useTerminalStore((state) => state.activeTabId);
-  // Subscribe to the actual per-tab command array (not the getCommandsForTab
-  // function, whose reference never changes) so Zustand re-renders this
-  // panel whenever a command is added.
-  const tabCommands = useCommandStore((state) => state.commandsByTab[activeTabId]);
+  // Commands are shared across every terminal tab — switching tabs only
+  // changes which terminal a click writes to, not which commands are shown.
+  const allCommands = useCommandStore((state) => state.commands);
   const commands = useMemo(
-    () => [...(tabCommands ?? [])].sort((a, b) => b.timestamp - a.timestamp),
-    [tabCommands]
+    () => [...allCommands].sort((a, b) => b.timestamp - a.timestamp),
+    [allCommands]
   );
 
   return (
@@ -35,6 +34,7 @@ export function CommandSidebar() {
                 key={command.id}
                 command={command}
                 onCopy={(text) => sendToTerminal(activeTabId, text, false)}
+                onExecute={(text) => sendToTerminal(activeTabId, text, true)}
               />
             ))
           )}
@@ -43,7 +43,7 @@ export function CommandSidebar() {
 
       <div className="p-2 border-t border-zinc-800">
         <ClearHistoryButton
-          onClick={() => useCommandStore.getState().clearTab(activeTabId)}
+          onClick={() => useCommandStore.getState().clearAll()}
         />
       </div>
     </div>
