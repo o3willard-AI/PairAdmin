@@ -1,20 +1,21 @@
-import { useEffect } from "react";
+import { useMemo } from "react";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useCommandStore } from "@/stores/commandStore";
-import { useWailsClipboard } from "@/hooks/useWailsClipboard";
+import { sendToTerminal } from "@/utils/sendToTerminal";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CommandCard } from "./CommandCard";
 import { ClearHistoryButton } from "./ClearHistoryButton";
 
 export function CommandSidebar() {
   const activeTabId = useTerminalStore((state) => state.activeTabId);
-  const getCommandsForTab = useCommandStore((state) => state.getCommandsForTab);
-  const commands = getCommandsForTab(activeTabId);
-  const { copyToClipboard } = useWailsClipboard();
-
-  useEffect(() => {
-    useCommandStore.getState().initMockData();
-  }, []);
+  // Subscribe to the actual per-tab command array (not the getCommandsForTab
+  // function, whose reference never changes) so Zustand re-renders this
+  // panel whenever a command is added.
+  const tabCommands = useCommandStore((state) => state.commandsByTab[activeTabId]);
+  const commands = useMemo(
+    () => [...(tabCommands ?? [])].sort((a, b) => b.timestamp - a.timestamp),
+    [tabCommands]
+  );
 
   return (
     <div className="flex flex-col h-full">
@@ -33,7 +34,7 @@ export function CommandSidebar() {
               <CommandCard
                 key={command.id}
                 command={command}
-                onCopy={copyToClipboard}
+                onCopy={(text) => sendToTerminal(activeTabId, text, false)}
               />
             ))
           )}

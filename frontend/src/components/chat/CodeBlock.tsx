@@ -1,6 +1,7 @@
 import CodeHighlighter from "react-shiki";
 import { useCommandStore } from "@/stores/commandStore";
 import { useTerminalStore } from "@/stores/terminalStore";
+import { sendToTerminal } from "@/utils/sendToTerminal";
 
 interface CodeBlockProps {
   code: string;
@@ -11,21 +12,14 @@ interface CodeBlockProps {
 export function CodeBlock({ code, language = "text", isStreaming }: CodeBlockProps) {
   const activeTabId = useTerminalStore((s) => s.activeTabId);
 
-  const sendToTerminal = (execute: boolean) => {
-    // Terminals submit a line on carriage return ("\r"), not "\n" — writing
-    // "\n" alone just inserts a newline character without triggering execution.
-    import(/* @vite-ignore */ "../../../wailsjs/go/services/PTYService")
-      .then(({ WriteInput }) => WriteInput(activeTabId, execute ? code + "\r" : code))
-      .catch(() => {});
+  const handleSend = (execute: boolean) => {
+    sendToTerminal(activeTabId, code, execute);
     if (execute) {
       useCommandStore.getState().addCommand(activeTabId, {
         command: code,
         originalQuestion: "",
       });
     }
-    // Move focus to the terminal so a subsequent Enter keypress is sent to
-    // the shell instead of re-triggering whatever has DOM focus in the chat pane.
-    useTerminalStore.getState().getTermRef(activeTabId)?.focus();
   };
 
   return (
@@ -35,14 +29,14 @@ export function CodeBlock({ code, language = "text", isStreaming }: CodeBlockPro
         {!isStreaming && (
           <div className="flex items-center gap-3">
             <button
-              onClick={() => sendToTerminal(false)}
+              onClick={() => handleSend(false)}
               className="hover:text-foreground transition-colors"
               aria-label="Copy to Terminal"
             >
               Copy to Terminal
             </button>
             <button
-              onClick={() => sendToTerminal(true)}
+              onClick={() => handleSend(true)}
               className="hover:text-foreground transition-colors"
               aria-label="Execute in Terminal"
             >

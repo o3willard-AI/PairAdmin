@@ -17,6 +17,13 @@ vi.mock("@/stores/terminalStore", () => ({
     selector({ activeTabId: "bash-1" }),
 }));
 
+// Mock the PTY-write utility so we're testing CodeBlock's own wiring, not
+// the Wails binding it ultimately calls.
+const mockSendToTerminal = vi.fn();
+vi.mock("@/utils/sendToTerminal", () => ({
+  sendToTerminal: (...args: unknown[]) => mockSendToTerminal(...args),
+}));
+
 // Mock commandStore
 const mockAddCommand = vi.fn();
 vi.mock("@/stores/commandStore", () => ({
@@ -28,6 +35,7 @@ vi.mock("@/stores/commandStore", () => ({
 describe("CodeBlock", () => {
   beforeEach(() => {
     mockAddCommand.mockClear();
+    mockSendToTerminal.mockClear();
   });
 
   it("renders syntax-highlighted code block (react-shiki present in DOM)", () => {
@@ -46,9 +54,17 @@ describe("CodeBlock", () => {
     expect(screen.getByRole("button", { name: /copy to terminal/i })).toBeInTheDocument();
   });
 
-  it("clicking Copy to Terminal calls commandStore.addCommand with the code content", () => {
+  it("clicking Copy to Terminal sends the code to the terminal without executing or logging it as a command", () => {
     render(<CodeBlock code="echo hello" language="bash" isStreaming={false} />);
     fireEvent.click(screen.getByRole("button", { name: /copy to terminal/i }));
+    expect(mockSendToTerminal).toHaveBeenCalledWith("bash-1", "echo hello", false);
+    expect(mockAddCommand).not.toHaveBeenCalled();
+  });
+
+  it("clicking Execute in Terminal sends and executes the code, and logs it as a command", () => {
+    render(<CodeBlock code="echo hello" language="bash" isStreaming={false} />);
+    fireEvent.click(screen.getByRole("button", { name: /execute in terminal/i }));
+    expect(mockSendToTerminal).toHaveBeenCalledWith("bash-1", "echo hello", true);
     expect(mockAddCommand).toHaveBeenCalledWith(
       "bash-1",
       expect.objectContaining({ command: "echo hello" })

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 
 	ollamaapi "github.com/ollama/ollama/api"
@@ -58,7 +59,11 @@ func NewOllamaProvider(host, model string) (*OllamaProvider, error) {
 		}
 	}
 
-	client := ollamaapi.NewClient(clientURL, nil)
+	// ollamaapi.NewClient stores whatever *http.Client it's given as-is,
+	// with no nil check or default — passing nil here meant every request
+	// dereferenced a nil http.Client and panicked the whole process the
+	// first time anyone actually sent a chat message through Ollama.
+	client := ollamaapi.NewClient(clientURL, &http.Client{})
 	return &OllamaProvider{
 		client: client,
 		model:  model,
@@ -79,6 +84,16 @@ func (p *OllamaProvider) Stream(ctx context.Context, messages []Message) (<-chan
 
 	go func() {
 		defer close(ch)
+		// An unrecovered panic in any goroutine crashes the entire app, not
+		// just this request — convert it into a chat error instead.
+		defer func() {
+			if r := recover(); r != nil {
+				select {
+				case ch <- StreamChunk{Error: fmt.Errorf("ollama stream panic: %v", r)}:
+				default:
+				}
+			}
+		}()
 
 		err := p.client.Chat(ctx, req, func(resp ollamaapi.ChatResponse) error {
 			if ctx.Err() != nil {

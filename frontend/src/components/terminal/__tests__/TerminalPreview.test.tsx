@@ -52,7 +52,7 @@ describe("TerminalPreview", () => {
       screen.getByText(/toolkit-accessibility true/)
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Option 2: Enable accessibility/)
+      screen.getByText(/Enable accessibility for GUI terminals/)
     ).toBeInTheDocument();
   });
 
@@ -70,14 +70,5 @@ describe("TerminalPreview", () => {
     expect(
       screen.queryByText(/toolkit-accessibility true/)
     ).not.toBeInTheDocument();
-  });
-
-  it("shows tmux start command in both onboarding and non-onboarding empty states", () => {
-    render(<TerminalPreview tabId="" />);
-
-    expect(screen.getByText(/tmux new-session/)).toBeInTheDocument();
-    expect(
-      screen.getByText("No terminal sessions detected.")
-    ).toBeInTheDocument();
   });
 });

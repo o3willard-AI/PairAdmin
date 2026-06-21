@@ -15,7 +15,6 @@ interface CommandState {
   addCommand: (tabId: string, cmd: { command: string; originalQuestion: string }) => void;
   getCommandsForTab: (tabId: string) => Command[];
   clearTab: (tabId: string) => void;
-  initMockData: () => void;
 }
 
 export const useCommandStore = create<CommandState>()(
@@ -42,35 +41,6 @@ export const useCommandStore = create<CommandState>()(
         set((state) => {
           state.commandsByTab[tabId] = [];
         });
-      },
-      initMockData: () => {
-        if (Object.keys(get().commandsByTab).length === 0) {
-          set((state) => {
-            state.commandsByTab["bash-1"] = [
-              {
-                id: crypto.randomUUID(),
-                command: "sudo systemctl restart nginx",
-                originalQuestion: "How do I restart nginx?",
-                timestamp: Date.now() - 2000,
-                tabId: "bash-1",
-              },
-              {
-                id: crypto.randomUUID(),
-                command: "tail -f /var/log/syslog | grep error",
-                originalQuestion: "Show me recent errors",
-                timestamp: Date.now() - 1000,
-                tabId: "bash-1",
-              },
-              {
-                id: crypto.randomUUID(),
-                command: "df -h --output=source,pcent,target",
-                originalQuestion: "Check disk usage",
-                timestamp: Date.now(),
-                tabId: "bash-1",
-              },
-            ];
-          });
-        }
       },
     })),
     { name: "command-store" }
