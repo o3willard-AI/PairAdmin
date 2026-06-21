@@ -63,6 +63,16 @@ func (p *AnthropicProvider) Stream(ctx context.Context, messages []Message) (<-c
 
 	go func() {
 		defer close(ch)
+		// An unrecovered panic in any goroutine crashes the entire app, not
+		// just this request — convert it into a chat error instead.
+		defer func() {
+			if r := recover(); r != nil {
+				select {
+				case ch <- StreamChunk{Error: fmt.Errorf("anthropic stream panic: %v", r)}:
+				default:
+				}
+			}
+		}()
 
 		stream := p.client.Messages.NewStreaming(ctx, params)
 		defer stream.Close()

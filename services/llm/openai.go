@@ -55,6 +55,16 @@ func (p *OpenAIProvider) Stream(ctx context.Context, messages []Message) (<-chan
 
 	go func() {
 		defer close(ch)
+		// An unrecovered panic in any goroutine crashes the entire app, not
+		// just this request — convert it into a chat error instead.
+		defer func() {
+			if r := recover(); r != nil {
+				select {
+				case ch <- StreamChunk{Error: fmt.Errorf("openai stream panic: %v", r)}:
+				default:
+				}
+			}
+		}()
 
 		client := p.newClient()
 		stream := client.Chat.Completions.NewStreaming(ctx, params)
