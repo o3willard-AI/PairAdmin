@@ -7,24 +7,25 @@ export interface Command {
   command: string;
   originalQuestion: string;
   timestamp: number;
+  // The terminal tab the command originated from. Kept for reference only —
+  // commands are shared across all terminal sessions (see addCommand), not
+  // scoped to the tab that generated them.
   tabId: string;
 }
 
 interface CommandState {
-  commandsByTab: Record<string, Command[]>;
+  commands: Command[];
   addCommand: (tabId: string, cmd: { command: string; originalQuestion: string }) => void;
-  getCommandsForTab: (tabId: string) => Command[];
-  clearTab: (tabId: string) => void;
+  clearAll: () => void;
 }
 
 export const useCommandStore = create<CommandState>()(
   devtools(
-    immer((set, get) => ({
-      commandsByTab: {},
+    immer((set) => ({
+      commands: [],
       addCommand: (tabId, cmd) => {
         set((state) => {
-          if (!state.commandsByTab[tabId]) state.commandsByTab[tabId] = [];
-          state.commandsByTab[tabId].push({
+          state.commands.push({
             id: crypto.randomUUID(),
             command: cmd.command,
             originalQuestion: cmd.originalQuestion,
@@ -33,13 +34,9 @@ export const useCommandStore = create<CommandState>()(
           });
         });
       },
-      getCommandsForTab: (tabId) => {
-        const cmds = get().commandsByTab[tabId] || [];
-        return [...cmds].sort((a, b) => b.timestamp - a.timestamp);
-      },
-      clearTab: (tabId) => {
+      clearAll: () => {
         set((state) => {
-          state.commandsByTab[tabId] = [];
+          state.commands = [];
         });
       },
     })),
