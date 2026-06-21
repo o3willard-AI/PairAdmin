@@ -97,6 +97,15 @@ describe("chatStore", () => {
       expect(msg.tokenCount).toBe(42);
     });
 
+    it("finalizeMessage estimates tokenCount from content length when not provided", () => {
+      const id = useChatStore.getState().startStreamingMessage("tab-1");
+      // 8 chars -> ceil(8/4) = 2 estimated tokens
+      useChatStore.getState().appendChunk("tab-1", id, "response");
+      useChatStore.getState().finalizeMessage("tab-1", id);
+      const msg = useChatStore.getState().messagesByTab["tab-1"][0];
+      expect(msg.tokenCount).toBe(2);
+    });
+
     it("setStreamError with msgId=null creates a new error message with isError=true, isStreaming=false, content=errorText", () => {
       useChatStore.getState().setStreamError("tab-1", null, "Connection timeout");
       const messages = useChatStore.getState().messagesByTab["tab-1"];

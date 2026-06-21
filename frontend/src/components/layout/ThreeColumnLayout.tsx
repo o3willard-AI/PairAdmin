@@ -25,6 +25,8 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
   const tabs = useTerminalStore((state) => state.tabs);
   const settingsOpen = useSettingsStore((s) => s.settingsOpen);
   const setSettingsOpen = useSettingsStore((s) => s.setSettingsOpen);
+  const setActiveModel = useSettingsStore((s) => s.setActiveModel);
+  const setConnectionStatus = useSettingsStore((s) => s.setConnectionStatus);
   const [adapterStatus, setAdapterStatus] = useState<AdapterStatusInfo[]>([]);
   const handleCloseSettings = useCallback(() => setSettingsOpen(false), [setSettingsOpen]);
 
@@ -34,6 +36,32 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
       .then(setAdapterStatus)
       .catch(() => {}); // Wails runtime unavailable in test/dev environments
   }, []);
+
+  // The status bar previously showed "No model" / "Disconnected" forever —
+  // both were hardcoded/never-populated. Fetch the actually configured
+  // provider+model on startup and verify connectivity against it.
+  useEffect(() => {
+    import(/* @vite-ignore */ "../../../wailsjs/go/services/SettingsService")
+      .then(async ({ GetSettings, TestConnection }) => {
+        const cfg = await GetSettings();
+        const provider = cfg?.Provider;
+        const model = cfg?.Model;
+        if (provider && model) {
+          setActiveModel(`${provider}:${model}`);
+        }
+        if (!provider) {
+          setConnectionStatus("disconnected");
+          return;
+        }
+        try {
+          await TestConnection(provider, model ?? "");
+          setConnectionStatus("connected");
+        } catch {
+          setConnectionStatus("disconnected");
+        }
+      })
+      .catch(() => {}); // Wails runtime unavailable in test/dev environments
+  }, [setActiveModel, setConnectionStatus]);
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden">
