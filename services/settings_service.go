@@ -116,25 +116,45 @@ func (s *SettingsService) SaveAPIKey(provider, key string) error {
 	return nil
 }
 
-// TestConnection tests the LLM connection for the given provider and model.
+// TestConnection tests the LLM connection for the given provider, model, and host URL.
+// hostURL may be empty to fall back to persisted config or environment variables.
 // Returns "Connected" on success, or a descriptive error string on failure.
-func (s *SettingsService) TestConnection(provider, model string) (string, error) {
+func (s *SettingsService) TestConnection(provider, model, hostURL string) (string, error) {
 	// Load keychain key for the given provider.
 	apiKey, err := s.keychainClient.Get(provider)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve API key: %w", err)
 	}
 
-	// Build a temporary config using the keychain key and env vars for other fields.
+	// Build a temporary config using the keychain key, persisted AppConfig, and env var fallback.
 	envCfg := LoadConfig()
+	appCfg, _ := config.LoadAppConfig()
+	ollamaHost := envCfg.OllamaHost
+	if appCfg != nil && appCfg.OllamaHost != "" {
+		ollamaHost = appCfg.OllamaHost
+	}
+	lmstudioHost := envCfg.LMStudioHost
+	if appCfg != nil && appCfg.LMStudioHost != "" {
+		lmstudioHost = appCfg.LMStudioHost
+	}
 	cfg := Config{
 		Provider:      provider,
 		Model:         model,
 		OpenAIKey:     envCfg.OpenAIKey,
 		AnthropicKey:  envCfg.AnthropicKey,
 		OpenRouterKey: envCfg.OpenRouterKey,
-		OllamaHost:    envCfg.OllamaHost,
-		LMStudioHost:  envCfg.LMStudioHost,
+		OllamaHost:    ollamaHost,
+		LMStudioHost:  lmstudioHost,
+	}
+
+	// Override host URL if one was explicitly passed (e.g. from the settings UI before saving).
+	if hostURL != "" {
+		switch provider {
+		case "ollama":
+			cfg.OllamaHost = hostURL
+		case "lmstudio":
+			cfg.LMStudioHost = hostURL
+		}
 	}
 
 	// Inject the keychain key for the specified provider.
@@ -295,13 +315,22 @@ func LoadConfigWithViper() Config {
 		model = appCfg.Model
 	}
 
+	ollamaHost := envCfg.OllamaHost
+	if appCfg != nil && appCfg.OllamaHost != "" {
+		ollamaHost = appCfg.OllamaHost
+	}
+	lmstudioHost := envCfg.LMStudioHost
+	if appCfg != nil && appCfg.LMStudioHost != "" {
+		lmstudioHost = appCfg.LMStudioHost
+	}
+
 	return Config{
 		Provider:      provider,
 		Model:         model,
 		OpenAIKey:     envCfg.OpenAIKey,
 		AnthropicKey:  envCfg.AnthropicKey,
 		OpenRouterKey: envCfg.OpenRouterKey,
-		OllamaHost:    envCfg.OllamaHost,
-		LMStudioHost:  envCfg.LMStudioHost,
+		OllamaHost:    ollamaHost,
+		LMStudioHost:  lmstudioHost,
 	}
 }

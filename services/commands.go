@@ -2,11 +2,11 @@ package services
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
-
-	"os"
 
 	"pairadmin/services/audit"
 	"pairadmin/services/config"
@@ -119,7 +119,9 @@ func (c *CommandService) CopyToClipboard(text string) error {
 }
 
 // copyViaWlCopy copies text to the clipboard using the wl-copy command (Wayland).
+// Uses stdin rather than CLI args to avoid shell escaping issues.
 func copyViaWlCopy(text string) error {
-	cmd := exec.Command("wl-copy", text)
+	cmd := exec.Command("wl-copy")
+	cmd.Stdin = strings.NewReader(text)
 	return cmd.Run()
 }

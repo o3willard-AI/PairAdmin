@@ -11,6 +11,15 @@ type PaneInfo struct {
 	DegradedMsg string // tooltip when Degraded=true
 }
 
+// windowsAdapter is the subset of WindowsAdapter methods needed by CaptureManager.
+// Defined as an interface in the platform-agnostic file so manager.go can type-assert
+// without importing a Windows-only concrete type.
+type windowsAdapter interface {
+	GetCapturedContent(tabId string) (string, error)
+	AddAllowedPid(pid uint32)
+	RemoveAllowedPid(pid uint32)
+}
+
 // TerminalAdapter is implemented by each backend (tmux, AT-SPI2, etc).
 // CaptureManager owns and polls a list of TerminalAdapters.
 type TerminalAdapter interface {

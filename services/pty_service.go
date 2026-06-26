@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"runtime"
 	"sync"
-	"syscall"
 
 	"pairadmin/services/capture"
 
@@ -54,58 +53,7 @@ func (s *PTYService) Startup(ctx context.Context) {
 
 func (s *PTYService) OpenNewTerminal(tabId string) (string, error) {
 	if runtime.GOOS == "windows" {
-		// Try Windows ConPTY API (Win 10 1809+) for proper pseudoconsole support.
-		winTabId, conPtyErr := s.openWindowsConPTY(tabId)
-		if conPtyErr == nil {
-			return winTabId, nil
-		}
-
-		// ConPTY unavailable — fall back to hidden CREATE_NEW_CONSOLE.
-		cmd := exec.Command("cmd.exe", "/k")
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			CreationFlags: 0x00000010, // CREATE_NEW_CONSOLE
-			HideWindow:    true,       // Do not show the external popup
-		}
-		// Assigning os.Stdin/Stdout/Stderr prevents Go's exec package from
-		// passing os.DevNull, which lets Windows attach the new console's
-		// native screen buffer to the process — required for cmd.exe to
-		// initialize its interactive prompt.
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		err := cmd.Start()
-		if err == nil {
-			pid := uint32(cmd.Process.Pid)
-
-			// The true ID for Windows tabs is based on the PID
-			winTabId := fmt.Sprintf("windows:%d", pid)
-
-			// Whitelist this PID for discovery
-			if s.captureManager != nil {
-				s.captureManager.AddAllowedPid(pid)
-			}
-
-			s.mu.Lock()
-			s.sessions[winTabId] = &ptySession{cmd: cmd}
-			s.mu.Unlock()
-
-			// Track process exit to clean up
-			go func() {
-				cmd.Wait()
-				s.mu.Lock()
-				delete(s.sessions, winTabId)
-				s.mu.Unlock()
-				if s.captureManager != nil {
-					s.captureManager.RemoveAllowedPid(pid)
-				}
-				s.emitFn(s.ctx, "pty:closed", map[string]string{"tabId": winTabId})
-			}()
-
-			return winTabId, nil
-		} else {
-		}
-		return "", err
+		return s.openWindowsTerminal(tabId)
 	}
 
 	shell := os.Getenv("SHELL")
@@ -136,9 +84,12 @@ func (s *PTYService) OpenNewTerminal(tabId string) (string, error) {
 			}
 			if err != nil {
 				s.mu.Lock()
+				_, stillOpen := s.sessions[tabId]
 				delete(s.sessions, tabId)
 				s.mu.Unlock()
-				ptmx.Close()
+				if stillOpen {
+					ptmx.Close()
+				}
 				s.emitFn(s.ctx, "pty:closed", map[string]string{"tabId": tabId})
 				return
 			}

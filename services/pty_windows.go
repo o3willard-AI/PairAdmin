@@ -6,6 +6,8 @@ package services
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"syscall"
 )
 
 func logPty(msg string) {
@@ -99,6 +101,54 @@ func (s *PTYService) openWindowsConPTY(tabId string) (string, error) {
 	}()
 
 	return tabId, nil
+}
+
+// openWindowsTerminal is the Windows implementation of OpenNewTerminal.
+// It tries ConPTY first; if unavailable, falls back to a hidden cmd.exe console.
+func (s *PTYService) openWindowsTerminal(tabId string) (string, error) {
+	// Try Windows ConPTY API (Win 10 1809+) for proper pseudoconsole support.
+	winTabId, conPtyErr := s.openWindowsConPTY(tabId)
+	if conPtyErr == nil {
+		return winTabId, nil
+	}
+
+	// ConPTY unavailable — fall back to hidden CREATE_NEW_CONSOLE.
+	cmd := exec.Command("cmd.exe", "/k")
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CreationFlags: 0x00000010, // CREATE_NEW_CONSOLE
+		HideWindow:    true,       // Do not show the external popup
+	}
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Start()
+	if err == nil {
+		pid := uint32(cmd.Process.Pid)
+		winTabId := fmt.Sprintf("windows:%d", pid)
+
+		if s.captureManager != nil {
+			s.captureManager.AddAllowedPid(pid)
+		}
+
+		s.mu.Lock()
+		s.sessions[winTabId] = &ptySession{cmd: cmd}
+		s.mu.Unlock()
+
+		go func() {
+			cmd.Wait()
+			s.mu.Lock()
+			delete(s.sessions, winTabId)
+			s.mu.Unlock()
+			if s.captureManager != nil {
+				s.captureManager.RemoveAllowedPid(pid)
+			}
+			s.emitFn(s.ctx, "pty:closed", map[string]string{"tabId": winTabId})
+		}()
+
+		return winTabId, nil
+	}
+	return "", err
 }
 
 // writeConPTYInput writes data to the pseudoconsole's input stream.

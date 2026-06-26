@@ -78,6 +78,8 @@ export namespace config {
 	    Theme: string;
 	    FontSize: number;
 	    ContextLines: number;
+	    OllamaHost: string;
+	    LMStudioHost: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppConfig(source);
@@ -96,6 +98,8 @@ export namespace config {
 	        this.Theme = source["Theme"];
 	        this.FontSize = source["FontSize"];
 	        this.ContextLines = source["ContextLines"];
+	        this.OllamaHost = source["OllamaHost"];
+	        this.LMStudioHost = source["LMStudioHost"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

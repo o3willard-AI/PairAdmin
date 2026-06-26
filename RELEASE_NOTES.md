@@ -56,6 +56,7 @@ sha256sum --check SHA256SUMS
 - CHAT-05/06 (per-tab chat isolation, `/clear`), CMD-02/05 (sidebar order, clear history) — deferred to v2
 - macOS and Windows adapters — deferred pending hardware/VM access for QA
 - AppImage webkit runtime issue — use `.deb` or `.rpm` as primary install path
+- **WebKitGTK 2.52+ JIT crash on older CPUs** — `libwebkit2gtk-4.1-0` version 2.52.x (noble-updates) uses AVX instructions in JavaScriptCore's JIT compiler. QEMU/KVM virtual CPUs and older physical CPUs that lack AVX support will crash with SIGILL on launch. Pin to 2.44.x (`sudo apt-mark hold libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0`) or run with `JSC_useFTLJIT=false` as a workaround. Future `.deb` packages will declare a versioned `Breaks` on 2.52+ for affected architectures.
 
 ## What's Next (v2)
 

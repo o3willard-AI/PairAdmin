@@ -17,6 +17,8 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [keyPlaceholder, setKeyPlaceholder] = useState("");
+  const [ollamaHost, setOllamaHost] = useState("");
+  const [lmstudioHost, setLmstudioHost] = useState("");
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "ok" | "error">("idle");
   const [testMessage, setTestMessage] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -27,6 +29,8 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
         GetSettings().then((cfg) => {
           if (cfg.Provider) setProvider(cfg.Provider as Provider);
           if (cfg.Model) setModel(cfg.Model as string);
+          if (cfg.OllamaHost) setOllamaHost(cfg.OllamaHost);
+          if (cfg.LMStudioHost) setLmstudioHost(cfg.LMStudioHost);
         });
         GetAPIKeyStatus(provider).then((status: string) => {
           setKeyPlaceholder(status ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (stored)" : "");
@@ -60,7 +64,8 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
       const { TestConnection } = await import(
         /* @vite-ignore */ "../../../wailsjs/go/services/SettingsService"
       );
-      const result = await TestConnection(provider, model);
+      const hostURL = provider === "ollama" ? ollamaHost : provider === "lmstudio" ? lmstudioHost : "";
+      const result = await TestConnection(provider, model, hostURL);
       setTestStatus("ok");
       setTestMessage(result || "Connected");
     } catch (err) {
@@ -80,7 +85,7 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
       const { SaveSettings, SaveAPIKey, SetModel } = await import(
         /* @vite-ignore */ "../../../wailsjs/go/services/SettingsService"
       );
-      await SaveSettings({ Provider: provider, Model: model } as import("../../../wailsjs/go/models").config.AppConfig);
+      await SaveSettings({ Provider: provider, Model: model, OllamaHost: ollamaHost, LMStudioHost: lmstudioHost } as import("../../../wailsjs/go/models").config.AppConfig);
       if (apiKey) {
         await SaveAPIKey(provider, apiKey);
       }
@@ -101,17 +106,19 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
     <div className="space-y-4 p-6">
       <div className="space-y-1">
         <label className="text-xs text-zinc-400">Provider</label>
-        <select
-          value={provider}
-          onChange={(e) => setProvider(e.target.value as Provider)}
-          className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
-        >
-          {PROVIDERS.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
+        <div className="relative">
+          <select
+            value={provider}
+            onChange={(e) => setProvider(e.target.value as Provider)}
+            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
+          >
+            {PROVIDERS.map((p) => (
+              <option key={p} value={p} className="bg-zinc-800 text-zinc-100">
+                {p}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="space-y-1">
@@ -124,6 +131,30 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
           className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
         />
       </div>
+
+      {(provider === "ollama") ? (
+        <div className="space-y-1">
+          <label className="text-xs text-zinc-400">Server URL</label>
+          <input
+            type="text"
+            value={ollamaHost}
+            onChange={(e) => setOllamaHost(e.target.value)}
+            placeholder="http://localhost:11434"
+            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
+          />
+        </div>
+      ) : (provider === "lmstudio") ? (
+        <div className="space-y-1">
+          <label className="text-xs text-zinc-400">Server URL</label>
+          <input
+            type="text"
+            value={lmstudioHost}
+            onChange={(e) => setLmstudioHost(e.target.value)}
+            placeholder="http://localhost:1234/v1"
+            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
+          />
+        </div>
+      ) : null}
 
       {requiresApiKey ? (
         <div className="space-y-1">

@@ -357,16 +357,16 @@ func (m *CaptureManager) WriteInput(tabId string, data string) error {
 // This is used in the pull-based model to avoid background polling crashes on Windows.
 func (m *CaptureManager) GetWindowsContent(tabId string) (string, error) {
 	for _, a := range m.active {
-		if wa, ok := a.(*WindowsAdapter); ok {
+		if wa, ok := a.(windowsAdapter); ok {
 			return wa.GetCapturedContent(tabId)
 		}
 	}
-	return "", fmt.Errorf("WindowsAdapter not found or not active")
+	return "", fmt.Errorf("windowsAdapter not found or not active")
 }
 
 func (m *CaptureManager) AddAllowedPid(pid uint32) {
 	for _, a := range m.adapters {
-		if wa, ok := a.(*WindowsAdapter); ok {
+		if wa, ok := a.(windowsAdapter); ok {
 			wa.AddAllowedPid(pid)
 		}
 	}
@@ -374,7 +374,7 @@ func (m *CaptureManager) AddAllowedPid(pid uint32) {
 
 func (m *CaptureManager) RemoveAllowedPid(pid uint32) {
 	for _, a := range m.adapters {
-		if wa, ok := a.(*WindowsAdapter); ok {
+		if wa, ok := a.(windowsAdapter); ok {
 			wa.RemoveAllowedPid(pid)
 		}
 	}

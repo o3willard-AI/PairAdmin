@@ -54,7 +54,7 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
           return;
         }
         try {
-          await TestConnection(provider, model ?? "");
+          await TestConnection(provider, model ?? "", "");
           setConnectionStatus("connected");
         } catch {
           setConnectionStatus("disconnected");
