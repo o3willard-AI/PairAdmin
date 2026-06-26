@@ -140,6 +140,7 @@ func TestSendMessageAuditUserMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuditLogger: %v", err)
 	}
+	t.Cleanup(func() { logger.Close() })
 
 	svc := &LLMService{
 		cfg:            Config{Provider: "mock"},
@@ -177,6 +178,7 @@ func TestSendMessageAuditAIResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuditLogger: %v", err)
 	}
+	t.Cleanup(func() { logger.Close() })
 
 	// Build a key that matches the anthropic-api-key pattern: sk-ant- + 95 chars
 	credentialText := "your key is sk-ant-" + strings.Repeat("a", 95)

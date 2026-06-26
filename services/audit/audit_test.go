@@ -37,6 +37,7 @@ func TestAuditLoggerWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuditLogger returned error: %v", err)
 	}
+	t.Cleanup(func() { logger.Close() })
 
 	entry := AuditEntry{
 		Event:      "user_message",
@@ -98,6 +99,7 @@ func TestAuditLogFilename(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuditLogger returned error: %v", err)
 	}
+	t.Cleanup(func() { logger.Close() })
 
 	// Write one entry to trigger file creation
 	_ = logger.Write(AuditEntry{Event: "session_start", SessionID: "sid"})
@@ -137,6 +139,7 @@ func TestAuditEntryAllEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuditLogger returned error: %v", err)
 	}
+	t.Cleanup(func() { logger.Close() })
 
 	for _, event := range events {
 		if err := logger.Write(AuditEntry{Event: event, SessionID: "test-sid"}); err != nil {
