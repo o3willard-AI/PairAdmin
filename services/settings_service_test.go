@@ -215,7 +215,7 @@ func TestSettingsService_TestConnection_Success(t *testing.T) {
 		return &mockProvider{name: "mock", connErr: nil}
 	}
 
-	result, err := svc.TestConnection("mock", "mock-model")
+	result, err := svc.TestConnection("mock", "mock-model", "")
 	if err != nil {
 		t.Fatalf("TestConnection() unexpected error: %v", err)
 	}
@@ -240,7 +240,7 @@ func TestSettingsService_TestConnection_Failure(t *testing.T) {
 		return &mockProvider{name: "mock", connErr: connErr}
 	}
 
-	_, err := svc.TestConnection("mock", "mock-model")
+	_, err := svc.TestConnection("mock", "mock-model", "")
 	if err == nil {
 		t.Fatal("TestConnection() expected error for failing provider, got nil")
 	}
@@ -261,7 +261,7 @@ func TestSettingsService_TestConnection_NilProvider(t *testing.T) {
 		return nil
 	}
 
-	_, err := svc.TestConnection("unknown-provider", "")
+	_, err := svc.TestConnection("unknown-provider", "", "")
 	if err == nil {
 		t.Fatal("TestConnection() expected error for nil provider, got nil")
 	}

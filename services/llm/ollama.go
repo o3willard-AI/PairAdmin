@@ -10,31 +10,24 @@ import (
 	ollamaapi "github.com/ollama/ollama/api"
 )
 
-// OllamaProvider implements the Provider interface for local Ollama deployments.
-// OLLAMA_HOST must be localhost, 127.0.0.1, or ::1 — remote hosts are rejected
-// to prevent accidental transmission of terminal data over the network.
+// OllamaProvider implements the Provider interface for Ollama deployments.
+// OLLAMA_HOST can be any URL; empty defaults to http://localhost:11434.
 type OllamaProvider struct {
 	client *ollamaapi.Client
 	model  string
 }
 
-// validateOllamaHost returns an error if the host URL is not a localhost address.
-// An empty host is accepted (Ollama defaults to localhost:11434).
+// validateOllamaHost validates the host URL format. An empty host is accepted
+// (Ollama defaults to localhost:11434).
 func validateOllamaHost(host string) error {
 	if host == "" {
 		return nil
 	}
-	parsed, err := url.Parse(host)
+	_, err := url.Parse(host)
 	if err != nil {
 		return fmt.Errorf("invalid OLLAMA_HOST URL: %w", err)
 	}
-	hostname := parsed.Hostname()
-	switch hostname {
-	case "localhost", "127.0.0.1", "::1":
-		return nil
-	default:
-		return fmt.Errorf("OLLAMA_HOST must be localhost or 127.0.0.1; remote hosts are not allowed")
-	}
+	return nil
 }
 
 // NewOllamaProvider creates a new Ollama provider.

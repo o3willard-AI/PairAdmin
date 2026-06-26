@@ -27,6 +27,8 @@ type AppConfig struct {
 	Theme              string          `mapstructure:"theme" yaml:"theme"`
 	FontSize           int             `mapstructure:"font_size" yaml:"font_size"`
 	ContextLines       int             `mapstructure:"context_lines" yaml:"context_lines"`
+	OllamaHost         string          `mapstructure:"ollama_host" yaml:"ollama_host"`
+	LMStudioHost       string          `mapstructure:"lmstudio_host" yaml:"lmstudio_host"`
 }
 
 // configDir returns the ~/.pairadmin directory path.
@@ -79,5 +81,7 @@ func SaveAppConfig(cfg *AppConfig) error {
 	v.Set("theme", cfg.Theme)
 	v.Set("font_size", cfg.FontSize)
 	v.Set("context_lines", cfg.ContextLines)
+	v.Set("ollama_host", cfg.OllamaHost)
+	v.Set("lmstudio_host", cfg.LMStudioHost)
 	return v.WriteConfigAs(configPath())
 }

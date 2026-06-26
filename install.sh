@@ -41,6 +41,23 @@ detect_pkg_manager() {
   fi
 }
 
+check_webkit_version() {
+  if ! command -v dpkg &>/dev/null; then
+    return 0
+  fi
+  local ver
+  ver="$(dpkg -l libwebkit2gtk-4.1-0 2>/dev/null | awk '/^ii/{print $3}' | cut -d. -f1-2)"
+  if [ -n "$ver" ] && dpkg --compare-versions "$ver" ge "2.52"; then
+    warn "WebKitGTK 2.52+ detected — this version uses AVX instructions"
+    warn "that may crash on QEMU/KVM virtual CPUs and older hardware."
+    warn "If PairAdmin crashes on launch, downgrade WebKitGTK to the base"
+    warn "Ubuntu 24.04 release version (2.44.x) or run with:"
+    warn "  JSC_useFTLJIT=false pairadmin"
+    warn ""
+    info "WebKitGTK version: $(dpkg -l libwebkit2gtk-4.1-0 2>/dev/null | awk '/^ii/{print $3}')"
+  fi
+}
+
 do_install() {
   local version
   version="$(get_latest_version)"
@@ -63,6 +80,7 @@ do_install() {
         "https://github.com/${REPO}/releases/download/v${version}/${file}"
       info "Installing (requires sudo)..."
       sudo dpkg -i "${tmpdir}/${file}"
+      check_webkit_version
       ;;
     rpm)
       local file="${BINARY_NAME}_${version}_linux_${ARCH}.rpm"

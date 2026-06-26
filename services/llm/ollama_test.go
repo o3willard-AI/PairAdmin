@@ -36,25 +36,19 @@ func TestOllamaValidateHostIPv6Loopback(t *testing.T) {
 	}
 }
 
-func TestOllamaValidateHostRemoteRejects(t *testing.T) {
-	// NewOllamaProvider with OLLAMA_HOST="http://remotehost:11434" returns error "must be localhost"
+func TestOllamaValidateHostRemoteAccepts(t *testing.T) {
+	// Remote hosts are now allowed (user-configured in settings UI)
 	err := validateOllamaHost("http://remotehost:11434")
-	if err == nil {
-		t.Error("expected error for remote OLLAMA_HOST, got nil")
-	}
-	if err != nil && err.Error() != "OLLAMA_HOST must be localhost or 127.0.0.1; remote hosts are not allowed" {
-		// Allow any error message containing "must be localhost"
-		if len(err.Error()) == 0 {
-			t.Error("expected non-empty error message")
-		}
+	if err != nil {
+		t.Errorf("expected nil error for remote host, got: %v", err)
 	}
 }
 
-func TestOllamaValidateHostRemoteIP(t *testing.T) {
-	// Remote IP address should also be rejected
+func TestOllamaValidateHostRemoteIPAccepts(t *testing.T) {
+	// Remote IP addresses are now allowed
 	err := validateOllamaHost("http://192.168.1.100:11434")
-	if err == nil {
-		t.Error("expected error for remote IP OLLAMA_HOST, got nil")
+	if err != nil {
+		t.Errorf("expected nil error for remote IP, got: %v", err)
 	}
 }
 
@@ -83,13 +77,13 @@ func TestNewOllamaProviderLocalhostHost(t *testing.T) {
 	}
 }
 
-func TestNewOllamaProviderRemoteHostFails(t *testing.T) {
-	// NewOllamaProvider with remote host returns error
+func TestNewOllamaProviderRemoteHostSucceeds(t *testing.T) {
+	// NewOllamaProvider with remote host now succeeds (user-configured)
 	p, err := NewOllamaProvider("http://remotehost:11434", "llama3")
-	if err == nil {
-		t.Error("expected error for remote OLLAMA_HOST, got nil")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if p != nil {
-		t.Error("expected nil provider when error occurs")
+	if p == nil {
+		t.Fatal("expected non-nil provider")
 	}
 }

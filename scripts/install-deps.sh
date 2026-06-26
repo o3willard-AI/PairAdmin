@@ -13,6 +13,13 @@ fi
 case "$ID" in
   ubuntu|debian)
     apt-get update -qq
+    # NOTE: libwebkit2gtk-4.1-dev version 2.52.x pulls in a runtime
+    # libjavascriptcoregtk that emits AVX instructions. On QEMU/KVM
+    # virtual CPUs and older hardware without AVX, the WebKitWebProcess
+    # crashes with SIGILL on launch. Until upstream provides a non-AVX
+    # build, pin to the base release (2.44.x):
+    #   sudo apt-mark hold libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0 \
+    #                     libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev
     apt-get install -y --no-upgrade \
       libwebkit2gtk-4.1-dev \
       at-spi2-core \

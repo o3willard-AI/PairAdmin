@@ -14,6 +14,10 @@ depends:
   - at-spi2-core
 
 overrides:
+  deb:
+    depends:
+      - libwebkit2gtk-4.1-0 (<< 2.52)
+      - at-spi2-core
   rpm:
     depends:
       - webkit2gtk4.1
