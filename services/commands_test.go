@@ -170,6 +170,7 @@ func TestCopyToClipboardAuditCommandCopied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuditLogger: %v", err)
 	}
+	t.Cleanup(func() { logger.Close() })
 
 	svc := NewCommandService()
 	// Inject a no-op clipboard function to avoid runtime.ClipboardSetText panic.

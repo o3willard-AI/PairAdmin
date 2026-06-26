@@ -10,6 +10,7 @@ import (
 func TestLoadAppConfig_EmptyWhenNoFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	cfg, err := LoadAppConfig()
 	if err != nil {
@@ -27,6 +28,7 @@ func TestLoadAppConfig_EmptyWhenNoFile(t *testing.T) {
 func TestSaveAndLoadAppConfig_RoundTrip(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	original := &AppConfig{
 		CustomPatterns: []CustomPattern{
@@ -68,6 +70,7 @@ func TestSaveAndLoadAppConfig_RoundTrip(t *testing.T) {
 func TestSaveAppConfig_CreatesDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	cfg := &AppConfig{}
 	if err := SaveAppConfig(cfg); err != nil {
@@ -93,6 +96,7 @@ func TestSaveAppConfig_CreatesDirectory(t *testing.T) {
 func TestLoadAppConfig_RoundTripPreservesFields(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	original := &AppConfig{
 		CustomPatterns: []CustomPattern{
@@ -128,6 +132,7 @@ func TestLoadAppConfig_RoundTripPreservesFields(t *testing.T) {
 func TestAppConfig_FullRoundTrip(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	original := &AppConfig{
 		Provider:           "openai",
@@ -183,6 +188,7 @@ func TestAppConfig_FullRoundTrip(t *testing.T) {
 func TestSaveAppConfig_Merge(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	// First save: only Provider
 	cfg1 := &AppConfig{Provider: "openai"}
@@ -217,6 +223,7 @@ func TestSaveAppConfig_Merge(t *testing.T) {
 func TestSaveAppConfig_PreservesCustomPatternsOnNewFieldSave(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	// Save with CustomPatterns and Provider
 	cfg := &AppConfig{

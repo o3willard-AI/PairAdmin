@@ -20,7 +20,8 @@ type AuditEntry struct {
 
 // AuditLogger writes JSON-lines audit records to a rotating log file.
 type AuditLogger struct {
-	logger *slog.Logger
+	logger  *slog.Logger
+	rotator *lumberjack.Logger
 }
 
 // NewAuditLogger creates an AuditLogger that writes to logDir.
@@ -42,7 +43,18 @@ func NewAuditLogger(logDir string) (*AuditLogger, error) {
 
 	handler := slog.NewJSONHandler(rotator, &slog.HandlerOptions{Level: slog.LevelInfo})
 
-	return &AuditLogger{logger: slog.New(handler)}, nil
+	return &AuditLogger{logger: slog.New(handler), rotator: rotator}, nil
+}
+
+// Close closes the underlying log file handle. Close is nil-safe.
+// Required on Windows, where an open file handle blocks deletion/rename of
+// its containing directory (e.g. test TempDir cleanup); on Unix this is a
+// no-op in practice but still good hygiene.
+func (a *AuditLogger) Close() error {
+	if a == nil || a.rotator == nil {
+		return nil
+	}
+	return a.rotator.Close()
 }
 
 // Write records an audit entry to the log file.
