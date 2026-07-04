@@ -5,8 +5,16 @@ import "@testing-library/jest-dom";
 import { TerminalTab } from "@/components/terminal/TerminalTab";
 import { useTerminalStore } from "@/stores/terminalStore";
 
+const renameRemoteHost = vi.fn();
+
+vi.mock("../../../../wailsjs/go/services/RemoteService", () => ({
+  RenameRemoteHost: (...args: unknown[]) => renameRemoteHost(...args),
+}));
+
 describe("TerminalTab", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    renameRemoteHost.mockResolvedValue(undefined);
     useTerminalStore.setState({ tabs: [], activeTabId: "" });
   });
 
@@ -70,6 +78,38 @@ describe("TerminalTab", () => {
     await user.type(input, "My Custom Name{Enter}");
 
     expect(useTerminalStore.getState().tabs[0].name).toBe("My Custom Name");
+  });
+
+  it("renaming a tab backed by a saved host also persists the name via RenameRemoteHost", async () => {
+    useTerminalStore.getState().addTab("ssh:abc", "sblanken@192.168.101.60", false, undefined, "ssh", "host-id-1");
+    const tab = { id: "ssh:abc", name: "sblanken@192.168.101.60", savedHostId: "host-id-1" };
+    const user = userEvent.setup();
+    render(<TerminalTab tab={tab} isActive={false} onClick={vi.fn()} />);
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("sblanken@192.168.101.60") });
+    await user.click(screen.getByText("Rename"));
+    const input = screen.getByRole("textbox");
+    await user.clear(input);
+    await user.type(input, "Prod Web Server{Enter}");
+
+    expect(useTerminalStore.getState().tabs[0].name).toBe("Prod Web Server");
+    expect(renameRemoteHost).toHaveBeenCalledWith("host-id-1", "Prod Web Server");
+  });
+
+  it("renaming a tab with no savedHostId does not call RenameRemoteHost", async () => {
+    useTerminalStore.getState().addTab("tmux:%0", "main:0.0");
+    const tab = { id: "tmux:%0", name: "main:0.0" };
+    const user = userEvent.setup();
+    render(<TerminalTab tab={tab} isActive={false} onClick={vi.fn()} />);
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("main:0.0") });
+    await user.click(screen.getByText("Rename"));
+    const input = screen.getByRole("textbox");
+    await user.clear(input);
+    await user.type(input, "Local Session{Enter}");
+
+    expect(useTerminalStore.getState().tabs[0].name).toBe("Local Session");
+    expect(renameRemoteHost).not.toHaveBeenCalled();
   });
 
   it("clicking the tab still triggers onClick (not blocked by the context menu wrapper)", async () => {

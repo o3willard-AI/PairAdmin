@@ -50,6 +50,38 @@ export namespace capture {
 
 export namespace config {
 	
+	export class RemoteHost {
+	    ID: string;
+	    Kind: string;
+	    Name: string;
+	    Host: string;
+	    Port: number;
+	    Username: string;
+	    AuthType: string;
+	    PrivateKeyPath: string;
+	    LastUsed: string;
+	    UseTmux: boolean;
+	    TmuxSessionName: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RemoteHost(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ID = source["ID"];
+	        this.Kind = source["Kind"];
+	        this.Name = source["Name"];
+	        this.Host = source["Host"];
+	        this.Port = source["Port"];
+	        this.Username = source["Username"];
+	        this.AuthType = source["AuthType"];
+	        this.PrivateKeyPath = source["PrivateKeyPath"];
+	        this.LastUsed = source["LastUsed"];
+	        this.UseTmux = source["UseTmux"];
+	        this.TmuxSessionName = source["TmuxSessionName"];
+	    }
+	}
 	export class CustomPattern {
 	    Name: string;
 	    Regex: string;
@@ -80,6 +112,7 @@ export namespace config {
 	    ContextLines: number;
 	    OllamaHost: string;
 	    LMStudioHost: string;
+	    RemoteHosts: RemoteHost[];
 	
 	    static createFrom(source: any = {}) {
 	        return new AppConfig(source);
@@ -100,6 +133,7 @@ export namespace config {
 	        this.ContextLines = source["ContextLines"];
 	        this.OllamaHost = source["OllamaHost"];
 	        this.LMStudioHost = source["LMStudioHost"];
+	        this.RemoteHosts = this.convertValues(source["RemoteHosts"], RemoteHost);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -119,6 +153,24 @@ export namespace config {
 		    }
 		    return a;
 		}
+	}
+	
+
+}
+
+export namespace keychain {
+	
+	export class Client {
+	
+	
+	    static createFrom(source: any = {}) {
+	        return new Client(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	
+	    }
 	}
 
 }
@@ -166,6 +218,40 @@ export namespace services {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	
+	    }
+	}
+	export class RemoteConnectParams {
+	    kind: string;
+	    host: string;
+	    port: number;
+	    username: string;
+	    authType: string;
+	    password?: string;
+	    privateKeyPath?: string;
+	    passphrase?: string;
+	    savePassword: boolean;
+	    savedHostId?: string;
+	    useTmux: boolean;
+	    tmuxSessionName?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RemoteConnectParams(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.host = source["host"];
+	        this.port = source["port"];
+	        this.username = source["username"];
+	        this.authType = source["authType"];
+	        this.password = source["password"];
+	        this.privateKeyPath = source["privateKeyPath"];
+	        this.passphrase = source["passphrase"];
+	        this.savePassword = source["savePassword"];
+	        this.savedHostId = source["savedHostId"];
+	        this.useTmux = source["useTmux"];
+	        this.tmuxSessionName = source["tmuxSessionName"];
 	    }
 	}
 

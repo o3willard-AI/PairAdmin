@@ -219,6 +219,61 @@ func TestSaveAppConfig_Merge(t *testing.T) {
 	}
 }
 
+// TestSaveAndLoadAppConfig_RemoteHostsRoundTrip verifies RemoteHost entries
+// round-trip through YAML without leaking secrets (RemoteHost carries none)
+// and without clobbering other fields (merge-before-write pattern).
+func TestSaveAndLoadAppConfig_RemoteHostsRoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
+
+	original := &AppConfig{
+		Provider: "openai",
+		RemoteHosts: []RemoteHost{
+			{ID: "abc-123", Kind: "ssh", Host: "10.0.1.5", Port: 22, Username: "ubuntu", AuthType: "password", LastUsed: "2026-07-03T00:00:00Z"},
+			{ID: "def-456", Kind: "winrm", Host: "10.0.1.6", Port: 5985, Username: "Administrator", AuthType: "password", LastUsed: "2026-07-02T00:00:00Z"},
+		},
+	}
+
+	if err := SaveAppConfig(original); err != nil {
+		t.Fatalf("SaveAppConfig() unexpected error: %v", err)
+	}
+
+	loaded, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
+	}
+
+	if loaded.Provider != "openai" {
+		t.Errorf("Provider: expected 'openai' to survive alongside RemoteHosts, got %q", loaded.Provider)
+	}
+	if len(loaded.RemoteHosts) != 2 {
+		t.Fatalf("expected 2 remote hosts, got %d", len(loaded.RemoteHosts))
+	}
+	if loaded.RemoteHosts[0].ID != "abc-123" || loaded.RemoteHosts[0].Kind != "ssh" || loaded.RemoteHosts[0].Host != "10.0.1.5" {
+		t.Errorf("RemoteHosts[0] mismatch: %+v", loaded.RemoteHosts[0])
+	}
+	if loaded.RemoteHosts[1].ID != "def-456" || loaded.RemoteHosts[1].Kind != "winrm" || loaded.RemoteHosts[1].Port != 5985 {
+		t.Errorf("RemoteHosts[1] mismatch: %+v", loaded.RemoteHosts[1])
+	}
+}
+
+// TestLoadAppConfig_RemoteHostsEmptyWhenNoFile verifies RemoteHosts defaults
+// to an empty (non-nil-panicking) slice when no config file exists yet.
+func TestLoadAppConfig_RemoteHostsEmptyWhenNoFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	cfg, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
+	}
+	if len(cfg.RemoteHosts) != 0 {
+		t.Errorf("expected 0 remote hosts, got %d", len(cfg.RemoteHosts))
+	}
+}
+
 // TestSaveAppConfig_PreservesCustomPatternsOnNewFieldSave verifies that saving new fields keeps CustomPatterns.
 func TestSaveAppConfig_PreservesCustomPatternsOnNewFieldSave(t *testing.T) {
 	tmpDir := t.TempDir()

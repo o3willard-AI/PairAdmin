@@ -14,12 +14,20 @@ export function OpenNewTerminal(arg1) {
   return window['go']['services']['PTYService']['OpenNewTerminal'](arg1);
 }
 
+export function OpenRemoteTerminal(arg1, arg2) {
+  return window['go']['services']['PTYService']['OpenRemoteTerminal'](arg1, arg2);
+}
+
 export function ResizeTerminal(arg1, arg2, arg3) {
   return window['go']['services']['PTYService']['ResizeTerminal'](arg1, arg2, arg3);
 }
 
 export function SetCaptureManager(arg1) {
   return window['go']['services']['PTYService']['SetCaptureManager'](arg1);
+}
+
+export function SetKeychainClient(arg1) {
+  return window['go']['services']['PTYService']['SetKeychainClient'](arg1);
 }
 
 export function Startup(arg1) {

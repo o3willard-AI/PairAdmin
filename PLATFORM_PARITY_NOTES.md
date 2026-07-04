@@ -219,3 +219,128 @@ Repeat this on each platform before considering it at parity:
       an app crash.
 - [ ] App icon renders correctly and un-distorted in the taskbar/dock and
       window title bar.
+
+## 5. Remote Terminal Support (SSH / WinRM / tmux) — added since the notes
+   above, built and only tested on Windows so far
+
+This is a substantial new feature area, not a bugfix to the original Windows
+work: "+ New" now offers Local / Unix-Linux (SSH) / Remote Windows (WinRM),
+with saved connections (host, auth, optional tmux auto-attach), all backed by
+`services/remote_ssh.go`, `services/remote_winrm.go`, `services/remote_service.go`,
+and `frontend/src/components/terminal/NewTerminalDialog.tsx`. Most of it is
+pure Go (`golang.org/x/crypto/ssh`, `github.com/masterzen/winrm` — both
+cgo-free) or pure React/DOM, so it should be platform-agnostic in principle —
+but "should be" is exactly the part that needs your verification, since none
+of it has run on Linux or macOS yet.
+
+### Already fixed proactively (context, not action items)
+
+- **SSH private key paths now expand `~`** (`expandHomeDir` in
+  `services/remote_ssh.go`). `os.ReadFile` doesn't do shell-style expansion on
+  any platform, but the dialog's own placeholder text suggests
+  `~/.ssh/id_ed25519` — without this fix, every Mac/Linux user following that
+  placeholder literally would hit a confusing "no such file" error. Already
+  fixed and tested (`TestExpandHomeDir`, `TestBuildSSHAuthMethods_PrivateKey_TildeExpansion`),
+  but worth confirming on a real Mac/Linux box that `os.UserHomeDir()`
+  resolves the way you expect in your dev environment.
+- **Keychain keys containing colons** (`remote:<uuid>:password` was the
+  original format) broke outright on Windows because the FileBackend keyring
+  only escapes `/` in key names, not `:`, and Windows rejects colons in
+  filenames. Fixed generically in `services/keychain/keychain.go`
+  (`sanitizeKey`) and the key format itself was also changed to use
+  underscores. This is a no-op on Linux/macOS (colons are valid in Unix
+  filenames) — just documented here so you know why that function exists and
+  don't need to re-derive it.
+- A **pre-existing, unrelated test-isolation bug** (`services/settings_service_test.go`,
+  `services/commands_test.go` only set `$HOME`, not `%USERPROFILE%`) meant
+  every `go test` run on Windows was silently overwriting the *real* user's
+  `~/.pairadmin/config.yaml`. Fixed by also setting `USERPROFILE` alongside
+  `HOME` in those tests. This was Windows-only in effect — `os.UserHomeDir()`
+  already correctly reads `$HOME` on Linux/macOS — so nothing to do here,
+  but if you ever see both env vars set in a test, that's why.
+
+### Needs your judgment / testing
+
+- **No native macOS Keychain or Windows Credential Manager backend is wired
+  up.** `services/keychain/keychain.go`'s `AllowedBackends` list is
+  `[SecretServiceBackend, FileBackend]` only. On Linux with a D-Bus Secret
+  Service running (gnome-keyring, kwallet), `SecretServiceBackend` is used —
+  real OS integration. On **macOS, there is no Secret Service, and
+  `keyring.KeychainBackend` (real Keychain.app integration) was never added
+  to the allow-list** — so today, macOS silently falls back to the exact same
+  on-disk encrypted `FileBackend` store as Windows, not actual Keychain.app.
+  It works (nothing crashes, thanks to the sanitization fix above), but it's
+  not the "OS keychain" behavior the original project docs call for. Worth
+  deciding whether to add `keyring.KeychainBackend` to the allow-list for a
+  real macOS build and testing that API keys / saved remote-host passwords
+  actually show up in Keychain Access afterward.
+- **WinRM as a client has never run on Linux/macOS.** The masterzen/winrm
+  library and its NTLM dependency (`github.com/Azure/go-ntlmssp`) are pure Go
+  — PairAdmin is the *client* connecting outward to a remote Windows target,
+  so the client's own OS shouldn't matter in theory. But this path is
+  completely unverified off Windows — do a real connect-and-run-a-command
+  test against an actual WinRM-enabled Windows box from your Linux/macOS
+  build before trusting it.
+- **`useDefaultTerminalFocus.ts`** (the "typing always goes to the terminal
+  by default" fix) uses only standard DOM APIs (`document.activeElement`,
+  a `click` listener, `[role="dialog"]` detection) that should behave
+  identically across WebKit2GTK (Linux), WKWebView (macOS), and WebView2
+  (Windows) — but focus semantics for native form controls (checkboxes,
+  buttons retaining focus after a click) can differ subtly between browser
+  engines. This is exactly the kind of thing that looks correct in code
+  review and needs to actually be clicked through — see the new checklist
+  items below.
+- **tmux mouse-mode helper commands** (`tmux set -g mouse on|off`, auto-pinned
+  to the Commands sidebar when connecting with tmux enabled) are plain text
+  sent over the SSH channel — no client-OS dependency at all. If tmux itself
+  isn't installed on the *remote* target, the command just errors visibly in
+  the terminal (bash: tmux: command not found) and the session continues as
+  a plain shell; nothing to fix, just don't be surprised by it in testing.
+
+### Manual verification checklist — remote terminal features specifically
+
+- [ ] Connect to a real Unix/Linux SSH host with password auth — real PTY,
+      resize works, `exit` closes the tab cleanly.
+- [ ] Connect with private-key auth using a `~/.ssh/...`-style path exactly as
+      the placeholder suggests — should just work now.
+- [ ] Check "Use tmux if available", connect — lands in a tmux session named
+      `pairadmin` (or your custom name); the two mouse-mode toggle commands
+      appear pinned in the Commands sidebar; clicking "Execute" on
+      `tmux set -g mouse on` actually enables wheel-scroll inside tmux.
+- [ ] Check "Save Terminal", reconnect from the "Recent" list — password
+      resolves from the keychain without being asked again; on macOS,
+      confirm whether it actually landed in Keychain Access or in
+      `~/.pairadmin/keyring/` (see the keychain-backend note above).
+- [ ] Rename a saved connection's tab — reconnecting later shows the renamed
+      label, not `username@host`.
+- [ ] Click "Forget" on a saved host — it's gone from "Recent" and its
+      keychain entry is actually removed.
+- [ ] Connect to a real WinRM-enabled Windows host from your Linux/macOS
+      build — command/response works, Ctrl+C is a no-op (by design), the
+      "not a live shell" hint is visible.
+- [ ] Click around several buttons (Commands sidebar, tab list, Settings,
+      New Terminal) and then just start typing without clicking the terminal
+      first — text should always land in the terminal, never re-trigger a
+      button or toggle a checkbox. This is the highest-value thing to
+      actually click through by hand rather than trust from code review.
+- [ ] Ask the AI a question that returns a multi-paragraph response with a
+      code block — confirm the response text appears smoothly without visible
+      layout jitter/jumping while streaming, and the code block is properly
+      syntax-highlighted once the response finishes.
+- [ ] Click "Hide PairAdmin" / "Show PairAdmin" — chat collapses/expands, the
+      terminal resizes to fill the freed space, and the preference survives
+      an app restart.
+
+### On testing rigor generally
+
+None of the remote-terminal backend logic can be fully exercised by unit
+tests alone — `services/remote_ssh_test.go` uses a real in-process SSH server
+(not a live remote host), and `services/remote_winrm_test.go` only covers the
+pure-logic pieces (line-buffering, auth validation) since `masterzen/winrm`'s
+types are concrete, not interfaces. That's sufficient to catch regressions in
+logic, but it is *not* a substitute for connecting to a real remote Linux box
+and a real remote Windows box by hand. Treat the manual checklists in this
+file (both this section and section 4) as a required, recurring part of
+shipping any change here — not a one-time box to check off — since a green
+`go test ./...` / `vitest run` run only proves the code does what the tests
+assume, not that it works against a real server on your platform.

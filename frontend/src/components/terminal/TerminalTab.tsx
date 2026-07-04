@@ -44,6 +44,19 @@ export function TerminalTab({ tab, isActive, onClick }: TerminalTabProps) {
     const trimmed = renameValue.trim();
     if (trimmed) {
       useTerminalStore.getState().renameTab(tab.id, trimmed);
+      // Persist onto the saved host record (if this tab came from one) so a
+      // future reconnect shows the friendly name instead of reverting to
+      // "username@host". Best-effort: the local rename above already applies
+      // regardless, and a failure here just means next reconnect falls back
+      // to the computed name — not worth blocking or erroring the rename UI
+      // over, but still logged so it's not entirely invisible when debugging.
+      if (tab.savedHostId) {
+        import(/* @vite-ignore */ "../../../wailsjs/go/services/RemoteService")
+          .then(({ RenameRemoteHost }) => RenameRemoteHost(tab.savedHostId!, trimmed))
+          .catch((err) => {
+            console.error("Failed to persist renamed saved host:", err);
+          });
+      }
     }
     setRenaming(false);
   };

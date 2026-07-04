@@ -60,12 +60,18 @@ func main() {
 	// Wire CaptureManager to LLMService so FilterCommand can trigger pipeline rebuilds
 	llmService.SetCaptureManager(manager)
 
-	// Create PTYService for interactive shell sessions in + New terminal tabs
-	ptyService := services.NewPTYService()
-	ptyService.SetCaptureManager(manager)
-
 	// Create SettingsService with OS keychain for secure API key storage
 	keychainClient := keychain.New()
+
+	// Create PTYService for interactive shell sessions in + New terminal tabs
+	// (local, plus remote SSH/WinRM sessions opened via OpenRemoteTerminal)
+	ptyService := services.NewPTYService()
+	ptyService.SetCaptureManager(manager)
+	ptyService.SetKeychainClient(keychainClient)
+
+	// Create RemoteService for saved remote host bookkeeping (SSH/WinRM)
+	remoteService := services.NewRemoteService(keychainClient)
+
 	settingsService := services.NewSettingsService(keychainClient)
 	settingsService.SetLLMService(llmService)
 	settingsService.SetCaptureManager(manager)
@@ -116,6 +122,7 @@ func main() {
 			manager.Startup(ctx)
 			settingsService.Startup(ctx)
 			ptyService.Startup(ctx)
+			remoteService.Startup(ctx)
 		},
 		OnBeforeClose: func(ctx context.Context) bool {
 			if auditLogger != nil {
@@ -131,6 +138,7 @@ func main() {
 			manager,
 			settingsService,
 			ptyService,
+			remoteService,
 		},
 	})
 

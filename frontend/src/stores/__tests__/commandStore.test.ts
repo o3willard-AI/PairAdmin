@@ -95,6 +95,41 @@ describe("commandStore", () => {
     expect(useCommandStore.getState().consumeCommandText(id)).toBe("cmd1");
   });
 
+  it("addPinnedCommand adds a command that is already pinned", () => {
+    useCommandStore.getState().addPinnedCommand("ssh:tab-1", {
+      command: "tmux set -g mouse on",
+      originalQuestion: "Enables mouse-wheel scrolling inside tmux (auto-added)",
+    });
+    const cmds = useCommandStore.getState().commands;
+    expect(cmds).toHaveLength(1);
+    expect(cmds[0].command).toBe("tmux set -g mouse on");
+    expect(cmds[0].pinned).toBe(true);
+  });
+
+  it("addPinnedCommand does not duplicate an existing pinned command with the same text", () => {
+    useCommandStore.getState().addPinnedCommand("ssh:tab-1", {
+      command: "tmux set -g mouse on",
+      originalQuestion: "first",
+    });
+    // e.g. reconnecting to the same tmux host again
+    useCommandStore.getState().addPinnedCommand("ssh:tab-2", {
+      command: "tmux set -g mouse on",
+      originalQuestion: "second",
+    });
+    expect(useCommandStore.getState().commands).toHaveLength(1);
+  });
+
+  it("addPinnedCommand adds a new entry if an unpinned command happens to share the same text", () => {
+    useCommandStore.getState().addCommand("tab-1", { command: "tmux set -g mouse on", originalQuestion: "q" });
+    useCommandStore.getState().addPinnedCommand("tab-1", {
+      command: "tmux set -g mouse on",
+      originalQuestion: "auto-added",
+    });
+    const cmds = useCommandStore.getState().commands;
+    expect(cmds).toHaveLength(2);
+    expect(cmds.filter((c) => c.pinned)).toHaveLength(1);
+  });
+
   it("reorderPinned moves a command to sit immediately before the target", () => {
     useCommandStore.getState().addCommand("tab-1", { command: "a", originalQuestion: "" });
     useCommandStore.getState().addCommand("tab-1", { command: "b", originalQuestion: "" });

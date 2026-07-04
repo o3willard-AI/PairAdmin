@@ -14,6 +14,30 @@ type CustomPattern struct {
 	Action string `mapstructure:"action" yaml:"action"` // "redact" | "remove"
 }
 
+// RemoteHost holds non-secret metadata for a saved remote terminal connection.
+// Secrets (passwords, key passphrases) are never stored here — they live in the
+// OS keychain, keyed by RemoteHost.ID (see services.RemoteService).
+type RemoteHost struct {
+	ID   string `mapstructure:"id" yaml:"id"`
+	Kind string `mapstructure:"kind" yaml:"kind"` // "ssh" | "winrm"
+	// Name is a user-assigned friendly label (e.g. via renaming the terminal
+	// tab). Empty until the user renames it — display code should fall back
+	// to "username@host" when empty rather than persisting that computed
+	// form here, so a since-changed Host/Username still reflects correctly
+	// for hosts that were never explicitly renamed.
+	Name           string `mapstructure:"name" yaml:"name"`
+	Host           string `mapstructure:"host" yaml:"host"`
+	Port           int    `mapstructure:"port" yaml:"port"`
+	Username       string `mapstructure:"username" yaml:"username"`
+	AuthType       string `mapstructure:"auth_type" yaml:"auth_type"` // "password" | "privatekey"
+	PrivateKeyPath string `mapstructure:"private_key_path" yaml:"private_key_path"`
+	LastUsed       string `mapstructure:"last_used" yaml:"last_used"` // RFC3339
+	// UseTmux/TmuxSessionName apply only to Kind == "ssh" — see
+	// services.RemoteConnectParams for the create-or-attach behavior.
+	UseTmux         bool   `mapstructure:"use_tmux" yaml:"use_tmux"`
+	TmuxSessionName string `mapstructure:"tmux_session_name" yaml:"tmux_session_name"`
+}
+
 // AppConfig holds persistent application configuration (separate from the LLM env-var config).
 type AppConfig struct {
 	CustomPatterns     []CustomPattern `mapstructure:"custom_patterns" yaml:"custom_patterns"`
@@ -29,6 +53,7 @@ type AppConfig struct {
 	ContextLines       int             `mapstructure:"context_lines" yaml:"context_lines"`
 	OllamaHost         string          `mapstructure:"ollama_host" yaml:"ollama_host"`
 	LMStudioHost       string          `mapstructure:"lmstudio_host" yaml:"lmstudio_host"`
+	RemoteHosts        []RemoteHost    `mapstructure:"remote_hosts" yaml:"remote_hosts"`
 }
 
 // configDir returns the ~/.pairadmin directory path.
@@ -50,6 +75,7 @@ func LoadAppConfig() (*AppConfig, error) {
 	v.SetConfigType("yaml")
 	v.AddConfigPath(configDir())
 	v.SetDefault("custom_patterns", []CustomPattern{})
+	v.SetDefault("remote_hosts", []RemoteHost{})
 	// Missing config file is not an error — returns defaults.
 	_ = v.ReadInConfig()
 	var cfg AppConfig
@@ -83,5 +109,6 @@ func SaveAppConfig(cfg *AppConfig) error {
 	v.Set("context_lines", cfg.ContextLines)
 	v.Set("ollama_host", cfg.OllamaHost)
 	v.Set("lmstudio_host", cfg.LMStudioHost)
+	v.Set("remote_hosts", cfg.RemoteHosts)
 	return v.WriteConfigAs(configPath())
 }

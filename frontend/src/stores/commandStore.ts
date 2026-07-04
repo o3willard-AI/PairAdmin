@@ -22,6 +22,14 @@ export interface Command {
 interface CommandState {
   commands: Command[];
   addCommand: (tabId: string, cmd: { command: string; originalQuestion: string }) => void;
+  /**
+   * Adds a command already pinned — used for auto-added helper commands
+   * (e.g. tmux mouse-mode toggles) rather than AI-suggested ones. A no-op if
+   * a pinned command with the same text already exists, so calling this
+   * repeatedly (e.g. on every reconnect to the same tmux host) doesn't stack
+   * duplicate cards.
+   */
+  addPinnedCommand: (tabId: string, cmd: { command: string; originalQuestion: string }) => void;
   clearAll: () => void;
   togglePin: (id: string) => void;
   removeCommand: (id: string) => void;
@@ -52,6 +60,19 @@ export const useCommandStore = create<CommandState>()(
             timestamp: Date.now(),
             tabId,
             pinned: false,
+          });
+        });
+      },
+      addPinnedCommand: (tabId, cmd) => {
+        set((state) => {
+          if (state.commands.some((c) => c.pinned && c.command === cmd.command)) return;
+          state.commands.push({
+            id: crypto.randomUUID(),
+            command: cmd.command,
+            originalQuestion: cmd.originalQuestion,
+            timestamp: Date.now(),
+            tabId,
+            pinned: true,
           });
         });
       },

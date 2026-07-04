@@ -8,6 +8,15 @@ export interface TerminalTab {
   name: string;
   degraded?: boolean;
   degradedMsg?: string;
+  /** Connection kind, purely for tab-list decoration (icon/badge) — the "ssh:"/"winrm:"
+   * tabId prefix is what actually drives backend/event routing, not this field. */
+  kind?: "local" | "ssh" | "winrm";
+  /** ID of the config.RemoteHost this tab was opened from (reconnect, or a fresh
+   * connection that was saved), if any. When set, renaming this tab also persists
+   * the new name onto that saved host record via RemoteService.RenameRemoteHost,
+   * so future reconnects use the friendly name instead of reverting to
+   * "username@host". Absent for local tabs and unsaved remote connections. */
+  savedHostId?: string;
 }
 
 interface TerminalState {
@@ -15,7 +24,14 @@ interface TerminalState {
   activeTabId: string;
   nextTabNumber: number;
   setActiveTab: (tabId: string) => void;
-  addTab: (id: string, name: string, degraded?: boolean, degradedMsg?: string) => void;
+  addTab: (
+    id: string,
+    name: string,
+    degraded?: boolean,
+    degradedMsg?: string,
+    kind?: "local" | "ssh" | "winrm",
+    savedHostId?: string
+  ) => void;
   removeTab: (id: string) => void;
   renameTab: (id: string, name: string) => void;
   clearTabs: () => void;
@@ -41,10 +57,10 @@ export const useTerminalStore = create<TerminalState>()(
           state.activeTabId = tabId;
         });
       },
-      addTab: (id, name, degraded, degradedMsg) => {
+      addTab: (id, name, degraded, degradedMsg, kind, savedHostId) => {
         set((state) => {
           if (state.tabs.some((t) => t.id === id)) return; // duplicate guard
-          state.tabs.push({ id, name, degraded, degradedMsg });
+          state.tabs.push({ id, name, degraded, degradedMsg, kind, savedHostId });
           if (state.tabs.length === 1 && !degraded) {
             state.activeTabId = id; // first non-degraded tab becomes active
           }

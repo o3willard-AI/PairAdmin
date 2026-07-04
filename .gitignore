@@ -23,4 +23,6 @@ frontend/package.json.md5
 !frontend/wailsjs/go/services/LLMService.d.ts
 !frontend/wailsjs/go/services/PTYService.js
 !frontend/wailsjs/go/services/PTYService.d.ts
+!frontend/wailsjs/go/services/RemoteService.js
+!frontend/wailsjs/go/services/RemoteService.d.ts
 !frontend/wailsjs/go/models.ts
