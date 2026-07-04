@@ -115,31 +115,44 @@ export function ChatMessageList({ onRetry }: ChatMessageListProps) {
                 ].join(" ")}
               >
                 {msg.isError && <span className="mr-1">⚠</span>}
-                <ReactMarkdown
-                  components={{
-                    code({ children, className, node, ...props }) {
-                      const match = /language-(\w+)/.exec(className ?? "");
-                      const isInline = (props as { inline?: boolean }).inline === true;
-                      const codeStr = String(children).replace(/\n$/, "");
-                      if (!isInline) {
+                {msg.isStreaming ? (
+                  // Mid-stream markdown syntax (an unclosed code fence, a
+                  // forming list, etc.) changes shape unpredictably as more
+                  // text arrives — re-parsing it into rich markdown on every
+                  // ~50ms chunk is what caused the visible "flying in and
+                  // reorganizing" jitter, dragging the auto-scroll along with
+                  // it. Plain text just grows; nothing to restructure, so
+                  // nothing to jitter. The one-time swap to full markdown
+                  // rendering below (once content is known-final) is cheap,
+                  // being a single render instead of ~20/sec.
+                  <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+                ) : (
+                  <ReactMarkdown
+                    components={{
+                      code({ children, className, node, ...props }) {
+                        const match = /language-(\w+)/.exec(className ?? "");
+                        const isInline = (props as { inline?: boolean }).inline === true;
+                        const codeStr = String(children).replace(/\n$/, "");
+                        if (!isInline) {
+                          return (
+                            <CodeBlock
+                              code={codeStr}
+                              language={match ? match[1] : "text"}
+                              isStreaming={msg.isStreaming}
+                            />
+                          );
+                        }
                         return (
-                          <CodeBlock
-                            code={codeStr}
-                            language={match ? match[1] : "text"}
-                            isStreaming={msg.isStreaming}
-                          />
+                          <code className="bg-muted-foreground/20 px-1 rounded text-xs">
+                            {children}
+                          </code>
                         );
-                      }
-                      return (
-                        <code className="bg-muted-foreground/20 px-1 rounded text-xs">
-                          {children}
-                        </code>
-                      );
-                    },
-                  }}
-                >
-                  {msg.content}
-                </ReactMarkdown>
+                      },
+                    }}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
+                )}
                 {msg.isError && msg.content.includes("Rate limit") && onRetry && (
                   <button
                     onClick={onRetry}

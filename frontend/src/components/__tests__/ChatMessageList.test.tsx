@@ -118,6 +118,40 @@ describe("ChatMessageList", () => {
     expect(screen.getByTestId("code-highlight")).toHaveTextContent("const x = 1");
   });
 
+  it("renders streaming messages as plain text, not parsed markdown (avoids re-parse jitter mid-stream)", () => {
+    useChatStore.setState({
+      messagesByTab: {
+        "bash-1": [
+          { id: "1", role: "assistant", content: "This is **not yet bold** and a fence: ```py▋", isStreaming: true },
+        ],
+      },
+    });
+
+    const { container } = render(<ChatMessageList />);
+    // Markdown syntax should appear as literal, unparsed text while streaming...
+    expect(screen.getByText(/This is \*\*not yet bold\*\* and a fence: ```py▋/)).toBeInTheDocument();
+    // ...meaning no <strong> and no code-highlight got rendered from it yet.
+    expect(container.querySelector("strong")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("code-highlight")).not.toBeInTheDocument();
+  });
+
+  it("switches a message from plain text to full markdown rendering once streaming finishes", () => {
+    useChatStore.setState({
+      messagesByTab: {
+        "bash-1": [
+          { id: "1", role: "assistant", content: "This is **bold** text", isStreaming: false },
+        ],
+      },
+    });
+
+    const { container } = render(<ChatMessageList />);
+    const strong = container.querySelector("strong");
+    expect(strong).toBeInTheDocument();
+    expect(strong).toHaveTextContent("bold");
+    // The raw ** markers should not be visible once parsed.
+    expect(screen.queryByText(/\*\*bold\*\*/)).not.toBeInTheDocument();
+  });
+
   it("renders bold text (**bold**) as <strong> element", () => {
     useChatStore.setState({
       messagesByTab: {
