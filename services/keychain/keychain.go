@@ -1,14 +1,36 @@
 package keychain
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/99designs/keyring"
 )
 
 // ServiceName is the keychain service identifier for PairAdmin.
 const ServiceName = "pairadmin"
+
+// windowsUnsafeFilenameChars matches characters invalid in Windows filenames
+// (< > : " / \ | ? *), plus '%' itself so percent-encoding stays unambiguous.
+// The 99designs/keyring FileBackend stores one file per key and only escapes
+// forward slashes in the key (percent.Encode(key, "/") — verified against
+// mtibben/percent's source: the second argument is the set of characters TO
+// encode, not a safe-list). Any caller using a composite key with a colon
+// delimiter (e.g. "remote:<uuid>:password") breaks on Windows with
+// "The filename, directory name, or volume label syntax is incorrect."
+var windowsUnsafeFilenameChars = regexp.MustCompile(`[<>:"/\\|?*%]`)
+
+// sanitizeKey percent-encodes characters that are invalid in Windows
+// filenames so any keychain key is safe under the FileBackend regardless of
+// what delimiter the caller chose. A no-op for plain alphanumeric keys (e.g.
+// "openai"), so existing simple provider keys are unaffected.
+func sanitizeKey(key string) string {
+	return windowsUnsafeFilenameChars.ReplaceAllStringFunc(key, func(c string) string {
+		return fmt.Sprintf("%%%02X", c[0])
+	})
+}
 
 // Client is a thin wrapper around 99designs/keyring with an injectable open function
 // for test isolation.
@@ -49,7 +71,7 @@ func (c *Client) Get(provider string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	item, err := kr.Get(provider)
+	item, err := kr.Get(sanitizeKey(provider))
 	if err == keyring.ErrKeyNotFound {
 		return "", nil
 	}
@@ -66,7 +88,7 @@ func (c *Client) Set(provider, key string) error {
 		return err
 	}
 	return kr.Set(keyring.Item{
-		Key:  provider,
+		Key:  sanitizeKey(provider),
 		Data: []byte(key),
 	})
 }
@@ -77,5 +99,5 @@ func (c *Client) Remove(provider string) error {
 	if err != nil {
 		return err
 	}
-	return kr.Remove(provider)
+	return kr.Remove(sanitizeKey(provider))
 }
