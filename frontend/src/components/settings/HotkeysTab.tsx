@@ -1,4 +1,5 @@
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
+import { mergeAndSaveSettings } from "@/utils/settingsSync";
 
 function buildKeyCombo(event: KeyboardEvent): string {
   const parts: string[] = [];
@@ -65,13 +66,23 @@ export function HotkeysTab() {
   const [hotkeyFocusWindow, setHotkeyFocusWindow] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
+  useEffect(() => {
+    import(/* @vite-ignore */ "../../../wailsjs/go/services/SettingsService")
+      .then(({ GetSettings }) => GetSettings())
+      .then((cfg) => {
+        if (cfg.HotkeyCopyLast) setHotkeyCopyLast(cfg.HotkeyCopyLast);
+        if (cfg.HotkeyFocusWindow) setHotkeyFocusWindow(cfg.HotkeyFocusWindow);
+      })
+      .catch(() => {});
+  }, []);
+
   const handleSave = async () => {
     setSaveStatus("saving");
     try {
-      const { SaveSettings } = await import(
-        /* @vite-ignore */ "../../../wailsjs/go/services/SettingsService"
-      );
-      await SaveSettings({ HotkeyCopyLast: hotkeyCopyLast, HotkeyFocusWindow: hotkeyFocusWindow } as import("../../../wailsjs/go/models").config.AppConfig);
+      await mergeAndSaveSettings({
+        HotkeyCopyLast: hotkeyCopyLast,
+        HotkeyFocusWindow: hotkeyFocusWindow,
+      });
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch {

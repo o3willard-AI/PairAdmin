@@ -69,7 +69,17 @@ func (s *SettingsService) GetSettings() (*config.AppConfig, error) {
 
 // SaveSettings persists the given configuration to disk, rebuilds the LLM provider,
 // and emits a settings:changed event.
+//
+// RemoteHosts is deliberately preserved from the on-disk config regardless of what
+// the caller passes in: it's exclusively owned by RemoteService (SaveRemoteHost/
+// ForgetRemoteHost/TouchRemoteHost), never by any Settings-dialog tab. Each tab
+// constructs and sends only the AppConfig fields it manages (e.g. LLMConfigTab
+// sends only Provider/Model/OllamaHost/LMStudioHost) — without this guard, saving
+// settings from any tab would silently wipe every saved remote terminal connection.
 func (s *SettingsService) SaveSettings(cfg *config.AppConfig) error {
+	if existing, err := config.LoadAppConfig(); err == nil {
+		cfg.RemoteHosts = existing.RemoteHosts
+	}
 	if err := config.SaveAppConfig(cfg); err != nil {
 		return err
 	}

@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { mergeAndSaveSettings } from "@/utils/settingsSync";
+import { wailsErrorMessage } from "@/utils/wailsError";
 
 const PROVIDERS = ["openai", "anthropic", "ollama", "openrouter", "lmstudio"] as const;
 type Provider = (typeof PROVIDERS)[number];
@@ -70,7 +72,7 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
       setTestMessage(result || "Connected");
     } catch (err) {
       setTestStatus("error");
-      setTestMessage(err instanceof Error ? err.message : "Connection failed");
+      setTestMessage(wailsErrorMessage(err, "Connection failed"));
     }
   };
 
@@ -82,10 +84,15 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
     }
     setSaveStatus("saving");
     try {
-      const { SaveSettings, SaveAPIKey, SetModel } = await import(
+      const { SaveAPIKey, SetModel } = await import(
         /* @vite-ignore */ "../../../wailsjs/go/services/SettingsService"
       );
-      await SaveSettings({ Provider: provider, Model: model, OllamaHost: ollamaHost, LMStudioHost: lmstudioHost } as import("../../../wailsjs/go/models").config.AppConfig);
+      await mergeAndSaveSettings({
+        Provider: provider,
+        Model: model,
+        OllamaHost: ollamaHost,
+        LMStudioHost: lmstudioHost,
+      });
       if (apiKey) {
         await SaveAPIKey(provider, apiKey);
       }

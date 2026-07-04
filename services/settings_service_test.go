@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"pairadmin/services/config"
 	"pairadmin/services/keychain"
 	"pairadmin/services/llm"
 
@@ -84,7 +85,9 @@ func (m *mockProvider) TestConnection(_ context.Context) error {
 
 // TestSettingsService_GetSettings returns current AppConfig without error.
 func TestSettingsService_GetSettings(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -100,7 +103,9 @@ func TestSettingsService_GetSettings(t *testing.T) {
 
 // TestSettingsService_SaveSettings persists config and GetSettings reflects changes.
 func TestSettingsService_SaveSettings(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -128,9 +133,58 @@ func TestSettingsService_SaveSettings(t *testing.T) {
 	}
 }
 
+// TestSettingsService_SaveSettings_PreservesRemoteHosts is a regression test for a bug
+// where every Settings-dialog tab (LLM Config, Prompts, Terminals, Hotkeys, Appearance)
+// sends a partial AppConfig — e.g. LLMConfigTab sends only
+// {Provider, Model, OllamaHost, LMStudioHost} — and SaveSettings previously wrote that
+// partial struct straight to disk, silently wiping RemoteHosts (all saved remote
+// terminal connections) back to empty on every unrelated settings save.
+func TestSettingsService_SaveSettings_PreservesRemoteHosts(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.emitFn = nil
+	svc.ctx = context.Background()
+
+	remoteSvc := NewRemoteService(makeTestKeychainClient(mem))
+	saved, err := remoteSvc.SaveRemoteHost(config.RemoteHost{Kind: "ssh", Host: "10.0.1.5", Username: "ubuntu"}, "hunter2", "")
+	if err != nil {
+		t.Fatalf("SaveRemoteHost() unexpected error: %v", err)
+	}
+
+	// Simulate a settings tab (e.g. LLMConfigTab) sending only the handful of fields
+	// it manages — RemoteHosts is deliberately left as its Go zero value (nil), exactly
+	// as every real Settings tab component does today.
+	partialCfg := &config.AppConfig{Provider: "openai", Model: "gpt-4"}
+	if err := svc.SaveSettings(partialCfg); err != nil {
+		t.Fatalf("SaveSettings() unexpected error: %v", err)
+	}
+
+	hosts, err := remoteSvc.ListRemoteHosts()
+	if err != nil {
+		t.Fatalf("ListRemoteHosts() unexpected error: %v", err)
+	}
+	if len(hosts) != 1 || hosts[0].ID != saved.ID {
+		t.Errorf("expected saved remote host to survive an unrelated SaveSettings call, got %+v", hosts)
+	}
+
+	loaded, err := svc.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() unexpected error: %v", err)
+	}
+	if loaded.Provider != "openai" || loaded.Model != "gpt-4" {
+		t.Errorf("expected the partial save's own fields to still apply, got Provider=%q Model=%q", loaded.Provider, loaded.Model)
+	}
+}
+
 // TestSettingsService_GetAPIKeyStatus_Stored returns "stored" when key exists.
 func TestSettingsService_GetAPIKeyStatus_Stored(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	mem.items["openai"] = keyring.Item{Key: "openai", Data: []byte("sk-test-key")}
@@ -148,7 +202,9 @@ func TestSettingsService_GetAPIKeyStatus_Stored(t *testing.T) {
 
 // TestSettingsService_GetAPIKeyStatus_NotStored returns "" when key absent.
 func TestSettingsService_GetAPIKeyStatus_NotStored(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -164,7 +220,9 @@ func TestSettingsService_GetAPIKeyStatus_NotStored(t *testing.T) {
 
 // TestSettingsService_SaveAPIKey writes key to keychain.
 func TestSettingsService_SaveAPIKey(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -184,7 +242,9 @@ func TestSettingsService_SaveAPIKey(t *testing.T) {
 
 // TestSettingsService_SaveAPIKey_EmptyRemoves removes key when empty string passed.
 func TestSettingsService_SaveAPIKey_EmptyRemoves(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	mem.items["openai"] = keyring.Item{Key: "openai", Data: []byte("sk-old-key")}
@@ -202,7 +262,9 @@ func TestSettingsService_SaveAPIKey_EmptyRemoves(t *testing.T) {
 
 // TestSettingsService_TestConnection_Success returns "Connected" for working provider.
 func TestSettingsService_TestConnection_Success(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -226,7 +288,9 @@ func TestSettingsService_TestConnection_Success(t *testing.T) {
 
 // TestSettingsService_TestConnection_Failure returns error for failing provider.
 func TestSettingsService_TestConnection_Failure(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -248,7 +312,9 @@ func TestSettingsService_TestConnection_Failure(t *testing.T) {
 
 // TestSettingsService_TestConnection_NilProvider returns error for nil provider.
 func TestSettingsService_TestConnection_NilProvider(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -271,7 +337,9 @@ func TestSettingsService_TestConnection_NilProvider(t *testing.T) {
 
 // TestSettingsService_SetModel_OpenAI saves provider/model for "openai:gpt-4".
 func TestSettingsService_SetModel_OpenAI(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -297,7 +365,9 @@ func TestSettingsService_SetModel_OpenAI(t *testing.T) {
 
 // TestSettingsService_SetModel_Ollama saves provider/model for "ollama:llama3".
 func TestSettingsService_SetModel_Ollama(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -323,7 +393,9 @@ func TestSettingsService_SetModel_Ollama(t *testing.T) {
 
 // TestSettingsService_SetModel_InvalidFormat returns error when no colon.
 func TestSettingsService_SetModel_InvalidFormat(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -339,7 +411,9 @@ func TestSettingsService_SetModel_InvalidFormat(t *testing.T) {
 
 // TestSettingsService_SetContextLines_Valid saves ContextLines=300.
 func TestSettingsService_SetContextLines_Valid(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -362,7 +436,9 @@ func TestSettingsService_SetContextLines_Valid(t *testing.T) {
 
 // TestSettingsService_SetContextLines_Zero returns error for zero.
 func TestSettingsService_SetContextLines_Zero(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -375,7 +451,9 @@ func TestSettingsService_SetContextLines_Zero(t *testing.T) {
 
 // TestSettingsService_SetContextLines_Negative returns error for negative.
 func TestSettingsService_SetContextLines_Negative(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -399,7 +477,9 @@ func (m *mockCaptureManager) ForceCapture() {
 
 // TestSettingsService_ForceRefresh_WithManager calls ForceCapture and returns success.
 func TestSettingsService_ForceRefresh_WithManager(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -422,7 +502,9 @@ func TestSettingsService_ForceRefresh_WithManager(t *testing.T) {
 
 // TestSettingsService_ForceRefresh_NoManager returns error when captureManager is nil.
 func TestSettingsService_ForceRefresh_NoManager(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -440,6 +522,7 @@ func TestSettingsService_ForceRefresh_NoManager(t *testing.T) {
 func TestSettingsService_ExportChat_JSON(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -472,6 +555,7 @@ func TestSettingsService_ExportChat_JSON(t *testing.T) {
 func TestSettingsService_ExportChat_TXT(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))
@@ -500,7 +584,9 @@ func TestSettingsService_ExportChat_TXT(t *testing.T) {
 
 // TestSettingsService_RenameTab emits terminal:rename event and returns success message.
 func TestSettingsService_RenameTab(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	mem := newInMemoryKeyring()
 	svc := NewSettingsService(makeTestKeychainClient(mem))

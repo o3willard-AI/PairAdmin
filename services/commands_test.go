@@ -101,7 +101,9 @@ func contains(s, substr string) bool {
 func TestCopyToClipboard_AutoClear_TimerCreated(t *testing.T) {
 	// Only test on non-Wayland (X11-like) to avoid exec.Command dependency
 	t.Setenv("WAYLAND_DISPLAY", "")
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	svc := NewCommandService()
 	// ctx is nil — CopyToClipboard handles nil ctx gracefully on X11 path
@@ -163,7 +165,9 @@ func readAuditLogDir(t *testing.T, logDir string) string {
 // audit entry with the command text after a successful copy.
 func TestCopyToClipboardAuditCommandCopied(t *testing.T) {
 	t.Setenv("WAYLAND_DISPLAY", "")
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	tmpDir := t.TempDir()
 	logger, err := audit.NewAuditLogger(tmpDir)
@@ -194,7 +198,9 @@ func TestCopyToClipboardAuditCommandCopied(t *testing.T) {
 // TestAuditLoggerNilNoOp verifies that CopyToClipboard works without panic when auditLogger is nil.
 func TestAuditLoggerNilNoOp(t *testing.T) {
 	t.Setenv("WAYLAND_DISPLAY", "")
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
 	svc := NewCommandService()
 	// Inject a no-op clipboard function to avoid runtime.ClipboardSetText panic.

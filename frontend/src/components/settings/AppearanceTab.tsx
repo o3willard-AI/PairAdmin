@@ -1,18 +1,25 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTheme } from "@/theme/theme-provider";
+import { mergeAndSaveSettings } from "@/utils/settingsSync";
 
 export function AppearanceTab() {
   const { theme, setTheme } = useTheme();
   const [fontSize, setFontSize] = useState(14);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
+  useEffect(() => {
+    import(/* @vite-ignore */ "../../../wailsjs/go/services/SettingsService")
+      .then(({ GetSettings }) => GetSettings())
+      .then((cfg) => {
+        if (cfg.FontSize) setFontSize(cfg.FontSize);
+      })
+      .catch(() => {});
+  }, []);
+
   const handleSave = async () => {
     setSaveStatus("saving");
     try {
-      const { SaveSettings } = await import(
-        /* @vite-ignore */ "../../../wailsjs/go/services/SettingsService"
-      );
-      await SaveSettings({ Theme: theme, FontSize: fontSize } as import("../../../wailsjs/go/models").config.AppConfig);
+      await mergeAndSaveSettings({ Theme: theme, FontSize: fontSize });
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch {

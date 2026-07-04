@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { mergeAndSaveSettings } from "@/utils/settingsSync";
 
 const DEFAULT_SYSTEM_PROMPT = `You are PairAdmin, an AI assistant that helps sysadmins work in the terminal.
 You can see the user's terminal output and help them understand what's happening, diagnose issues, and suggest commands.
@@ -9,13 +10,19 @@ export function PromptsTab() {
   const [customPrompt, setCustomPrompt] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
+  useEffect(() => {
+    import(/* @vite-ignore */ "../../../wailsjs/go/services/SettingsService")
+      .then(({ GetSettings }) => GetSettings())
+      .then((cfg) => {
+        if (cfg.CustomPrompt) setCustomPrompt(cfg.CustomPrompt);
+      })
+      .catch(() => {});
+  }, []);
+
   const handleSave = async () => {
     setSaveStatus("saving");
     try {
-      const { SaveSettings } = await import(
-        /* @vite-ignore */ "../../../wailsjs/go/services/SettingsService"
-      );
-      await SaveSettings({ CustomPrompt: customPrompt } as import("../../../wailsjs/go/models").config.AppConfig);
+      await mergeAndSaveSettings({ CustomPrompt: customPrompt });
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch {

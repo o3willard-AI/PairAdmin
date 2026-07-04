@@ -1,17 +1,30 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { mergeAndSaveSettings } from "@/utils/settingsSync";
 
 export function TerminalsTab() {
   const [atspiPollingMs, setAtspiPollingMs] = useState(500);
   const [clipboardClearSecs, setClipboardClearSecs] = useState(60);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
+  useEffect(() => {
+    import(/* @vite-ignore */ "../../../wailsjs/go/services/SettingsService")
+      .then(({ GetSettings }) => GetSettings())
+      .then((cfg) => {
+        if (cfg.ATSPIPollingMs) setAtspiPollingMs(cfg.ATSPIPollingMs);
+        if (cfg.ClipboardClearSecs !== undefined && cfg.ClipboardClearSecs !== null) {
+          setClipboardClearSecs(cfg.ClipboardClearSecs);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const handleSave = async () => {
     setSaveStatus("saving");
     try {
-      const { SaveSettings } = await import(
-        /* @vite-ignore */ "../../../wailsjs/go/services/SettingsService"
-      );
-      await SaveSettings({ ATSPIPollingMs: atspiPollingMs, ClipboardClearSecs: clipboardClearSecs } as import("../../../wailsjs/go/models").config.AppConfig);
+      await mergeAndSaveSettings({
+        ATSPIPollingMs: atspiPollingMs,
+        ClipboardClearSecs: clipboardClearSecs,
+      });
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch {
