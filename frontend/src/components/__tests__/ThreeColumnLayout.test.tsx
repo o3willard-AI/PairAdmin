@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 import { ThreeColumnLayout } from "@/components/layout/ThreeColumnLayout";
 
@@ -65,6 +66,7 @@ beforeEach(() => {
     unobserve = vi.fn();
   }
   global.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+  localStorage.clear();
 });
 
 describe("ThreeColumnLayout", () => {
@@ -138,6 +140,70 @@ describe("ThreeColumnLayout", () => {
     );
 
     expect(screen.getByText("Commands sidebar")).toBeInTheDocument();
+  });
+
+  it("shows a 'Hide PairAdmin' button by default, with chat content visible", () => {
+    render(
+      <ThreeColumnLayout>
+        <div>Chat area content</div>
+      </ThreeColumnLayout>
+    );
+
+    expect(screen.getByText("Hide PairAdmin")).toBeInTheDocument();
+    expect(screen.getByText("Chat area content")).toBeInTheDocument();
+  });
+
+  it("clicking 'Hide PairAdmin' collapses the chat area and shows 'Show PairAdmin' instead", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <ThreeColumnLayout>
+        <div>Chat area content</div>
+      </ThreeColumnLayout>
+    );
+
+    await user.click(screen.getByText("Hide PairAdmin"));
+
+    expect(screen.getByText("Show PairAdmin")).toBeInTheDocument();
+    expect(screen.queryByText("Hide PairAdmin")).not.toBeInTheDocument();
+    // Content stays mounted (so useLLMStream keeps working in the background)
+    // — just visually hidden via the `hidden` utility class, not unmounted.
+    const chatContent = screen.getByText("Chat area content");
+    expect(chatContent.closest(".hidden")).not.toBeNull();
+  });
+
+  it("clicking 'Show PairAdmin' restores the chat area", async () => {
+    const user = userEvent.setup();
+    render(
+      <ThreeColumnLayout>
+        <div>Chat area content</div>
+      </ThreeColumnLayout>
+    );
+
+    await user.click(screen.getByText("Hide PairAdmin"));
+    await user.click(screen.getByText("Show PairAdmin"));
+
+    expect(screen.getByText("Hide PairAdmin")).toBeInTheDocument();
+    const chatContent = screen.getByText("Chat area content");
+    expect(chatContent.closest(".hidden")).toBeNull();
+  });
+
+  it("persists the collapsed state across remounts via localStorage", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <ThreeColumnLayout>
+        <div>Chat area content</div>
+      </ThreeColumnLayout>
+    );
+    await user.click(screen.getByText("Hide PairAdmin"));
+    unmount();
+
+    render(
+      <ThreeColumnLayout>
+        <div>Chat area content</div>
+      </ThreeColumnLayout>
+    );
+
+    expect(screen.getByText("Show PairAdmin")).toBeInTheDocument();
   });
 
   it("renders SettingsDialog component (closed by default)", () => {

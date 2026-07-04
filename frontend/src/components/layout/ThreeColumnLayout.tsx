@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTerminalCapture } from "@/hooks/useTerminalCapture";
+import { useDefaultTerminalFocus } from "@/hooks/useDefaultTerminalFocus";
 import { TerminalTabList } from "@/components/terminal/TerminalTabList";
 import { TerminalPreview } from "@/components/terminal/TerminalPreview";
 import { StatusBar } from "./StatusBar";
@@ -18,8 +19,13 @@ interface ThreeColumnLayoutProps {
   sidebar?: ReactNode;
 }
 
+// Persisted across restarts (mirrors theme-provider.tsx's localStorage pattern)
+// so a sysadmin who mostly wants a terminal doesn't have to re-hide it every launch.
+const CHAT_VISIBLE_STORAGE_KEY = "pairadmin-chat-visible";
+
 export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps) {
   useTerminalCapture(); // Subscribe to terminal events from Go service
+  useDefaultTerminalFocus(); // Keep keyboard focus on the terminal by default
 
   const activeTabId = useTerminalStore((state) => state.activeTabId);
   const tabs = useTerminalStore((state) => state.tabs);
@@ -28,7 +34,31 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
   const setActiveModel = useSettingsStore((s) => s.setActiveModel);
   const setConnectionStatus = useSettingsStore((s) => s.setConnectionStatus);
   const [adapterStatus, setAdapterStatus] = useState<AdapterStatusInfo[]>([]);
-  const handleCloseSettings = useCallback(() => setSettingsOpen(false), [setSettingsOpen]);
+  // Lets a user reclaim the chat pane's vertical space for a bigger terminal
+  // when they don't need the assistant — the chat area (and its useLLMStream
+  // subscription) stays mounted underneath, just visually collapsed, so an
+  // in-flight response keeps streaming and is there when shown again.
+  const [chatVisible, setChatVisible] = useState(
+    () => localStorage.getItem(CHAT_VISIBLE_STORAGE_KEY) !== "false"
+  );
+  const toggleChatVisible = useCallback(() => {
+    setChatVisible((prev) => {
+      const next = !prev;
+      localStorage.setItem(CHAT_VISIBLE_STORAGE_KEY, String(next));
+      return next;
+    });
+  }, []);
+  const handleCloseSettings = useCallback(() => {
+    setSettingsOpen(false);
+    // base-ui's Dialog returns focus to its trigger (the gear icon) on
+    // close — deferring to the next frame lets that finish first, then wins
+    // the race back to the terminal. Same pattern already used in
+    // CommandCard.tsx/TerminalTab.tsx for the identical class of race.
+    requestAnimationFrame(() => {
+      const { activeTabId, getTermRef } = useTerminalStore.getState();
+      getTermRef(activeTabId)?.focus();
+    });
+  }, [setSettingsOpen]);
 
   useEffect(() => {
     import(/* @vite-ignore */ "../../../wailsjs/go/capture/CaptureManager")
@@ -73,14 +103,20 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
 
         {/* Center column: terminal preview + chat area, top to bottom.
             The two are flex-basis-0 so they split the available height evenly
-            — the chat input's own fixed height comes out of the chat
-            section's share, so terminal and chat message area end up
-            approximately equal rather than exactly equal. */}
+            (when chat is visible) — the chat input's own fixed height comes
+            out of the chat section's share, so terminal and chat message area
+            end up approximately equal rather than exactly equal. When chat is
+            hidden, the terminal section takes all remaining space instead. */}
         <main className="flex flex-1 flex-col overflow-hidden">
           {/* Upper: xterm.js terminal preview. Each tab keeps its own persistently
               mounted TerminalPreview so switching tabs doesn't recreate (and lose
               the scrollback/session of) the underlying xterm instance. */}
-          <div key="terminal-section" className="flex-1 basis-0 border-b border-zinc-800 relative">
+          <div
+            key="terminal-section"
+            className={`border-b border-zinc-800 relative ${
+              chatVisible ? "flex-1 basis-0" : "flex-1"
+            }`}
+          >
             {tabs.length === 0 && (
               <TerminalPreview tabId="" adapterStatus={adapterStatus} />
             )}
@@ -95,8 +131,27 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
             ))}
           </div>
 
-          {/* Lower: chat area (chat message list + input box) */}
-          <div key="chat-section" className="flex flex-1 basis-0 flex-col overflow-hidden">{children}</div>
+          {/* Lower: chat area (chat message list + input box), collapsible.
+              `children` (ChatPane) stays mounted at all times — only its
+              wrapper's visibility toggles — so useLLMStream's subscription
+              keeps receiving events and an in-flight response isn't lost
+              while collapsed. */}
+          <div
+            key="chat-section"
+            className={`flex flex-col overflow-hidden ${chatVisible ? "flex-1 basis-0" : "flex-none"}`}
+          >
+            <div className="flex-none flex items-center justify-center border-b border-zinc-800 bg-zinc-950">
+              <button
+                onClick={toggleChatVisible}
+                className="px-3 py-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                {chatVisible ? "Hide PairAdmin" : "Show PairAdmin"}
+              </button>
+            </div>
+            <div className={chatVisible ? "flex flex-1 flex-col overflow-hidden" : "hidden"}>
+              {children}
+            </div>
+          </div>
         </main>
 
         {/* Right column: command sidebar */}
