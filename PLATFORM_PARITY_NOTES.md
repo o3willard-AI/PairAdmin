@@ -1,11 +1,13 @@
 # Platform Parity Notes (TEMPORARY — delete before v1.0)
 
 **Audience:** coding agents building/maintaining the Linux and macOS targets.
-**Purpose:** a long Windows-focused debugging/feature session (see `git log`
-from roughly `a141259` through `1fc9d60`) fixed a lot of bugs and added
-several features. Most of the work was in shared frontend code and applies
-to every platform automatically, but a few fixes were Windows-specific and
-need an equivalent check — or an equivalent fix — on Linux and macOS.
+**Purpose:** a series of long Windows-focused debugging/feature sessions
+(see `git log` from roughly `a141259` through `3af3db2` — sections 1-4 cover
+through `1fc9d60`, section 5 covers `0af6bc8` through `8c03d03`, section 6
+covers `27391f0` through `3af3db2`) fixed a lot of bugs and added several
+features. Most of the work was in shared frontend code and applies to every
+platform automatically, but a few fixes were Windows-specific and need an
+equivalent check — or an equivalent fix — on Linux and macOS.
 
 **Lifecycle:** once Linux and macOS builds have been verified to have
 equivalent (or better) functionality for everything below, delete this file.
@@ -52,22 +54,30 @@ just confirm during your platform's build/test pass:
   that every platform should double check buttons/bubbles render with
   visible hover states and correct colors, not just inherited/default ones.
 - **CodeBlock chat actions.** "Copy to Terminal" / "Execute in Terminal" /
-  "Save to Commands" with pipe separators and visible hover shading; blocks
-  tagged `text`/`plaintext`/unspecified no longer render action buttons
-  (those are meant to be illustrative, not actionable, per the system
-  prompt in `services/llm/context.go`); Execute no longer auto-logs to
-  Commands (Save is the only thing that does, to avoid duplicate entries).
+  "Save to Commands" with pipe separators and visible hover shading, shown
+  on **every** fenced code block regardless of its language tag (previously
+  blocks tagged `text`/`plaintext`/unspecified were treated as
+  illustrative-only and got no buttons — changed after a real report where
+  the model mislabeled an actually-runnable command as `text`, leaving the
+  user with no way to copy/run/save it at all; see section 6). Execute no
+  longer auto-logs to Commands (Save is the only thing that does, to avoid
+  duplicate entries).
 - **Commands sidebar.** Shared across all terminal tabs (not scoped to
   whichever tab is active); right-click context menu for Pin/Unpin, Edit
-  (permanent), Edit/Append for next use (one-time override), Remove; pinned
-  commands sit above the scrolling list and are drag-reorderable; "Clear
-  History" preserves pinned commands. Watch for: a focus race where the
-  context menu's focus-return-to-trigger can steal focus back from the
-  inline rename/edit `<input>` before the user types anything, silently
-  discarding the edit — fixed by deferring `.focus()` to the next animation
-  frame in both `CommandCard.tsx` and `TerminalTab.tsx`. This is a generic
-  React/focus-management race, not Windows-specific, but it's exactly the
-  kind of thing that can resurface if either component is touched again.
+  (permanent), Edit/Append for next use (one-time override), Remove; a
+  pencil icon in the hover toolbar also opens Edit directly, without needing
+  the context menu; pinned commands sit above the scrolling list and are
+  drag-reorderable; "Clear History" preserves pinned commands. Edit/Add now
+  open `EditCommandDialog.tsx`, a proper modal with a 12-row textarea
+  (previously a single-line inline `<input>` too narrow to see what you were
+  typing) — see section 6. Watch for: a focus race where a menu's
+  focus-return-to-trigger can steal focus back from a freshly-opened
+  input/dialog before the user types anything, silently discarding the
+  edit — fixed by deferring `.focus()` to the next animation frame. This
+  pattern still applies to `TerminalTab.tsx`'s inline rename `<input>`
+  (unchanged, still inline, not a dialog) and is a generic React/focus-
+  management race, not Windows-specific — exactly the kind of thing that
+  can resurface if either component is touched again.
 - **`/exit` slash command** — closes every open terminal tab via
   `PTYService.CloseTerminal`, then calls the Wails runtime's `Quit()`.
   `Quit()` is part of the Wails runtime itself, not OS-specific.
@@ -198,9 +208,8 @@ Repeat this on each platform before considering it at parity:
       token count that updates.
 - [ ] Ask a question that returns a runnable command — "Copy to Terminal",
       "Execute in Terminal", and "Save to Commands" all behave distinctly;
-      hovering each shows a visible shade change.
-- [ ] Ask a question that returns a non-runnable/illustrative example — no
-      action buttons appear on it.
+      hovering each shows a visible shade change. These three buttons appear
+      on every code block regardless of its language tag (including `text`).
 - [ ] Commands sidebar: log a command, switch tabs, confirm it's still
       there. Right-click → Pin, Edit, Edit/Append for next use, Remove —
       each behaves as described in section 1. Drag-reorder two pinned
@@ -331,7 +340,131 @@ of it has run on Linux or macOS yet.
       terminal resizes to fill the freed space, and the preference survives
       an app restart.
 
-### On testing rigor generally
+## 6. Commands dialog, clipboard hotkey, Light theme, and a real tmux bug —
+   added/fixed since section 5, tested only on Windows so far
+
+Four more changes since the remote-terminal work above, all in shared
+frontend code (or pure prompt text) except where called out.
+
+### Already fixed proactively (context, not action items)
+
+- **Light mode now actually changes the app's appearance.** It previously
+  toggled a CSS class correctly but had no visible effect, because nearly
+  every component used literal dark-only Tailwind classes (`bg-zinc-900`,
+  `text-zinc-400`, etc.) instead of theme-aware tokens. Fixed with a
+  "surface scale" (`surface-0`..`surface-3`, `surface-text`,
+  `surface-text-muted`, `surface-border`, `surface-border-strong`) defined
+  in `index.css`'s `:root`/`.dark` blocks, swept across essentially every
+  component file. Dark-mode values were derived via precise hex→HSL
+  conversion of the exact zinc shades already in use, so dark mode is
+  pixel-identical to before — this is a pure CSS/React change with no OS
+  dependency, but it touches nearly every file in `frontend/src/components`,
+  so a visual smoke-test in both Light and Dark on your platform's WebView
+  engine (WebKitGTK/WKWebView vs. Windows' WebView2) is worth doing once
+  rather than trusting it blind.
+  - The terminal itself needed separate handling since xterm.js's colors are
+    a JS object, not CSS: `TerminalPreview.tsx` now has `getXtermTheme()`
+    (dark: `#0d0d0d`/`#d4d4d4`, light: `#ffffff`/`#1e1e1e`) applied at
+    mount, plus a `MutationObserver` on `<html>`'s `class` attribute so an
+    already-open terminal recolors immediately on toggle rather than only
+    on next launch. `MutationObserver` is a standard DOM API with no known
+    cross-engine quirks, but this is new code and worth a glance.
+  - Code-block syntax highlighting (react-shiki, in `CodeBlock.tsx`) now
+    uses a `{ light: "github-light", dark: "github-dark" }` theme pair
+    (`defaultColor={false}`) instead of being hardcoded to `github-dark`,
+    with a matching CSS rule in `index.css` that switches between shiki's
+    emitted `--shiki-light`/`--shiki-dark` variables based on the same
+    `.dark` class.
+- **A real, non-hypothetical tmux bug, root-caused and fixed:** SSH
+  connections with tmux enabled would consistently open at roughly half the
+  terminal's real width (e.g. 80 of ~137 real columns), only self-correcting
+  after some unrelated later resize (toggling the chat pane's Hide/Show
+  button). Root cause: `term.onResize(...)` in `TerminalPreview.tsx` was
+  registered *after* the first `fitAddon.fit()` call. xterm only fires its
+  resize event when the size actually *changes*, and the very first fit —
+  from xterm's default constructed size to the real container-fitted size —
+  is exactly that one-time change, so nothing was listening yet when it
+  fired. The remote PTY never learned the terminal's real size and silently
+  stayed at `RequestPty`'s 80×24 placeholder (`services/remote_ssh.go`)
+  until some later, unrelated resize happened to fire `onResize` again with
+  a listener finally attached. Fixed by moving the listener registration
+  above the first fit call. This is pure frontend timing logic with **zero
+  platform dependency** — the same xterm.js/`FitAddon` code path runs
+  identically regardless of OS or WebView engine — but it was only actually
+  verified against a real SSH+tmux host on Windows. Two earlier fix attempts
+  (a backend-side wait-for-resize-before-launching-tmux change, and a
+  frontend-side "re-fit one frame later" change) were both wrong guesses and
+  fully reverted; the real fix was found only by adding temporary file-based
+  diagnostic logging (since WebView2's DevTools console wasn't reliably
+  reachable in that environment) and reading actual measured values —
+  worth remembering as a debugging approach if a similar "works after an
+  unrelated action" bug ever shows up on your platform: don't trust a
+  plausible-sounding theory without measuring first.
+- **System prompt tightened against stacked/chained commands**
+  (`services/llm/context.go`) — the model would sometimes bundle multiple
+  independent commands into one fenced block, either bare-space-separated
+  (invalid shell syntax) or chained with `&&` (which silently no-ops the
+  rest of the chain the moment an earlier command fails). The prompt now
+  asks for one command per block by default, reserving chaining for
+  genuinely atomic operations. Pure prompt text, no platform dependency.
+- **Command editing moved from a cramped inline `<input>` to a proper
+  dialog** (`EditCommandDialog.tsx`, new) — a 12-row monospace textarea
+  (Ctrl+Enter to save, Esc to cancel), reused by Edit, Edit/Append-for-
+  next-use, and a new "Add Command" button in the sidebar for typing/
+  pasting a command directly. Pure React/base-ui `Dialog`, no OS dependency.
+
+### Needs your judgment / testing
+
+- **New hotkey default (`Ctrl+Shift+A`) may not be the right default on
+  macOS.** `useAddClipboardCommandHotkey.ts` reads the current OS clipboard
+  and adds it as a new sidebar command; `DefaultHotkeyAddClipboardCommand`
+  in `services/config/config.go` and `DEFAULT_ADD_CLIPBOARD_COMMAND_HOTKEY`
+  in the frontend hook both hardcode `"Ctrl+Shift+A"` — a single default
+  shared across all platforms, chosen specifically to avoid AltGr
+  composition conflicts (which only affect `Ctrl+Alt+<letter>` combos) and
+  known Chromium/WebView2 devtools shortcuts. It was **not** chosen with
+  macOS conventions in mind: macOS users generally expect `Cmd`-based
+  shortcuts, not `Ctrl`-based ones, and `Ctrl+Shift+<letter>` is a less
+  idiomatic combo there. It's user-rebindable in Settings → Hotkeys either
+  way, so nothing is broken, but consider whether the *default* should
+  differ on macOS (e.g. a `Cmd`-based combo), and verify `Ctrl+Shift+A`
+  doesn't collide with any real macOS/WKWebView system shortcut before
+  deciding it's fine as-is.
+- **Hotkey capture UI** (`HotkeysTab.tsx`'s `buildKeyCombo`) records
+  `event.metaKey` as `"Meta"` in the combo string — on macOS that's the
+  `Cmd` key. The matching logic in `useAddClipboardCommandHotkey.ts` reads
+  it back correctly (`event.metaKey === parsed.meta`), so a user
+  *rebinding* to a `Cmd`-based combo on macOS should already work — this is
+  about the shipped *default*, not a functional gap.
+
+### Manual verification checklist — this section specifically
+
+- [ ] Toggle Light/Dark in Settings → Appearance — every panel (sidebar,
+      terminal chrome, dialogs, chat, status bar, context menus) actually
+      changes appearance, not just some of them. Toggle back to Dark and
+      confirm it looks identical to before this change (nothing should have
+      shifted shade in Dark mode).
+- [ ] In Light mode, open a chat response with a code block — confirm the
+      syntax highlighting uses light colors, not a dark box floating in a
+      light page.
+- [ ] Connect to a real SSH host with "Use tmux" checked — tmux fills the
+      **entire** terminal width immediately on connect, with no need to
+      toggle Hide/Show PairAdmin or otherwise touch the layout.
+- [ ] Hover a command in the sidebar, click the pencil icon (not right-
+      click) — opens a proper multi-line dialog, not a one-line field.
+- [ ] Click "+ Add Command" in the sidebar (above Clear History) — opens an
+      empty version of the same dialog; typing/pasting text and clicking
+      Save adds it as a new command.
+- [ ] Copy some text to the OS clipboard, press the configured hotkey
+      (`Ctrl+Shift+A` by default) while the terminal has focus — it's added
+      as a new sidebar command with no dialog. Confirm it does *not* fire
+      while typing in Settings, the chat input, or an open dialog's text
+      field.
+- [ ] Ask the AI something that would naturally take multiple steps —
+      confirm each command lands in its own separate code block rather than
+      being joined with `&&`/`;` or bare spaces on one line.
+
+## On testing rigor generally
 
 None of the remote-terminal backend logic can be fully exercised by unit
 tests alone — `services/remote_ssh_test.go` uses a real in-process SSH server
@@ -339,8 +472,15 @@ tests alone — `services/remote_ssh_test.go` uses a real in-process SSH server
 pure-logic pieces (line-buffering, auth validation) since `masterzen/winrm`'s
 types are concrete, not interfaces. That's sufficient to catch regressions in
 logic, but it is *not* a substitute for connecting to a real remote Linux box
-and a real remote Windows box by hand. Treat the manual checklists in this
-file (both this section and section 4) as a required, recurring part of
-shipping any change here — not a one-time box to check off — since a green
-`go test ./...` / `vitest run` run only proves the code does what the tests
-assume, not that it works against a real server on your platform.
+and a real remote Windows box by hand. The tmux width bug in section 6 is a
+second, independent example of the same lesson from a different angle: it
+was pure frontend logic with 100% unit-test-able code paths, and two wrong
+fixes still shipped and were confirmed "not fixed" only by a real human
+manually reconnecting to a real tmux session — the automated test suite
+alone never would have caught it, and the real fix was only found by
+measuring the actual live state rather than reasoning from the code. Treat
+the manual checklists in this file (sections 4, 5, and 6) as a required,
+recurring part of shipping any change here — not a one-time box to check
+off — since a green `go test ./...` / `vitest run` run only proves the code
+does what the tests assume, not that it works against a real server, a real
+remote host, or a real WebView engine on your platform.

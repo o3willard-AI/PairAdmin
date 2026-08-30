@@ -10,19 +10,21 @@ AI pair programming assistant for terminal workflows
 
 PairAdmin is a desktop application that brings AI assistance directly into your terminal workflow. The AI sees exactly what you see in the terminal — automatically, without copy/paste — so assistance is always in context. PairAdmin works with tmux and GNOME Terminal (via AT-SPI2), and supports multiple LLM providers including OpenAI, Anthropic, Ollama, LM Studio, and OpenRouter.
 
+Beyond local terminals, PairAdmin can also open and manage **remote SSH (Unix/Linux) and WinRM (Windows) sessions** directly from the "+ New" terminal dialog, with saved connections, OS-keychain-backed credential storage, and optional tmux auto-attach. A **Commands sidebar** keeps a running, pinnable history of every command the AI suggests (or that you save yourself, via a dialog or a configurable clipboard hotkey) for one-click copy/execute later. The UI supports both Light and Dark themes.
+
 ## Installation
 
 ### One-line installer (Linux)
 
 ```bash
 # Install (auto-detects .deb / .rpm / AppImage)
-curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin-anth-CC-gsd/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin/master/install.sh | bash
 
 # Upgrade to latest version
-curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin-anth-CC-gsd/master/install.sh | bash -s upgrade
+curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin/master/install.sh | bash -s upgrade
 
 # Uninstall
-curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin-anth-CC-gsd/master/install.sh | bash -s uninstall
+curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin/master/install.sh | bash -s uninstall
 ```
 
 The installer detects your distro and picks the right package format automatically (`.deb` for Debian/Ubuntu, `.rpm` for Fedora/RHEL, `.AppImage` fallback for others). `sudo` is required during install/uninstall.
@@ -31,7 +33,7 @@ The installer detects your distro and picks the right package format automatical
 
 ### Manual install
 
-Download the latest release from the [Releases page](https://github.com/o3willard-AI/PairAdmin-anth-CC-gsd/releases/latest), then:
+Download the latest release from the [Releases page](https://github.com/o3willard-AI/PairAdmin/releases/latest), then:
 
 **Debian/Ubuntu (.deb)**
 ```bash
@@ -70,6 +72,8 @@ Before using PairAdmin, you need:
 
 ## Building from Source
 
+**Linux:**
+
 ```bash
 # Install build dependencies
 sudo ./scripts/install-deps.sh
@@ -81,6 +85,19 @@ sudo ./scripts/install-deps.sh
 wails build -platform linux/amd64 -tags webkit2_41
 # Binary at: build/bin/pairadmin
 ```
+
+**Windows:**
+
+```powershell
+# Install Go 1.24+, Node.js 20+, and the Wails CLI (same as above)
+# WebView2 Runtime is required (preinstalled on Windows 11; installable on Windows 10)
+
+wails build -platform windows/amd64
+# Binary at: build\bin\pairadmin.exe
+```
+
+**macOS:** not yet packaged — see `PLATFORM_PARITY_NOTES.md` for the current
+state of cross-platform work and what still needs verification there.
 
 ## License
 
