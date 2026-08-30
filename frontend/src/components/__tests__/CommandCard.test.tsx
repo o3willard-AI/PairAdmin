@@ -111,6 +111,23 @@ describe("CommandCard", () => {
     expect(card.querySelector("svg")).toBeInTheDocument();
   });
 
+  it("clicking the edit icon opens the inline edit input without needing a right-click", async () => {
+    const user = userEvent.setup();
+    render(
+      <TooltipProvider>
+        <CommandCard command={mockCommand} onCopy={vi.fn()} onExecute={vi.fn()} />
+      </TooltipProvider>
+    );
+
+    await user.click(screen.getByRole("button", { name: /edit command/i }));
+    const input = screen.getByRole("textbox");
+    await user.clear(input);
+    await user.type(input, "echo left-click-edit");
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(useCommandStore.getState().commands[0].command).toBe("echo left-click-edit");
+  });
+
   it("right-clicking opens a context menu with Pin, Edit, Edit/Append for next use, and Remove", async () => {
     const user = userEvent.setup();
     render(
@@ -167,7 +184,8 @@ describe("CommandCard", () => {
     await user.click(screen.getByText("Edit"));
     const input = screen.getByRole("textbox");
     await user.clear(input);
-    await user.type(input, "echo permanently-edited{Enter}");
+    await user.type(input, "echo permanently-edited");
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
 
     expect(useCommandStore.getState().commands[0].command).toBe("echo permanently-edited");
     expect(useCommandStore.getState().commands[0].tempOverride).toBeUndefined();
@@ -185,7 +203,8 @@ describe("CommandCard", () => {
     await user.click(screen.getByText("Edit/Append for next use"));
     const input = screen.getByRole("textbox");
     await user.clear(input);
-    await user.type(input, "echo one-time{Enter}");
+    await user.type(input, "echo one-time");
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
 
     expect(useCommandStore.getState().commands[0].tempOverride).toBe("echo one-time");
     expect(useCommandStore.getState().commands[0].command).toBe("sudo systemctl restart nginx");

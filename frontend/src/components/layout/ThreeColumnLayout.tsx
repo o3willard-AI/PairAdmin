@@ -3,6 +3,7 @@ import { useTerminalStore } from "@/stores/terminalStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTerminalCapture } from "@/hooks/useTerminalCapture";
 import { useDefaultTerminalFocus } from "@/hooks/useDefaultTerminalFocus";
+import { useAddClipboardCommandHotkey } from "@/hooks/useAddClipboardCommandHotkey";
 import { TerminalTabList } from "@/components/terminal/TerminalTabList";
 import { TerminalPreview } from "@/components/terminal/TerminalPreview";
 import { StatusBar } from "./StatusBar";
@@ -26,6 +27,7 @@ const CHAT_VISIBLE_STORAGE_KEY = "pairadmin-chat-visible";
 export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps) {
   useTerminalCapture(); // Subscribe to terminal events from Go service
   useDefaultTerminalFocus(); // Keep keyboard focus on the terminal by default
+  useAddClipboardCommandHotkey(); // Ctrl+Shift+A (configurable): clipboard -> new sidebar command
 
   const activeTabId = useTerminalStore((state) => state.activeTabId);
   const tabs = useTerminalStore((state) => state.tabs);
@@ -95,9 +97,9 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden">
-      <div className="flex flex-1 overflow-hidden bg-zinc-950 text-zinc-100">
+      <div className="flex flex-1 overflow-hidden bg-surface-0 text-surface-text">
         {/* Left column: terminal tab list */}
-        <aside className="w-40 flex-none border-r border-zinc-800 overflow-y-auto">
+        <aside className="w-40 flex-none border-r border-surface-border overflow-y-auto">
           <TerminalTabList />
         </aside>
 
@@ -113,7 +115,7 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
               the scrollback/session of) the underlying xterm instance. */}
           <div
             key="terminal-section"
-            className={`border-b border-zinc-800 relative ${
+            className={`border-b border-surface-border relative ${
               chatVisible ? "flex-1 basis-0" : "flex-1"
             }`}
           >
@@ -140,10 +142,10 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
             key="chat-section"
             className={`flex flex-col overflow-hidden ${chatVisible ? "flex-1 basis-0" : "flex-none"}`}
           >
-            <div className="flex-none flex items-center justify-center border-b border-zinc-800 bg-zinc-950">
+            <div className="flex-none flex items-center justify-center border-b border-surface-border bg-surface-0">
               <button
                 onClick={toggleChatVisible}
-                className="px-3 py-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                className="px-3 py-1 text-xs text-surface-text-muted hover:text-surface-text transition-colors"
               >
                 {chatVisible ? "Hide PairAdmin" : "Show PairAdmin"}
               </button>
@@ -155,7 +157,7 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
         </main>
 
         {/* Right column: command sidebar */}
-        <aside className="w-[220px] flex-none border-l border-zinc-800 overflow-y-auto">
+        <aside className="w-[220px] flex-none border-l border-surface-border overflow-y-auto">
           {sidebar}
         </aside>
       </div>

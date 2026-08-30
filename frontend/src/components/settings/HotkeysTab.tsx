@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { mergeAndSaveSettings } from "@/utils/settingsSync";
+import { DEFAULT_ADD_CLIPBOARD_COMMAND_HOTKEY } from "@/hooks/useAddClipboardCommandHotkey";
 
 function buildKeyCombo(event: KeyboardEvent): string {
   const parts: string[] = [];
@@ -44,7 +45,7 @@ function HotkeyInput({ label, value, onChange }: HotkeyInputProps) {
 
   return (
     <div className="space-y-1">
-      <label className="text-xs text-zinc-400">{label}</label>
+      <label className="text-xs text-surface-text-muted">{label}</label>
       <input
         ref={inputRef}
         type="text"
@@ -53,10 +54,10 @@ function HotkeyInput({ label, value, onChange }: HotkeyInputProps) {
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         readOnly
-        className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none cursor-pointer"
+        className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none cursor-pointer"
         placeholder="Click to capture shortcut"
       />
-      <p className="text-xs text-zinc-600">Click the field and press a key combination to set.</p>
+      <p className="text-xs text-surface-text-muted">Click the field and press a key combination to set.</p>
     </div>
   );
 }
@@ -64,6 +65,9 @@ function HotkeyInput({ label, value, onChange }: HotkeyInputProps) {
 export function HotkeysTab() {
   const [hotkeyCopyLast, setHotkeyCopyLast] = useState("");
   const [hotkeyFocusWindow, setHotkeyFocusWindow] = useState("");
+  const [hotkeyAddClipboardCommand, setHotkeyAddClipboardCommand] = useState(
+    DEFAULT_ADD_CLIPBOARD_COMMAND_HOTKEY
+  );
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
@@ -72,6 +76,7 @@ export function HotkeysTab() {
       .then((cfg) => {
         if (cfg.HotkeyCopyLast) setHotkeyCopyLast(cfg.HotkeyCopyLast);
         if (cfg.HotkeyFocusWindow) setHotkeyFocusWindow(cfg.HotkeyFocusWindow);
+        if (cfg.HotkeyAddClipboardCommand) setHotkeyAddClipboardCommand(cfg.HotkeyAddClipboardCommand);
       })
       .catch(() => {});
   }, []);
@@ -82,6 +87,7 @@ export function HotkeysTab() {
       await mergeAndSaveSettings({
         HotkeyCopyLast: hotkeyCopyLast,
         HotkeyFocusWindow: hotkeyFocusWindow,
+        HotkeyAddClipboardCommand: hotkeyAddClipboardCommand,
       });
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
@@ -93,7 +99,7 @@ export function HotkeysTab() {
 
   return (
     <div className="space-y-4 p-6">
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-surface-text-muted">
         In-app keyboard shortcuts (window must be focused). Global hotkeys are not supported.
       </p>
 
@@ -109,11 +115,23 @@ export function HotkeysTab() {
         onChange={setHotkeyFocusWindow}
       />
 
+      <div className="space-y-1">
+        <HotkeyInput
+          label="Add Clipboard as Command"
+          value={hotkeyAddClipboardCommand}
+          onChange={setHotkeyAddClipboardCommand}
+        />
+        <p className="text-xs text-surface-text-muted">
+          Grabs whatever is currently on the clipboard and adds it as a new command in the
+          sidebar — copy a command in the terminal, then press this to save it.
+        </p>
+      </div>
+
       <div className="flex items-center gap-3">
         <button
           onClick={handleSave}
           disabled={saveStatus === "saving"}
-          className="bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-xs px-4 py-1.5 rounded disabled:opacity-50"
+          className="bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-4 py-1.5 rounded disabled:opacity-50"
         >
           {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved!" : "Save"}
         </button>

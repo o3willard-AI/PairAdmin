@@ -48,6 +48,12 @@ type AppConfig struct {
 	ClipboardClearSecs int             `mapstructure:"clipboard_clear_secs" yaml:"clipboard_clear_secs"`
 	HotkeyCopyLast     string          `mapstructure:"hotkey_copy_last" yaml:"hotkey_copy_last"`
 	HotkeyFocusWindow  string          `mapstructure:"hotkey_focus_window" yaml:"hotkey_focus_window"`
+	// HotkeyAddClipboardCommand grabs the current OS clipboard contents and
+	// adds them as a new sidebar command — lets a user save a command they
+	// derived directly in the terminal (select it, Ctrl+C, then this hotkey)
+	// without going through the AI chat. Defaults to a combo not bound to
+	// anything by default on Windows or macOS (see DefaultHotkeyAddClipboardCommand).
+	HotkeyAddClipboardCommand string `mapstructure:"hotkey_add_clipboard_command" yaml:"hotkey_add_clipboard_command"`
 	Theme              string          `mapstructure:"theme" yaml:"theme"`
 	FontSize           int             `mapstructure:"font_size" yaml:"font_size"`
 	ContextLines       int             `mapstructure:"context_lines" yaml:"context_lines"`
@@ -55,6 +61,14 @@ type AppConfig struct {
 	LMStudioHost       string          `mapstructure:"lmstudio_host" yaml:"lmstudio_host"`
 	RemoteHosts        []RemoteHost    `mapstructure:"remote_hosts" yaml:"remote_hosts"`
 }
+
+// DefaultHotkeyAddClipboardCommand is the out-of-the-box binding for
+// HotkeyAddClipboardCommand. Ctrl+Shift+<letter> avoids AltGr composition
+// conflicts on European keyboard layouts (which Ctrl+Alt combos trigger),
+// isn't a default Chromium/WebView2 devtools or browsing shortcut, and isn't
+// claimed by a default macOS or Windows system-wide shortcut — safe to fire
+// while the app window has focus on either platform.
+const DefaultHotkeyAddClipboardCommand = "Ctrl+Shift+A"
 
 // configDir returns the ~/.pairadmin directory path.
 func configDir() string {
@@ -76,6 +90,7 @@ func LoadAppConfig() (*AppConfig, error) {
 	v.AddConfigPath(configDir())
 	v.SetDefault("custom_patterns", []CustomPattern{})
 	v.SetDefault("remote_hosts", []RemoteHost{})
+	v.SetDefault("hotkey_add_clipboard_command", DefaultHotkeyAddClipboardCommand)
 	// Missing config file is not an error — returns defaults.
 	_ = v.ReadInConfig()
 	var cfg AppConfig
@@ -104,6 +119,7 @@ func SaveAppConfig(cfg *AppConfig) error {
 	v.Set("clipboard_clear_secs", cfg.ClipboardClearSecs)
 	v.Set("hotkey_copy_last", cfg.HotkeyCopyLast)
 	v.Set("hotkey_focus_window", cfg.HotkeyFocusWindow)
+	v.Set("hotkey_add_clipboard_command", cfg.HotkeyAddClipboardCommand)
 	v.Set("theme", cfg.Theme)
 	v.Set("font_size", cfg.FontSize)
 	v.Set("context_lines", cfg.ContextLines)

@@ -107,6 +107,7 @@ export namespace config {
 	    ClipboardClearSecs: number;
 	    HotkeyCopyLast: string;
 	    HotkeyFocusWindow: string;
+	    HotkeyAddClipboardCommand: string;
 	    Theme: string;
 	    FontSize: number;
 	    ContextLines: number;
@@ -128,6 +129,7 @@ export namespace config {
 	        this.ClipboardClearSecs = source["ClipboardClearSecs"];
 	        this.HotkeyCopyLast = source["HotkeyCopyLast"];
 	        this.HotkeyFocusWindow = source["HotkeyFocusWindow"];
+	        this.HotkeyAddClipboardCommand = source["HotkeyAddClipboardCommand"];
 	        this.Theme = source["Theme"];
 	        this.FontSize = source["FontSize"];
 	        this.ContextLines = source["ContextLines"];

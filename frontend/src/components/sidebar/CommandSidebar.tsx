@@ -1,10 +1,13 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
+import { Plus } from "lucide-react";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useCommandStore } from "@/stores/commandStore";
 import { sendToTerminal } from "@/utils/sendToTerminal";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
 import { CommandCard } from "./CommandCard";
 import { ClearHistoryButton } from "./ClearHistoryButton";
+import { EditCommandDialog } from "./EditCommandDialog";
 
 export function CommandSidebar() {
   const activeTabId = useTerminalStore((state) => state.activeTabId);
@@ -24,6 +27,7 @@ export function CommandSidebar() {
     [allCommands]
   );
   const draggedIdRef = useRef<string | null>(null);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
 
   const handleCopy = (id: string) => {
     const text = useCommandStore.getState().consumeCommandText(id);
@@ -36,14 +40,14 @@ export function CommandSidebar() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-3 py-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+      <div className="px-3 py-2 text-xs font-semibold text-surface-text-muted uppercase tracking-wider">
         Commands
       </div>
 
       <ScrollArea className="flex-1">
         <div className="flex flex-col gap-1 px-2">
           {pinnedCommands.length === 0 && unpinnedCommands.length === 0 ? (
-            <p className="text-zinc-600 text-xs text-center py-4">
+            <p className="text-surface-text-muted text-xs text-center py-4">
               No commands yet
             </p>
           ) : (
@@ -69,7 +73,7 @@ export function CommandSidebar() {
                 />
               ))}
               {pinnedCommands.length > 0 && unpinnedCommands.length > 0 && (
-                <div className="border-t border-zinc-800 my-1" />
+                <div className="border-t border-surface-border my-1" />
               )}
               {unpinnedCommands.map((command) => (
                 <CommandCard
@@ -84,11 +88,34 @@ export function CommandSidebar() {
         </div>
       </ScrollArea>
 
-      <div className="p-2 border-t border-zinc-800">
+      <div className="p-2 border-t border-surface-border space-y-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setAddDialogOpen(true)}
+          className="w-full text-xs text-surface-text-muted hover:text-surface-text"
+        >
+          <Plus size={14} />
+          Add Command
+        </Button>
         <ClearHistoryButton
           onClick={() => useCommandStore.getState().clearAll()}
         />
       </div>
+
+      <EditCommandDialog
+        open={addDialogOpen}
+        mode="add"
+        initialValue=""
+        onSave={(value) => {
+          useCommandStore.getState().addCommand(activeTabId, {
+            command: value,
+            originalQuestion: "",
+          });
+          setAddDialogOpen(false);
+        }}
+        onClose={() => setAddDialogOpen(false)}
+      />
     </div>
   );
 }

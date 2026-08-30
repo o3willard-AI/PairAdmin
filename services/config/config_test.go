@@ -274,6 +274,44 @@ func TestLoadAppConfig_RemoteHostsEmptyWhenNoFile(t *testing.T) {
 	}
 }
 
+// TestLoadAppConfig_DefaultsHotkeyAddClipboardCommand verifies a fresh
+// install ships with a working default hotkey rather than an empty/unset one.
+func TestLoadAppConfig_DefaultsHotkeyAddClipboardCommand(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	cfg, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
+	}
+	if cfg.HotkeyAddClipboardCommand != DefaultHotkeyAddClipboardCommand {
+		t.Errorf("HotkeyAddClipboardCommand: expected default %q, got %q",
+			DefaultHotkeyAddClipboardCommand, cfg.HotkeyAddClipboardCommand)
+	}
+}
+
+// TestSaveAndLoadAppConfig_HotkeyAddClipboardCommandRoundTrip verifies a
+// user-customized binding overrides the default and survives a save/load cycle.
+func TestSaveAndLoadAppConfig_HotkeyAddClipboardCommandRoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	original := &AppConfig{HotkeyAddClipboardCommand: "Ctrl+Alt+X"}
+	if err := SaveAppConfig(original); err != nil {
+		t.Fatalf("SaveAppConfig() unexpected error: %v", err)
+	}
+
+	loaded, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
+	}
+	if loaded.HotkeyAddClipboardCommand != "Ctrl+Alt+X" {
+		t.Errorf("HotkeyAddClipboardCommand: expected 'Ctrl+Alt+X', got %q", loaded.HotkeyAddClipboardCommand)
+	}
+}
+
 // TestSaveAppConfig_PreservesCustomPatternsOnNewFieldSave verifies that saving new fields keeps CustomPatterns.
 func TestSaveAppConfig_PreservesCustomPatternsOnNewFieldSave(t *testing.T) {
 	tmpDir := t.TempDir()

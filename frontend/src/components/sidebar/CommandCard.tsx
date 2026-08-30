@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { Copy, RotateCw, Pin, PinOff, Trash2, Pencil, History } from "lucide-react";
 import { useCommandStore, type Command } from "@/stores/commandStore";
 import {
@@ -14,6 +14,7 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
 } from "@/components/ui/context-menu";
+import { EditCommandDialog } from "./EditCommandDialog";
 
 interface CommandCardProps {
   command: Command;
@@ -33,64 +34,31 @@ export function CommandCard({
   onDropOnId,
 }: CommandCardProps) {
   const [editing, setEditing] = useState<"permanent" | "temporary" | null>(null);
-  const [editValue, setEditValue] = useState("");
-  const editInputRef = useRef<HTMLInputElement>(null);
   const displayText = command.tempOverride ?? command.command;
 
-  const startEdit = (mode: "permanent" | "temporary") => {
-    setEditValue(displayText);
-    setEditing(mode);
-  };
+  const startEdit = (mode: "permanent" | "temporary") => setEditing(mode);
 
-  // The context menu closes when "Edit" is clicked and returns focus to its
-  // trigger asynchronously for accessibility — but entering edit mode
-  // replaces that trigger entirely with this input. autoFocus alone loses
-  // that race intermittently: the menu's focus-return steals focus right
-  // back, firing onBlur (which commits) before the user can type anything,
-  // making edits appear to silently do nothing. Deferring to the next frame
-  // ensures our focus call runs after the menu's own settles.
-  useEffect(() => {
-    if (!editing) return;
-    const id = requestAnimationFrame(() => editInputRef.current?.focus());
-    return () => cancelAnimationFrame(id);
-  }, [editing]);
-
-  const commitEdit = () => {
+  const saveEdit = (value: string) => {
     if (editing === "permanent") {
-      useCommandStore.getState().editCommand(command.id, editValue);
+      useCommandStore.getState().editCommand(command.id, value);
     } else if (editing === "temporary") {
-      useCommandStore.getState().editForNextUse(command.id, editValue);
+      useCommandStore.getState().editForNextUse(command.id, value);
     }
     setEditing(null);
   };
 
   const cancelEdit = () => setEditing(null);
 
-  if (editing) {
-    return (
-      <div className="w-full px-3 py-2 bg-zinc-900 rounded border border-zinc-700">
-        <input
-          ref={editInputRef}
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commitEdit();
-            if (e.key === "Escape") cancelEdit();
-          }}
-          onBlur={commitEdit}
-          className="w-full bg-transparent text-xs font-mono text-zinc-100 outline-none"
-        />
-        <p className="text-[10px] text-zinc-500 mt-1">
-          {editing === "permanent"
-            ? "Enter to save, Esc to cancel"
-            : "Applies once on next use — Enter to save, Esc to cancel"}
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <TooltipProvider>
+    <>
+      <EditCommandDialog
+        open={editing !== null}
+        mode={editing ?? "permanent"}
+        initialValue={displayText}
+        onSave={saveEdit}
+        onClose={cancelEdit}
+      />
+      <TooltipProvider>
       <ContextMenu>
         <Tooltip>
           <ContextMenuTrigger
@@ -102,7 +70,7 @@ export function CommandCard({
                 onDragStart={() => onDragStartId?.(command.id)}
                 onDragOver={(e) => draggable && e.preventDefault()}
                 onDrop={() => onDropOnId?.(command.id)}
-                className="group w-full text-left px-3 py-2 text-xs font-mono bg-zinc-900 hover:bg-zinc-800 rounded border border-zinc-800 hover:border-zinc-700 transition-colors flex items-center gap-1"
+                className="group w-full text-left px-3 py-2 text-xs font-mono bg-surface-1 hover:bg-surface-2 rounded border border-surface-border hover:border-surface-border-strong transition-colors flex items-center gap-1"
               />
             }
           >
@@ -117,7 +85,7 @@ export function CommandCard({
                 onCopy(command.id);
               }}
               aria-label="Copy to Terminal"
-              className="flex-none opacity-0 group-hover:opacity-100 transition-opacity text-zinc-400 hover:text-zinc-200"
+              className="flex-none opacity-0 group-hover:opacity-100 transition-opacity text-surface-text-muted hover:text-surface-text"
             >
               <Copy size={12} />
             </button>
@@ -128,16 +96,27 @@ export function CommandCard({
                 onExecute(command.id);
               }}
               aria-label="Execute in Terminal"
-              className="flex-none opacity-0 group-hover:opacity-100 transition-opacity text-zinc-400 hover:text-zinc-200"
+              className="flex-none opacity-0 group-hover:opacity-100 transition-opacity text-surface-text-muted hover:text-surface-text"
             >
               <RotateCw size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                startEdit("permanent");
+              }}
+              aria-label="Edit Command"
+              className="flex-none opacity-0 group-hover:opacity-100 transition-opacity text-surface-text-muted hover:text-surface-text"
+            >
+              <Pencil size={12} />
             </button>
           </ContextMenuTrigger>
           <TooltipContent side="left" className="max-w-[280px]">
             <p className="text-xs font-mono break-all">{displayText}</p>
             {command.originalQuestion && (
               <>
-                <p className="text-xs text-zinc-400 mt-1.5 mb-0.5">Generated from:</p>
+                <p className="text-xs text-surface-text-muted mt-1.5 mb-0.5">Generated from:</p>
                 <p className="text-xs">{command.originalQuestion}</p>
               </>
             )}
@@ -168,6 +147,7 @@ export function CommandCard({
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
-    </TooltipProvider>
+      </TooltipProvider>
+    </>
   );
 }

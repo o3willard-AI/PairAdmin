@@ -11,7 +11,7 @@ export function ClearHistoryButton({ onClick }: ClearHistoryButtonProps) {
       variant="ghost"
       size="sm"
       onClick={onClick}
-      className="w-full text-xs text-zinc-500 hover:text-zinc-300"
+      className="w-full text-xs text-surface-text-muted hover:text-surface-text"
     >
       <Trash2 size={14} />
       Clear History
