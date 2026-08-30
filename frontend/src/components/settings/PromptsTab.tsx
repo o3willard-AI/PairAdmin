@@ -34,20 +34,20 @@ export function PromptsTab() {
   return (
     <div className="space-y-4 p-6">
       <div className="space-y-1">
-        <label className="text-xs text-zinc-400">Built-in System Prompt (read-only)</label>
-        <div className="bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-xs text-zinc-500 whitespace-pre-wrap">
+        <label className="text-xs text-surface-text-muted">Built-in System Prompt (read-only)</label>
+        <div className="bg-surface-2 border border-surface-border-strong rounded px-3 py-2 text-xs text-surface-text-muted whitespace-pre-wrap">
           {DEFAULT_SYSTEM_PROMPT}
         </div>
       </div>
 
       <div className="space-y-1">
-        <label className="text-xs text-zinc-400">Custom Prompt Extension</label>
+        <label className="text-xs text-surface-text-muted">Custom Prompt Extension</label>
         <textarea
           value={customPrompt}
           onChange={(e) => setCustomPrompt(e.target.value)}
           placeholder="Add custom instructions to extend the system prompt..."
           rows={6}
-          className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none resize-none"
+          className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none resize-none"
         />
       </div>
 
@@ -55,7 +55,7 @@ export function PromptsTab() {
         <button
           onClick={handleSave}
           disabled={saveStatus === "saving"}
-          className="bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-xs px-4 py-1.5 rounded disabled:opacity-50"
+          className="bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-4 py-1.5 rounded disabled:opacity-50"
         >
           {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved!" : "Save"}
         </button>

@@ -14,10 +14,10 @@ type TerminalKind = "local" | "ssh" | "winrm";
 type AuthType = "password" | "privatekey";
 
 const inputClass =
-  "w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none";
+  "w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none";
 
 const typeCardClass =
-  "w-full text-left px-4 py-3 rounded border border-zinc-700 hover:bg-zinc-800 text-sm text-zinc-100 transition-colors";
+  "w-full text-left px-4 py-3 rounded border border-surface-border-strong hover:bg-surface-2 text-sm text-surface-text transition-colors";
 
 // Mirrors defaultTmuxSessionName in services/remote_ssh.go — shown only as a
 // placeholder hint; the actual default is applied backend-side if left blank.
@@ -296,8 +296,8 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
     >
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/60" />
-        <Dialog.Popup className="fixed left-1/2 top-1/2 z-50 w-[480px] max-h-[80vh] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl flex flex-col overflow-hidden">
-          <Dialog.Title className="px-6 py-4 text-sm font-semibold text-zinc-100 border-b border-zinc-800">
+        <Dialog.Popup className="fixed left-1/2 top-1/2 z-50 w-[480px] max-h-[80vh] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-surface-1 border border-surface-border-strong shadow-xl flex flex-col overflow-hidden">
+          <Dialog.Title className="px-6 py-4 text-sm font-semibold text-surface-text border-b border-surface-border">
             New Terminal
           </Dialog.Title>
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
@@ -305,44 +305,44 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
               <div className="space-y-2">
                 <button onClick={() => selectKind("local")} className={typeCardClass}>
                   <div className="font-medium">Local</div>
-                  <div className="text-xs text-zinc-500">Open a shell on this machine</div>
+                  <div className="text-xs text-surface-text-muted">Open a shell on this machine</div>
                 </button>
                 <button onClick={() => selectKind("ssh")} className={typeCardClass}>
                   <div className="font-medium">Unix / Linux (SSH)</div>
-                  <div className="text-xs text-zinc-500">Connect to a remote host over SSH</div>
+                  <div className="text-xs text-surface-text-muted">Connect to a remote host over SSH</div>
                 </button>
                 <button onClick={() => selectKind("winrm")} className={typeCardClass}>
                   <div className="font-medium">Remote Windows (WinRM)</div>
-                  <div className="text-xs text-zinc-500">
+                  <div className="text-xs text-surface-text-muted">
                     Command/response only — not a live shell
                   </div>
                 </button>
 
                 {recentHosts.length > 0 && (
                   <div className="pt-3">
-                    <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">
+                    <div className="text-xs text-surface-text-muted uppercase tracking-wider mb-1">
                       Recent
                     </div>
                     <div className="space-y-1">
                       {recentHosts.map((h) => (
                         <div
                           key={h.ID}
-                          className="flex items-center justify-between px-3 py-2 rounded border border-zinc-800 hover:bg-zinc-800"
+                          className="flex items-center justify-between px-3 py-2 rounded border border-surface-border hover:bg-surface-2"
                         >
-                          <div className="text-sm text-zinc-200 truncate">
+                          <div className="text-sm text-surface-text truncate">
                             {h.Name || `${h.Username}@${h.Host}`}
-                            <span className="text-xs text-zinc-500 ml-2">{h.Kind}</span>
+                            <span className="text-xs text-surface-text-muted ml-2">{h.Kind}</span>
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
                             <button
-                              className="text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-100 px-2 py-1 rounded disabled:opacity-50"
+                              className="text-xs bg-surface-3 hover:bg-surface-3/80 text-surface-text px-2 py-1 rounded disabled:opacity-50"
                               disabled={connectStatus === "connecting"}
                               onClick={() => handleReconnect(h)}
                             >
                               Connect
                             </button>
                             <button
-                              className="text-xs text-zinc-500 hover:text-red-400 px-1.5 py-1"
+                              className="text-xs text-surface-text-muted hover:text-red-400 px-1.5 py-1"
                               aria-label={`Forget saved host ${h.Username}@${h.Host}`}
                               onClick={() => handleForget(h.ID)}
                             >
@@ -367,7 +367,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
             {step === "form" && (
               <div className="space-y-3">
                 <div className="space-y-1">
-                  <label className="text-xs text-zinc-400">Host</label>
+                  <label className="text-xs text-surface-text-muted">Host</label>
                   <input
                     className={inputClass}
                     value={host}
@@ -377,7 +377,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-xs text-zinc-400">Port</label>
+                    <label className="text-xs text-surface-text-muted">Port</label>
                     <input
                       type="number"
                       className={inputClass}
@@ -386,7 +386,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-zinc-400">Username</label>
+                    <label className="text-xs text-surface-text-muted">Username</label>
                     <input
                       className={inputClass}
                       value={username}
@@ -397,7 +397,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
 
                 {kind === "ssh" && (
                   <div className="space-y-1">
-                    <label className="text-xs text-zinc-400">Authentication</label>
+                    <label className="text-xs text-surface-text-muted">Authentication</label>
                     <select
                       className={inputClass}
                       value={authType}
@@ -409,14 +409,14 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                   </div>
                 )}
                 {kind === "winrm" && (
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-xs text-surface-text-muted">
                     WinRM supports password authentication only.
                   </p>
                 )}
 
                 {(kind === "winrm" || authType === "password") && (
                   <div className="space-y-1">
-                    <label className="text-xs text-zinc-400">Password</label>
+                    <label className="text-xs text-surface-text-muted">Password</label>
                     <input
                       type="password"
                       className={inputClass}
@@ -428,7 +428,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                 {kind === "ssh" && authType === "privatekey" && (
                   <>
                     <div className="space-y-1">
-                      <label className="text-xs text-zinc-400">Private key file path</label>
+                      <label className="text-xs text-surface-text-muted">Private key file path</label>
                       <input
                         className={inputClass}
                         value={privateKeyPath}
@@ -437,7 +437,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-xs text-zinc-400">Passphrase (optional)</label>
+                      <label className="text-xs text-surface-text-muted">Passphrase (optional)</label>
                       <input
                         type="password"
                         className={inputClass}
@@ -448,7 +448,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                   </>
                 )}
 
-                <label className="flex items-center gap-2 text-xs text-zinc-400 pt-1">
+                <label className="flex items-center gap-2 text-xs text-surface-text-muted pt-1">
                   <input
                     type="checkbox"
                     checked={saveTerminal}
@@ -458,8 +458,8 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                 </label>
 
                 {saveTerminal && kind === "ssh" && (
-                  <div className="pl-5 space-y-2 border-l border-zinc-800">
-                    <label className="flex items-center gap-2 text-xs text-zinc-400">
+                  <div className="pl-5 space-y-2 border-l border-surface-border">
+                    <label className="flex items-center gap-2 text-xs text-surface-text-muted">
                       <input
                         type="checkbox"
                         checked={useTmux}
@@ -469,14 +469,14 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                     </label>
                     {useTmux && (
                       <div className="space-y-1">
-                        <label className="text-xs text-zinc-400">tmux session name</label>
+                        <label className="text-xs text-surface-text-muted">tmux session name</label>
                         <input
                           className={inputClass}
                           value={tmuxSessionName}
                           onChange={(e) => setTmuxSessionName(e.target.value)}
                           placeholder={defaultTmuxSessionNamePlaceholder}
                         />
-                        <p className="text-xs text-zinc-600">
+                        <p className="text-xs text-surface-text-muted">
                           Creates this session if it doesn't exist yet, or reattaches to it if
                           it's still running — including after it was closed or lost elsewhere.
                         </p>
@@ -508,14 +508,14 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                 <div className="flex items-center gap-2 pt-2">
                   <button
                     onClick={() => setStep("type")}
-                    className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs px-4 py-1.5 rounded"
+                    className="bg-surface-2 hover:bg-surface-3 text-surface-text-muted text-xs px-4 py-1.5 rounded"
                   >
                     Back
                   </button>
                   <button
                     onClick={() => handleConnectRemote()}
                     disabled={connectStatus === "connecting" || !host || !username}
-                    className="bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-xs px-4 py-1.5 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-4 py-1.5 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {connectStatus === "connecting" ? "Connecting..." : "Connect"}
                   </button>

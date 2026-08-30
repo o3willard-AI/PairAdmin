@@ -11,3 +11,20 @@ class ResizeObserverStub {
 if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
 }
+
+// jsdom also doesn't implement Element.getAnimations() — base-ui's
+// ScrollArea (used by CommandSidebar, among others) calls it to check
+// whether a fade-out is still running before hiding the scrollbar.
+if (typeof Element.prototype.getAnimations === "undefined") {
+  Element.prototype.getAnimations = () => [];
+}
+
+// jsdom doesn't implement the CSS Font Loading API (document.fonts) at all —
+// TerminalPreview.tsx awaits document.fonts.ready before its corrective
+// terminal re-fit. Resolve immediately so that await doesn't hang forever.
+if (typeof document.fonts === "undefined") {
+  Object.defineProperty(document, "fonts", {
+    value: { ready: Promise.resolve() },
+    configurable: true,
+  });
+}

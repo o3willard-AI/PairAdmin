@@ -10,7 +10,7 @@ export function TerminalTabList() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-3 py-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+      <div className="px-3 py-2 text-xs font-semibold text-surface-text-muted uppercase tracking-wider">
         Terminals
       </div>
       <div className="flex-1 overflow-y-auto">
@@ -25,7 +25,7 @@ export function TerminalTabList() {
       </div>
       <button
         onClick={() => setDialogOpen(true)}
-        className="w-full px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+        className="w-full px-3 py-1.5 text-xs text-surface-text-muted hover:text-surface-text transition-colors"
       >
         + New
       </button>

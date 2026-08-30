@@ -112,15 +112,15 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
   return (
     <div className="space-y-4 p-6">
       <div className="space-y-1">
-        <label className="text-xs text-zinc-400">Provider</label>
+        <label className="text-xs text-surface-text-muted">Provider</label>
         <div className="relative">
           <select
             value={provider}
             onChange={(e) => setProvider(e.target.value as Provider)}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
+            className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
           >
             {PROVIDERS.map((p) => (
-              <option key={p} value={p} className="bg-zinc-800 text-zinc-100">
+              <option key={p} value={p} className="bg-surface-2 text-surface-text">
                 {p}
               </option>
             ))}
@@ -129,55 +129,55 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
       </div>
 
       <div className="space-y-1">
-        <label className="text-xs text-zinc-400">Model</label>
+        <label className="text-xs text-surface-text-muted">Model</label>
         <input
           type="text"
           value={model}
           onChange={(e) => setModel(e.target.value)}
           placeholder="e.g. gpt-4o, claude-3-5-sonnet-20241022"
-          className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
+          className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
         />
       </div>
 
       {(provider === "ollama") ? (
         <div className="space-y-1">
-          <label className="text-xs text-zinc-400">Server URL</label>
+          <label className="text-xs text-surface-text-muted">Server URL</label>
           <input
             type="text"
             value={ollamaHost}
             onChange={(e) => setOllamaHost(e.target.value)}
             placeholder="http://localhost:11434"
-            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
+            className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
           />
         </div>
       ) : (provider === "lmstudio") ? (
         <div className="space-y-1">
-          <label className="text-xs text-zinc-400">Server URL</label>
+          <label className="text-xs text-surface-text-muted">Server URL</label>
           <input
             type="text"
             value={lmstudioHost}
             onChange={(e) => setLmstudioHost(e.target.value)}
             placeholder="http://localhost:1234/v1"
-            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
+            className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
           />
         </div>
       ) : null}
 
       {requiresApiKey ? (
         <div className="space-y-1">
-          <label className="text-xs text-zinc-400">API Key</label>
+          <label className="text-xs text-surface-text-muted">API Key</label>
           <input
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder={keyPlaceholder || "Enter API key"}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none"
+            className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
           />
         </div>
       ) : (
         <div className="space-y-1">
-          <label className="text-xs text-zinc-400">API Key</label>
-          <p className="text-xs text-zinc-500">No API key required for {provider}</p>
+          <label className="text-xs text-surface-text-muted">API Key</label>
+          <p className="text-xs text-surface-text-muted">No API key required for {provider}</p>
         </div>
       )}
 
@@ -185,7 +185,7 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
         <button
           onClick={handleTestConnection}
           disabled={testStatus === "testing"}
-          className="bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-xs px-4 py-1.5 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+          className="bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-4 py-1.5 rounded disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {testStatus === "testing" ? "Testing..." : "Test Connection"}
         </button>
@@ -201,7 +201,7 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
         <button
           onClick={handleSave}
           disabled={saveStatus === "saving"}
-          className="bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-xs px-4 py-1.5 rounded disabled:opacity-50"
+          className="bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-4 py-1.5 rounded disabled:opacity-50"
         >
           {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved!" : "Save"}
         </button>

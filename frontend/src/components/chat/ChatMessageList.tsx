@@ -84,7 +84,7 @@ export function ChatMessageList({ onRetry }: ChatMessageListProps) {
       <div ref={contentRef} className="space-y-4">
       {messages.length === 0 ? (
         <div className="flex items-center justify-center h-full py-8">
-          <p className="text-zinc-600 text-sm">
+          <p className="text-muted-foreground text-sm">
             Ask a question about the terminal output...
           </p>
         </div>
@@ -93,7 +93,7 @@ export function ChatMessageList({ onRetry }: ChatMessageListProps) {
           if (msg.role === "system") {
             return (
               <div key={msg.id} className="flex justify-start px-4 py-1">
-                <div className="text-zinc-500 italic text-sm whitespace-pre-wrap">
+                <div className="text-muted-foreground italic text-sm whitespace-pre-wrap">
                   {msg.content}
                 </div>
               </div>

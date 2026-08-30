@@ -31,6 +31,22 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+
+  /* App "surface scale" — most of the app's own components (sidebar,
+     terminal chrome, dialogs, chat) were built against literal zinc-9xx/7xx
+     Tailwind classes rather than the shadcn semantic tokens above, so
+     toggling the light/dark class had no visual effect on them. These
+     utilities give the same 4-step surface + 2-step text scale a theme-aware
+     home: dark values below are the exact zinc hex the app already used, so
+     switching them in is a no-op for dark mode and a real fix for light. */
+  --color-surface-0: hsl(var(--surface-0));
+  --color-surface-1: hsl(var(--surface-1));
+  --color-surface-2: hsl(var(--surface-2));
+  --color-surface-3: hsl(var(--surface-3));
+  --color-surface-text: hsl(var(--surface-text));
+  --color-surface-text-muted: hsl(var(--surface-text-muted));
+  --color-surface-border: hsl(var(--surface-border));
+  --color-surface-border-strong: hsl(var(--surface-border-strong));
 }
 
 @layer base {
@@ -56,6 +72,16 @@
     --input: 240 5.9% 90%;
     --ring: 240 10% 3.9%;
     --radius: 0.5rem;
+
+    /* Light-mode surface scale (see @theme inline above) — zinc-50/100/200/300 */
+    --surface-0: 0 0% 100%;
+    --surface-1: 0 0% 98%;
+    --surface-2: 240 4.8% 95.9%;
+    --surface-3: 240 5.9% 90%;
+    --surface-text: 240 5.9% 10%;
+    --surface-text-muted: 240 3.8% 46.1%;
+    --surface-border: 240 5.9% 90%;
+    --surface-border-strong: 240 4.9% 83.9%;
   }
 
   .dark {
@@ -79,16 +105,29 @@
     --border: 240 3.7% 15.9%;
     --input: 240 3.7% 15.9%;
     --ring: 240 4.9% 83.9%;
+
+    /* Dark-mode surface scale — exact zinc-950/900/800/700 the app already
+       used everywhere, so this is a no-op visually vs. before this change. */
+    --surface-0: 240 10% 3.9%;
+    --surface-1: 240 5.9% 10%;
+    --surface-2: 240 3.7% 15.9%;
+    --surface-3: 240 5.3% 26.1%;
+    --surface-text: 0 0% 98%;
+    --surface-text-muted: 240 5% 64.9%;
+    --surface-border: 240 3.7% 15.9%;
+    --surface-border-strong: 240 5.3% 26.1%;
   }
 }
 
 /* Unified scrollbar styling so the chat pane and terminal panes look and
    behave identically, rather than relying on the chat's native browser
-   scrollbar happening to match xterm's bundled .xterm-viewport styling. */
+   scrollbar happening to match xterm's bundled .xterm-viewport styling.
+   Colors reference the surface scale (see @theme inline above) so they
+   follow the active theme instead of being locked to the dark palette. */
 .app-scrollbar,
 .xterm .xterm-viewport {
   scrollbar-width: thin;
-  scrollbar-color: #52525b #18181b;
+  scrollbar-color: hsl(var(--surface-3)) hsl(var(--surface-1));
 }
 
 .app-scrollbar::-webkit-scrollbar,
@@ -98,12 +137,30 @@
 
 .app-scrollbar::-webkit-scrollbar-track,
 .xterm .xterm-viewport::-webkit-scrollbar-track {
-  background: #18181b;
+  background: hsl(var(--surface-1));
 }
 
 .app-scrollbar::-webkit-scrollbar-thumb,
 .xterm .xterm-viewport::-webkit-scrollbar-thumb {
-  background-color: #52525b;
+  background-color: hsl(var(--surface-3));
   border-radius: 6px;
-  border: 2px solid #18181b;
+  border: 2px solid hsl(var(--surface-1));
+}
+
+/* CodeBlock.tsx passes react-shiki a { light, dark } theme pair with
+   defaultColor={false} — shiki's dual-theme mode emits both colors as
+   inline --shiki-light/--shiki-dark CSS variables per token and expects the
+   consumer to pick one via a class-scoped rule. This is that rule, keyed off
+   the same .dark class theme-provider.tsx toggles on <html>. Without it,
+   both variables are emitted but neither is ever applied. */
+.shiki,
+.shiki span {
+  color: var(--shiki-light);
+  background-color: var(--shiki-light-bg) !important;
+}
+
+.dark .shiki,
+.dark .shiki span {
+  color: var(--shiki-dark);
+  background-color: var(--shiki-dark-bg) !important;
 }

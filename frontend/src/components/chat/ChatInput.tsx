@@ -34,7 +34,7 @@ export function ChatInput({ onSend }: ChatInputProps) {
   };
 
   return (
-    <div className="border-t border-zinc-800 p-3 flex gap-2 items-end">
+    <div className="border-t border-surface-border p-3 flex gap-2 items-end">
       <textarea
         ref={textareaRef}
         value={value}
@@ -42,7 +42,7 @@ export function ChatInput({ onSend }: ChatInputProps) {
         onKeyDown={handleKeyDown}
         placeholder="Ask about the terminal output... (Enter to send, Shift+Enter for newline)"
         rows={1}
-        className="flex-1 resize-none bg-zinc-900 text-zinc-100 rounded-md px-3 py-2 text-sm placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600 min-h-[40px] max-h-[200px]"
+        className="flex-1 resize-none bg-surface-1 text-surface-text rounded-md px-3 py-2 text-sm placeholder-surface-text-muted focus:outline-none focus:ring-1 focus:ring-surface-border-strong min-h-[40px] max-h-[200px]"
       />
       <Button
         size="sm"

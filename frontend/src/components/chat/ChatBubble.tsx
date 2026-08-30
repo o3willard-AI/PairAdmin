@@ -13,7 +13,7 @@ export function ChatBubble({ message }: ChatBubbleProps) {
         className={
           isUser
             ? "ml-auto max-w-[80%] rounded-lg bg-blue-600 px-3 py-2 text-sm text-white"
-            : "mr-auto max-w-[80%] rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100"
+            : "mr-auto max-w-[80%] rounded-lg bg-surface-2 px-3 py-2 text-sm text-surface-text"
         }
       >
         {message.content}

@@ -7,7 +7,7 @@ import { HotkeysTab } from "./HotkeysTab";
 import { AppearanceTab } from "./AppearanceTab";
 
 const tabClass =
-  "px-3 py-2 text-xs text-zinc-400 data-[selected]:text-zinc-100 data-[selected]:border-b-2 data-[selected]:border-zinc-400 cursor-pointer hover:text-zinc-300 transition-colors";
+  "px-3 py-2 text-xs text-surface-text-muted data-[selected]:text-surface-text data-[selected]:border-b-2 data-[selected]:border-surface-border-strong cursor-pointer hover:text-surface-text transition-colors";
 
 export interface SettingsDialogProps {
   open: boolean;
@@ -24,12 +24,12 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     >
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/60" />
-        <Dialog.Popup className="fixed left-1/2 top-1/2 z-50 w-[640px] max-h-[80vh] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl flex flex-col overflow-hidden">
-          <Dialog.Title className="px-6 py-4 text-sm font-semibold text-zinc-100 border-b border-zinc-800">
+        <Dialog.Popup className="fixed left-1/2 top-1/2 z-50 w-[640px] max-h-[80vh] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-surface-1 border border-surface-border-strong shadow-xl flex flex-col overflow-hidden">
+          <Dialog.Title className="px-6 py-4 text-sm font-semibold text-surface-text border-b border-surface-border">
             Settings
           </Dialog.Title>
           <Tabs.Root defaultValue="llm-config" className="flex flex-col flex-1 overflow-hidden">
-            <Tabs.List className="flex border-b border-zinc-800 px-4 flex-none">
+            <Tabs.List className="flex border-b border-surface-border px-4 flex-none">
               <Tabs.Tab value="llm-config" className={tabClass}>
                 LLM Config
               </Tabs.Tab>

@@ -10,7 +10,7 @@ const CONNECTION_LABEL: Record<string, string> = {
 };
 
 const CONNECTION_DOT: Record<string, string> = {
-  checking: "bg-zinc-600",
+  checking: "bg-surface-text-muted",
   connected: "bg-green-500",
   disconnected: "bg-red-500",
 };
@@ -30,10 +30,10 @@ export function StatusBar() {
   });
 
   return (
-    <div className="h-7 flex-none flex items-center px-3 text-xs text-zinc-500 bg-zinc-900 border-t border-zinc-800 gap-4">
+    <div className="h-7 flex-none flex items-center px-3 text-xs text-surface-text-muted bg-surface-1 border-t border-surface-border gap-4">
       {/* Left: model indicator */}
       <div className="flex items-center gap-1.5">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-zinc-600" />
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-surface-text-muted" />
         <span>{activeModel || "No model"}</span>
       </div>
 
@@ -47,7 +47,7 @@ export function StatusBar() {
       <div className="flex items-center gap-3">
         <span>{lastTokenCount != null ? `Tokens: ${lastTokenCount}` : "Tokens: —"}</span>
         <button
-          className="hover:text-zinc-300 transition-colors"
+          className="hover:text-surface-text transition-colors"
           onClick={() => setSettingsOpen(true)}
           aria-label="Settings"
         >
