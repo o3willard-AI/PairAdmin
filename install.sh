@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="o3willard-AI/PairAdmin-anth-CC-gsd"
+REPO="o3willard-AI/PairAdmin"
 BINARY_NAME="pairadmin"
 INSTALL_DIR="/usr/local/bin"
 
