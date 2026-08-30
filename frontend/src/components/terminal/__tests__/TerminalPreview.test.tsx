@@ -7,7 +7,14 @@ import { TerminalPreview } from "@/components/terminal/TerminalPreview";
 // vi.mock factories are hoisted above the rest of the file, so the shared
 // "last instance" holder must be created via vi.hoisted to be safely
 // referenced from inside the factory.
-const { terminalInstances } = vi.hoisted(() => ({ terminalInstances: [] as unknown[] }));
+const { terminalInstances, fitAddonInstances, callOrder } = vi.hoisted(() => ({
+  terminalInstances: [] as unknown[],
+  fitAddonInstances: [] as { fit: (...args: unknown[]) => void }[],
+  // Tracks the order "onResize registered" vs "fit called" happen in, so the
+  // regression test below can assert the listener is attached before the
+  // first fit — not just that both eventually happen.
+  callOrder: [] as string[],
+}));
 
 vi.mock("@xterm/xterm", () => {
   class FakeTerminal {
@@ -17,7 +24,10 @@ vi.mock("@xterm/xterm", () => {
     write = vi.fn();
     dispose = vi.fn();
     onData = vi.fn(() => ({ dispose: vi.fn() }));
-    onResize = vi.fn(() => ({ dispose: vi.fn() }));
+    onResize = vi.fn(() => {
+      callOrder.push("onResize-registered");
+      return { dispose: vi.fn() };
+    });
     getSelection = vi.fn(() => "");
     attachCustomKeyEventHandler = vi.fn();
 
@@ -30,7 +40,12 @@ vi.mock("@xterm/xterm", () => {
 
 vi.mock("@xterm/addon-fit", () => {
   class FitAddon {
-    fit = vi.fn();
+    fit = vi.fn(() => {
+      callOrder.push("fit-called");
+    });
+    constructor() {
+      fitAddonInstances.push(this);
+    }
   }
   return { FitAddon };
 });
@@ -154,6 +169,51 @@ describe("TerminalPreview", () => {
 
       await vi.waitFor(() => {
         expect(mockWriteInput).toHaveBeenCalledWith("real-tab", "pasted text");
+      });
+    });
+  });
+
+  describe("terminal fit timing", () => {
+    beforeEach(() => {
+      fitAddonInstances.length = 0;
+      callOrder.length = 0;
+    });
+
+    // Regression test for the reported bug: tmux opened at roughly half the
+    // terminal's real width, only correcting itself after an unrelated later
+    // resize (toggling Hide/Show PairAdmin) nudged it. Root cause was
+    // registering term.onResize() *after* the first fitAddon.fit() call —
+    // xterm only fires "resize" when the size actually changes, and the very
+    // first fit (going from xterm's default size to the real container size)
+    // is exactly that one-time change. Registering the listener after that
+    // fit meant the remote PTY never learned the terminal's real size, and
+    // stayed at RequestPty's placeholder until some later, unrelated resize
+    // happened to fire onResize again. This asserts the listener is
+    // registered before the first fit, not just that both eventually happen.
+    it("registers the resize listener before the first fit, so the initial resize isn't missed", () => {
+      render(<TerminalPreview tabId="real-tab" />);
+
+      expect(callOrder.indexOf("onResize-registered")).toBeGreaterThanOrEqual(0);
+      expect(callOrder.indexOf("fit-called")).toBeGreaterThanOrEqual(0);
+      expect(callOrder.indexOf("onResize-registered")).toBeLessThan(callOrder.indexOf("fit-called"));
+    });
+
+    // Regression test: FitAddon measures character-cell pixel width using
+    // whatever font is *currently* resolved. If that measurement runs before
+    // the browser finishes resolving the fontFamily stack, it undercounts
+    // columns using a wider fallback font instead of the intended one. This
+    // was reported as tmux opening at roughly half width, only
+    // self-correcting after an unrelated later resize (e.g. toggling
+    // Hide/Show PairAdmin). Re-fitting once document.fonts.ready resolves
+    // corrects it without user interaction.
+    it("fits once immediately on mount and again once the font has resolved", async () => {
+      render(<TerminalPreview tabId="real-tab" />);
+
+      const fitAddon = fitAddonInstances[fitAddonInstances.length - 1];
+      expect(fitAddon.fit).toHaveBeenCalledTimes(1);
+
+      await vi.waitFor(() => {
+        expect(fitAddon.fit).toHaveBeenCalledTimes(2);
       });
     });
   });

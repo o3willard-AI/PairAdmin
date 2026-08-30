@@ -13,6 +13,17 @@ interface AdapterStatusInfo {
   message: string;
 }
 
+// xterm.js's own theme is a JS object, not CSS — it doesn't pick up the
+// app's light/dark class automatically. This mirrors the surface-0/
+// surface-text pair from index.css's dark/light blocks so the terminal
+// matches the rest of the chrome instead of always being pitch black.
+const DARK_XTERM_THEME = { background: "#0d0d0d", foreground: "#d4d4d4", cursor: "#d4d4d4" };
+const LIGHT_XTERM_THEME = { background: "#ffffff", foreground: "#1e1e1e", cursor: "#1e1e1e" };
+
+function getXtermTheme() {
+  return document.documentElement.classList.contains("dark") ? DARK_XTERM_THEME : LIGHT_XTERM_THEME;
+}
+
 interface TerminalPreviewProps {
   tabId: string;
   adapterStatus?: AdapterStatusInfo[];
@@ -25,6 +36,7 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
 
   useEffect(() => {
     if (!tabId || !containerRef.current) return;
+    const container = containerRef.current;
 
     // Raised at the very start of cleanup so every async callback can bail
     // out before touching the terminal. Guards the race between React unmount,
@@ -33,11 +45,7 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
     const disposed = { current: false };
 
     const term = new Terminal({
-      theme: {
-        background: "#0d0d0d",
-        foreground: "#d4d4d4",
-        cursor: "#d4d4d4",
-      },
+      theme: getXtermTheme(),
       fontSize: 13,
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
       scrollback: 1000,
@@ -50,7 +58,7 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
 
-    term.open(containerRef.current);
+    term.open(container);
 
     // Register term ref in terminalStore so ChatPane can read terminal context
     useTerminalStore.getState().setTermRef(tabId, term);
@@ -63,9 +71,53 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
       console.warn("CanvasAddon failed to load, continuing without hardware acceleration:", err);
     }
 
+    // Must be registered before the first fitAddon.fit() call below. xterm
+    // only fires "resize" when the size actually changes, and the very
+    // first fit (going from the constructor's default size to the real
+    // container-fitted size) is exactly that one-time change — registering
+    // this listener any later means it's not listening yet when that event
+    // fires, so the remote PTY never learns the terminal's real size. It
+    // silently stays at whatever RequestPty's placeholder was (80 cols) until
+    // some later, unrelated resize (e.g. toggling Hide/Show PairAdmin, which
+    // changes height) happens to fire onResize again. A plain shell just
+    // wraps text a little early against that stale width and it's easy to
+    // miss; tmux actively renders its status bar and pane borders to
+    // whatever width it was told and doesn't redraw until that later resize
+    // corrects it — which is what made this look like a rendering bug rather
+    // than a missed event.
+    const onResizeDisposable = term.onResize(({ cols, rows }) => {
+      if (disposed.current) return;
+      ResizeTerminal(tabId, cols, rows).catch(() => {});
+    });
+
     fitAddon.fit();
 
+    // Belt-and-suspenders: FitAddon measures character-cell pixel width using
+    // whatever font is *currently* resolved. The fontFamily above is a stack
+    // of locally-installed fonts, not a bundled webfont, but the browser
+    // still resolves that stack asynchronously — if the fit above ran before
+    // it settled, the measurement could use a wider fallback font, computing
+    // fewer columns than the terminal actually has room for. Re-fitting once
+    // the real font has resolved corrects that if it ever happens; the
+    // onResize listener above is already in place by now to catch it.
+    document.fonts.ready.then(() => {
+      if (disposed.current) return;
+      fitAddon.fit();
+    });
+
     termRef.current = term;
+
+    // theme-provider.tsx toggles the "dark"/"light" class on <html> but has
+    // no event of its own to subscribe to — observe the class attribute
+    // directly so an already-open terminal recolors immediately when the
+    // user switches themes, instead of only picking it up on next launch.
+    const themeObserver = new MutationObserver(() => {
+      term.options.theme = getXtermTheme();
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
 
     // xterm maps Ctrl+C/Ctrl+V to their literal terminal control codes
     // (\x03 SIGINT, \x16) by default — neither is connected to the OS
@@ -141,12 +193,6 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
       WriteInput(tabId, data).catch(() => {});
     });
 
-    // xterm resize → PTY
-    const onResizeDisposable = term.onResize(({ cols, rows }) => {
-      if (disposed.current) return;
-      ResizeTerminal(tabId, cols, rows).catch(() => {});
-    });
-
     const resizeObserver = new ResizeObserver((entries) => {
       if (disposed.current) return;
       // Hidden tabs (ancestor display:none) collapse to 0x0 — fitting to that
@@ -161,6 +207,7 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
     return () => {
       disposed.current = true; // must be first — blocks all in-flight callbacks
       textarea?.removeEventListener("paste", blockNativePaste, { capture: true });
+      themeObserver.disconnect();
       resizeObserver.disconnect();
       unsubPtyOutput?.();
       if (windowsPullInterval) window.clearInterval(windowsPullInterval);
@@ -186,17 +233,17 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
     );
 
     return (
-      <div className="h-full w-full flex items-center justify-center bg-[#0d0d0d] text-zinc-400">
+      <div className="h-full w-full flex items-center justify-center bg-surface-0 text-surface-text-muted">
         <div className="text-center space-y-4 max-w-md">
           <p className="text-lg">No terminal sessions detected.</p>
 
           {atspiOnboarding && (
             <div className="space-y-2">
-              <p className="text-sm text-zinc-500">Enable accessibility for GUI terminals</p>
-              <code className="block px-3 py-1.5 bg-zinc-800 rounded text-sm text-green-400 font-mono">
+              <p className="text-sm text-surface-text-muted">Enable accessibility for GUI terminals</p>
+              <code className="block px-3 py-1.5 bg-surface-2 rounded text-sm text-green-400 font-mono">
                 $ gsettings set org.gnome.desktop.interface toolkit-accessibility true
               </code>
-              <p className="text-xs text-zinc-600">Then restart your terminal application.</p>
+              <p className="text-xs text-surface-text-muted">Then restart your terminal application.</p>
             </div>
           )}
         </div>
