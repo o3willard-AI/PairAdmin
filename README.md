@@ -1,5 +1,9 @@
 # PairAdmin
 
+<p align="center">
+  <img src="assets/PA_Repo_img.jpg" alt="PairAdmin" width="644" />
+</p>
+
 AI pair programming assistant for terminal workflows
 
 ## Overview
