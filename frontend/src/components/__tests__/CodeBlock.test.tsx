@@ -87,16 +87,16 @@ describe("CodeBlock", () => {
     expect(screen.getByText("python")).toBeInTheDocument();
   });
 
-  it("does not show any action buttons for a 'text' language block", () => {
-    render(<CodeBlock code="dir" language="text" isStreaming={false} />);
-    expect(screen.queryByRole("button", { name: /copy to terminal/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /execute in terminal/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /save to commands/i })).not.toBeInTheDocument();
+  it("shows action buttons for a 'text' language block too, since the model sometimes mislabels real commands this way and they'd otherwise be stuck uncopyable", () => {
+    render(<CodeBlock code="df -h" language="text" isStreaming={false} />);
+    expect(screen.getByRole("button", { name: /copy to terminal/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /execute in terminal/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save to commands/i })).toBeInTheDocument();
   });
 
-  it("does not show any action buttons when no language is specified", () => {
+  it("shows action buttons even when no language is specified", () => {
     render(<CodeBlock code="dir" isStreaming={false} />);
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy to terminal/i })).toBeInTheDocument();
   });
 
   it("shows action buttons for an actionable language like bash", () => {

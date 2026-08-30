@@ -12,17 +12,8 @@ interface CodeBlockProps {
 const ACTION_BUTTON_CLASS =
   "rounded px-1.5 py-0.5 hover:bg-muted-foreground/30 hover:text-foreground transition-colors";
 
-// Blocks tagged with one of these languages are illustrative/non-actionable
-// (per the system prompt, the model is told to use these — or inline code —
-// for examples it isn't actually recommending the user run). Rendering
-// action buttons on them anyway is how the same snippet could show up
-// twice: once as a real, actionable command block, and once again as an
-// inert "text" block with its own Copy/Execute/Save buttons.
-const NON_ACTIONABLE_LANGUAGES = new Set(["text", "plaintext", "plain", ""]);
-
 export function CodeBlock({ code, language = "text", isStreaming }: CodeBlockProps) {
   const activeTabId = useTerminalStore((s) => s.activeTabId);
-  const isActionable = !NON_ACTIONABLE_LANGUAGES.has(language.toLowerCase());
 
   const handleSaveToCommands = () => {
     useCommandStore.getState().addCommand(activeTabId, {
@@ -35,7 +26,7 @@ export function CodeBlock({ code, language = "text", isStreaming }: CodeBlockPro
     <div className="relative my-2 rounded-md overflow-hidden border border-border">
       <div className="flex items-center justify-between gap-12 px-3 py-1 bg-muted text-xs text-muted-foreground">
         <span className="truncate">{language}</span>
-        {!isStreaming && isActionable && (
+        {!isStreaming && (
           <div className="flex-none flex items-center gap-1">
             <button
               onClick={handleSaveToCommands}
@@ -63,7 +54,14 @@ export function CodeBlock({ code, language = "text", isStreaming }: CodeBlockPro
           </div>
         )}
       </div>
-      <CodeHighlighter language={language} theme="github-dark" delay={50}>{code}</CodeHighlighter>
+      <CodeHighlighter
+        language={language}
+        theme={{ light: "github-light", dark: "github-dark" }}
+        defaultColor={false}
+        delay={50}
+      >
+        {code}
+      </CodeHighlighter>
     </div>
   );
 }
