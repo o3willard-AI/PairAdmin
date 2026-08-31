@@ -8,6 +8,7 @@ frontend/wailsjs/
 node_modules/
 .claude/
 .claire/
+.planning/
 SESSION_CONTEXT.md
 frontend/package.json.md5
 # Exception: wailsjs stub files checked in for test/type resolution
