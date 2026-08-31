@@ -58,7 +58,7 @@ func (c *Client) ring() (keyring.Keyring, error) {
 	home, _ := os.UserHomeDir()
 	return c.open(keyring.Config{
 		ServiceName:      ServiceName,
-		AllowedBackends:  []keyring.BackendType{keyring.SecretServiceBackend, keyring.FileBackend},
+		AllowedBackends:  []keyring.BackendType{keyring.KeychainBackend, keyring.WinCredBackend, keyring.SecretServiceBackend, keyring.FileBackend},
 		FileDir:          filepath.Join(home, ".pairadmin", "keyring"),
 		FilePasswordFunc: keyring.FixedStringPrompt("pairadmin"),
 	})
