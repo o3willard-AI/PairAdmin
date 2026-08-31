@@ -6,8 +6,8 @@ version_schema: semver
 release: "1"
 maintainer: PairAdmin Dev <sblanken@pairadmin.local>
 description: AI pair programming assistant for terminal workflows
-homepage: https://github.com/sblanken/pairadmin
-license: MIT
+homepage: https://github.com/o3willard-AI/PairAdmin
+license: Apache-2.0
 
 depends:
   - libwebkit2gtk-4.1-0

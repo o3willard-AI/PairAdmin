@@ -174,4 +174,4 @@ state of cross-platform work and what still needs verification there.
 
 ## License
 
-MIT
+[Apache License 2.0](LICENSE)
