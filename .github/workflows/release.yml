@@ -48,8 +48,10 @@ jobs:
           export PATH="$PATH:$(go env GOPATH)/bin"
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
           export VERSION="${GITHUB_REF_NAME#v}"
-          nfpm package --packager deb --target dist/
-          nfpm package --packager rpm --target dist/
+          nfpm package --packager deb
+          nfpm package --packager rpm
+          mkdir -p dist
+          mv *.deb *.rpm dist/
           ls -la dist/
 
       - uses: actions/upload-artifact@v4
@@ -73,6 +75,14 @@ jobs:
 
       - name: Install Wails CLI (pinned to go.mod version)
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
+      - name: Install NSIS (makensis)
+        shell: pwsh
+        run: |
+          choco install nsis --no-progress -y
+          $bin = "C:\Program Files (x86)\NSIS\Bin"
+          if (Test-Path $bin) { Add-Content $env:GITHUB_PATH $bin }
+          else { Add-Content $env:GITHUB_PATH "C:\Program Files (x86)\NSIS" }
 
       - name: Build NSIS installer
         shell: pwsh
