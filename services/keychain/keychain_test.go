@@ -133,7 +133,14 @@ func TestClient_SetAndGet_RealFileBackend_ColonKey(t *testing.T) {
 	t.Setenv("HOME", homeDir)
 	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
-	c := New()
+	c := newFileBackendTestClient()
+
+	// The file backend is now unlocked with the user master password (there
+	// is no hardcoded fallback anymore), so one must be set before any file
+	// backend operation can succeed.
+	if err := c.SetMasterPassword("test-master-password"); err != nil {
+		t.Fatalf("SetMasterPassword() unexpected error: %v", err)
+	}
 
 	key := "remote:6bb44fd2-2489-42cf-812b-26618a544997:password"
 	if err := c.Set(key, "hunter2"); err != nil {
