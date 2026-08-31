@@ -45,6 +45,26 @@ func NewCustomFilter(patterns []CustomPatternInput) (*CustomFilter, error) {
 	return f, nil
 }
 
+// BuildPipelineFromPatterns builds a Pipeline running a CustomFilter for the
+// given patterns, or returns nil if there are none (or none compile) —
+// mirrors Pipeline's own Filter interface, so the result can be nested
+// directly inside another Pipeline's filter list. Shared by CaptureManager
+// (legacy tmux/AT-SPI2 capture path) and LLMService (native PTY terminal
+// chat context) so pattern-compilation/error-handling logic isn't
+// duplicated across both call sites — only the trivial AppConfig ->
+// CustomPatternInput mapping is (filter must not import services/config;
+// see CustomPatternInput's doc comment).
+func BuildPipelineFromPatterns(patterns []CustomPatternInput) *Pipeline {
+	if len(patterns) == 0 {
+		return nil
+	}
+	customFilter, err := NewCustomFilter(patterns)
+	if err != nil {
+		return nil
+	}
+	return NewPipeline(customFilter)
+}
+
 // Apply runs the content through each custom pattern in order.
 //
 //   - action "redact": replaces each regex match with [REDACTED:<name>]

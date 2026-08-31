@@ -23,6 +23,10 @@ interface TerminalState {
   tabs: TerminalTab[];
   activeTabId: string;
   nextTabNumber: number;
+  /** "+ New" terminal dialog open state — lifted out of TerminalTabList's own
+   * local state so useNewTerminalHotkey.ts can open it from anywhere. */
+  newTerminalDialogOpen: boolean;
+  setNewTerminalDialogOpen: (open: boolean) => void;
   setActiveTab: (tabId: string) => void;
   addTab: (
     id: string,
@@ -52,6 +56,12 @@ export const useTerminalStore = create<TerminalState>()(
       tabs: [],
       activeTabId: "",
       nextTabNumber: 1,
+      newTerminalDialogOpen: false,
+      setNewTerminalDialogOpen: (open) => {
+        set((state) => {
+          state.newTerminalDialogOpen = open;
+        });
+      },
       setActiveTab: (tabId) => {
         set((state) => {
           state.activeTabId = tabId;

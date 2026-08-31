@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useCommandStore } from "@/stores/commandStore";
 import { useTerminalCapture } from "@/hooks/useTerminalCapture";
 import { useDefaultTerminalFocus } from "@/hooks/useDefaultTerminalFocus";
 import { useAddClipboardCommandHotkey } from "@/hooks/useAddClipboardCommandHotkey";
+import { useNewTerminalHotkey } from "@/hooks/useNewTerminalHotkey";
 import { TerminalTabList } from "@/components/terminal/TerminalTabList";
 import { TerminalPreview } from "@/components/terminal/TerminalPreview";
 import { StatusBar } from "./StatusBar";
@@ -28,6 +30,7 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
   useTerminalCapture(); // Subscribe to terminal events from Go service
   useDefaultTerminalFocus(); // Keep keyboard focus on the terminal by default
   useAddClipboardCommandHotkey(); // Ctrl+Shift+A (configurable): clipboard -> new sidebar command
+  useNewTerminalHotkey(); // Ctrl+Shift+N (configurable): opens the "+ New" terminal dialog
 
   const activeTabId = useTerminalStore((state) => state.activeTabId);
   const tabs = useTerminalStore((state) => state.tabs);
@@ -36,6 +39,13 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
   const setActiveModel = useSettingsStore((s) => s.setActiveModel);
   const setConnectionStatus = useSettingsStore((s) => s.setConnectionStatus);
   const [adapterStatus, setAdapterStatus] = useState<AdapterStatusInfo[]>([]);
+  // Sidebar widths are deliberately not a live drag-resizable UI (an extra
+  // source of layout bugs) — configured in Settings → Terminals instead, in
+  // `ch` units, and applied once here at mount. Taking effect only after a
+  // restart (rather than reacting live to a settings change) keeps this to
+  // a single GetSettings() read instead of needing a subscription.
+  const [terminalsSidebarWidthCh, setTerminalsSidebarWidthCh] = useState(20);
+  const [commandsSidebarWidthCh, setCommandsSidebarWidthCh] = useState(30);
   // Lets a user reclaim the chat pane's vertical space for a bigger terminal
   // when they don't need the assistant — the chat area (and its useLLMStream
   // subscription) stays mounted underneath, just visually collapsed, so an
@@ -81,6 +91,18 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
         if (provider && model) {
           setActiveModel(`${provider}:${model}`);
         }
+        if (cfg?.TerminalsSidebarWidthCh) setTerminalsSidebarWidthCh(cfg.TerminalsSidebarWidthCh);
+        if (cfg?.CommandsSidebarWidthCh) setCommandsSidebarWidthCh(cfg.CommandsSidebarWidthCh);
+        // Restore commands the user explicitly saved via "Save Pinned" so
+        // they're back in the sidebar immediately, without waiting on any
+        // terminal tab to exist yet — tabId is just a provenance hint on the
+        // Command record, not something these need to be scoped to.
+        if (cfg?.PinnedCommands?.length) {
+          const { addPinnedCommand } = useCommandStore.getState();
+          for (const pc of cfg.PinnedCommands) {
+            addPinnedCommand("", { command: pc.Command, originalQuestion: pc.OriginalQuestion });
+          }
+        }
         if (!provider) {
           setConnectionStatus("disconnected");
           return;
@@ -99,7 +121,10 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
     <div className="flex flex-col h-screen w-screen overflow-hidden">
       <div className="flex flex-1 overflow-hidden bg-surface-0 text-surface-text">
         {/* Left column: terminal tab list */}
-        <aside className="w-40 flex-none border-r border-surface-border overflow-y-auto">
+        <aside
+          className="flex-none border-r border-surface-border overflow-y-auto"
+          style={{ width: `${terminalsSidebarWidthCh}ch` }}
+        >
           <TerminalTabList />
         </aside>
 
@@ -142,14 +167,12 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
             key="chat-section"
             className={`flex flex-col overflow-hidden ${chatVisible ? "flex-1 basis-0" : "flex-none"}`}
           >
-            <div className="flex-none flex items-center justify-center border-b border-surface-border bg-surface-0">
-              <button
-                onClick={toggleChatVisible}
-                className="px-3 py-1 text-xs text-surface-text-muted hover:text-surface-text transition-colors"
-              >
-                {chatVisible ? "Hide PairAdmin" : "Show PairAdmin"}
-              </button>
-            </div>
+            <button
+              onClick={toggleChatVisible}
+              className="flex-none w-full py-1 text-center text-xs text-surface-text-muted hover:text-surface-text hover:bg-surface-1 border-b border-surface-border bg-surface-0 transition-colors"
+            >
+              {chatVisible ? "Hide PairAdmin" : "Show PairAdmin"}
+            </button>
             <div className={chatVisible ? "flex flex-1 flex-col overflow-hidden" : "hidden"}>
               {children}
             </div>
@@ -157,7 +180,10 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
         </main>
 
         {/* Right column: command sidebar */}
-        <aside className="w-[220px] flex-none border-l border-surface-border overflow-y-auto">
+        <aside
+          className="flex-none border-l border-surface-border overflow-y-auto"
+          style={{ width: `${commandsSidebarWidthCh}ch` }}
+        >
           {sidebar}
         </aside>
       </div>

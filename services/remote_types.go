@@ -40,4 +40,13 @@ type RemoteConnectParams struct {
 	// previously-used session was destroyed by someone else in the meantime).
 	UseTmux         bool   `json:"useTmux"`
 	TmuxSessionName string `json:"tmuxSessionName,omitempty"`
+	// TrustNewHostKey applies only when Kind == RemoteKindSSH and the user has
+	// enabled config.AppConfig.PromptNewHostKeys. It is set true only on the
+	// retry connection attempt issued right after the user explicitly accepted
+	// an unrecognized host key shown by PTYService.CheckHostKeyTrust — it
+	// tells openSSHTerminal's host key callback to pin the key it sees rather
+	// than pause again. It has no effect once a key is already pinned for a
+	// host:port: a key that doesn't match the pinned one is always rejected
+	// regardless of this flag.
+	TrustNewHostKey bool `json:"trustNewHostKey,omitempty"`
 }

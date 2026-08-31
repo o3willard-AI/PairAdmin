@@ -112,6 +112,19 @@ describe("TerminalTab", () => {
     expect(renameRemoteHost).not.toHaveBeenCalled();
   });
 
+  it("wraps the tab name in a tooltip without turning it into its own interactive button", () => {
+    // Regression guard: base-ui's Tooltip.Trigger defaults to rendering a
+    // <button> unless overridden — that would both introduce a second
+    // "button" role (breaking the "does NOT render warning badge" test's
+    // getByRole("button") uniqueness assumption above) and could interfere
+    // with the row's own click/right-click handling.
+    const tab = { id: "tmux:%0", name: "a-very-long-session-name-that-gets-truncated" };
+    render(<TerminalTab tab={tab} isActive={false} onClick={vi.fn()} />);
+
+    expect(screen.getAllByRole("button")).toHaveLength(1); // just the close (×) button
+    expect(screen.getByText(tab.name).tagName).toBe("SPAN");
+  });
+
   it("clicking the tab still triggers onClick (not blocked by the context menu wrapper)", async () => {
     const tab = { id: "tmux:%0", name: "main:0.0" };
     const onClick = vi.fn();

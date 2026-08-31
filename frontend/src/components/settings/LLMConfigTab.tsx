@@ -160,6 +160,11 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
             placeholder="http://localhost:1234/v1"
             className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
           />
+          <p className="text-xs text-surface-text-muted">
+            Works with any OpenAI-compatible server, not just LM Studio — point
+            this at vLLM, llama.cpp, text-generation-webui, or similar by
+            changing the URL.
+          </p>
         </div>
       ) : null}
 

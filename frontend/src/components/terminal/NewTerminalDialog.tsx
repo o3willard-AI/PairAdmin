@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { useTerminalStore } from "@/stores/terminalStore";
-import { useCommandStore } from "@/stores/commandStore";
 import { wailsErrorMessage } from "@/utils/wailsError";
 import type { config } from "../../../wailsjs/go/models";
 
@@ -13,6 +12,12 @@ export interface NewTerminalDialogProps {
 type TerminalKind = "local" | "ssh" | "winrm";
 type AuthType = "password" | "privatekey";
 
+// How many saved hosts to show inline under "Recent" before requiring a click
+// through to the searchable "Show All" view — ListRemoteHosts is already
+// sorted by LastUsed descending, so these are always the most-recent ones.
+const RECENT_INLINE_CAP = 6;
+const RECENT_ALL_PAGE_SIZE = 20;
+
 const inputClass =
   "w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none";
 
@@ -23,9 +28,46 @@ const typeCardClass =
 // placeholder hint; the actual default is applied backend-side if left blank.
 const defaultTmuxSessionNamePlaceholder = "pairadmin (default)";
 
+interface ConnectRemoteParams {
+  kind: TerminalKind;
+  host: string;
+  port: number;
+  username: string;
+  authType: AuthType;
+  password: string;
+  privateKeyPath: string;
+  passphrase: string;
+  saveTerminal: boolean;
+  useTmux: boolean;
+  tmuxSessionName: string;
+  savedHostId?: string;
+  /** Friendly name from the saved host record, if reconnecting to one that
+   * was previously renamed. Falls back to "username@host" when absent. */
+  name?: string;
+  /** Set only on the retry issued right after the user accepted an
+   * unrecognized host key in the "hostKeyConfirm" step — see
+   * maybeConnectToRemote. */
+  trustNewHostKey?: boolean;
+}
+
+interface HostKeyConfirmState {
+  params: ConnectRemoteParams;
+  keyType: string;
+  fingerprint: string;
+  /** True when this host:port previously had a DIFFERENT pinned key — the
+   * real MITM-suspect case, not just an unseen-before host. The backend
+   * refuses to connect in this case no matter what the user clicks here, so
+   * the UI doesn't offer an Accept button for it. */
+  changed: boolean;
+}
+
 export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
-  const [step, setStep] = useState<"type" | "form">("type");
+  const [step, setStep] = useState<"type" | "form" | "recentAll" | "hostKeyConfirm">("type");
   const [kind, setKind] = useState<TerminalKind>("local");
+  const [recentSearch, setRecentSearch] = useState("");
+  const [recentPage, setRecentPage] = useState(0);
+  const [promptNewHostKeys, setPromptNewHostKeys] = useState(false);
+  const [hostKeyConfirm, setHostKeyConfirm] = useState<HostKeyConfirmState | null>(null);
 
   const [host, setHost] = useState("");
   const [port, setPort] = useState(22);
@@ -68,8 +110,16 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
     setConnectStatus("idle");
     setConnectError("");
     setSaveWarning("");
+    setRecentSearch("");
+    setRecentPage(0);
+    setHostKeyConfirm(null);
 
     refreshRecentHosts();
+
+    import(/* @vite-ignore */ "../../../wailsjs/go/services/SettingsService")
+      .then(({ GetSettings }) => GetSettings())
+      .then((cfg) => setPromptNewHostKeys(!!cfg?.PromptNewHostKeys))
+      .catch(() => setPromptNewHostKeys(false));
   }, [open]);
 
   const handleForget = async (id: string) => {
@@ -131,23 +181,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
   // event handler as applyHostToForm() — React state updates from that call
   // haven't re-rendered yet, so reading `host`/`username` etc. here would see
   // stale (pre-update) values.
-  const connectToRemote = async (params: {
-    kind: TerminalKind;
-    host: string;
-    port: number;
-    username: string;
-    authType: AuthType;
-    password: string;
-    privateKeyPath: string;
-    passphrase: string;
-    saveTerminal: boolean;
-    useTmux: boolean;
-    tmuxSessionName: string;
-    savedHostId?: string;
-    /** Friendly name from the saved host record, if reconnecting to one that
-     * was previously renamed. Falls back to "username@host" when absent. */
-    name?: string;
-  }) => {
+  const connectToRemote = async (params: ConnectRemoteParams) => {
     setConnectStatus("connecting");
     setConnectError("");
     setSaveWarning("");
@@ -173,6 +207,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
         savedHostId: params.savedHostId || "",
         useTmux: params.kind === "ssh" ? params.useTmux : false,
         tmuxSessionName: params.kind === "ssh" ? params.tmuxSessionName : "",
+        trustNewHostKey: params.kind === "ssh" ? !!params.trustNewHostKey : false,
       });
 
       // The primary connection above already succeeded — a failure past this
@@ -227,23 +262,6 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
       store.addTab(resolvedId, displayName, degraded, degradedMsg, params.kind, savedHostId);
       store.setActiveTab(resolvedId);
 
-      // tmux uses the alternate screen buffer, which disables xterm.js's own
-      // scrollback/scrollbar — the mouse wheel does nothing until tmux's own
-      // mouse mode is on. Pin one-click toggles so the user doesn't have to
-      // remember or type these; addPinnedCommand no-ops if already present,
-      // so this is safe to call on every tmux connect/reconnect.
-      if (params.kind === "ssh" && params.useTmux) {
-        const commandStore = useCommandStore.getState();
-        commandStore.addPinnedCommand(resolvedId, {
-          command: "tmux set -g mouse on",
-          originalQuestion: "Enables mouse-wheel scrolling inside tmux (auto-added)",
-        });
-        commandStore.addPinnedCommand(resolvedId, {
-          command: "tmux set -g mouse off",
-          originalQuestion:
-            "Disables tmux mouse mode, restoring normal terminal text selection (auto-added)",
-        });
-      }
       // Only auto-close on a clean save; if the save/touch step warned, leave
       // the dialog open long enough for the user to actually see the warning.
       if (!warning) onClose();
@@ -253,8 +271,41 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
     }
   };
 
+  // Routes a connection attempt through the SSH host-key confirmation prompt
+  // when the user has PromptNewHostKeys enabled and this host:port hasn't
+  // been seen (with a matching key) before — otherwise connects directly.
+  // openSSHTerminal itself always still pins/verifies the key either way;
+  // this only decides whether the user is asked about it up front.
+  const maybeConnectToRemote = async (params: ConnectRemoteParams) => {
+    if (params.kind !== "ssh" || !promptNewHostKeys) {
+      connectToRemote(params);
+      return;
+    }
+    try {
+      const { CheckHostKeyTrust } = await import(
+        /* @vite-ignore */ "../../../wailsjs/go/services/PTYService"
+      );
+      const status = await CheckHostKeyTrust(params.host, params.port);
+      if (status.known) {
+        connectToRemote(params);
+        return;
+      }
+      setHostKeyConfirm({
+        params,
+        keyType: status.keyType,
+        fingerprint: status.fingerprint,
+        changed: status.changed,
+      });
+      setStep("hostKeyConfirm");
+    } catch {
+      // Couldn't even reach the host to check its key — fall through to the
+      // real connection attempt, which will surface a clearer network error.
+      connectToRemote(params);
+    }
+  };
+
   const handleConnectRemote = () =>
-    connectToRemote({
+    maybeConnectToRemote({
       kind,
       host,
       port,
@@ -270,7 +321,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
 
   const handleReconnect = (h: config.RemoteHost) => {
     applyHostToForm(h);
-    connectToRemote({
+    maybeConnectToRemote({
       kind: h.Kind as TerminalKind,
       host: h.Host,
       port: h.Port,
@@ -286,6 +337,57 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
       name: h.Name || undefined,
     });
   };
+
+  const handleAcceptHostKey = () => {
+    if (!hostKeyConfirm) return;
+    connectToRemote({ ...hostKeyConfirm.params, trustNewHostKey: true });
+  };
+
+  const handleRejectHostKey = () => {
+    setHostKeyConfirm(null);
+    setStep("form");
+  };
+
+  const renderHostRow = (h: config.RemoteHost) => (
+    <div
+      key={h.ID}
+      className="flex items-center justify-between px-3 py-2 rounded border border-surface-border hover:bg-surface-2"
+    >
+      <div className="text-sm text-surface-text truncate">
+        {h.Name || `${h.Username}@${h.Host}`}
+        <span className="text-xs text-surface-text-muted ml-2">{h.Kind}</span>
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          className="text-xs bg-surface-3 hover:bg-surface-3/80 text-surface-text px-2 py-1 rounded disabled:opacity-50"
+          disabled={connectStatus === "connecting"}
+          onClick={() => handleReconnect(h)}
+        >
+          Connect
+        </button>
+        <button
+          className="text-xs text-surface-text-muted hover:text-red-400 px-1.5 py-1"
+          aria-label={`Forget saved host ${h.Username}@${h.Host}`}
+          onClick={() => handleForget(h.ID)}
+        >
+          &times;
+        </button>
+      </div>
+    </div>
+  );
+
+  const filteredRecentHosts = recentHosts.filter((h) => {
+    const q = recentSearch.trim().toLowerCase();
+    if (!q) return true;
+    const haystack = `${h.Name || ""} ${h.Username}@${h.Host} ${h.Kind}`.toLowerCase();
+    return haystack.includes(q);
+  });
+  const recentAllPageCount = Math.max(1, Math.ceil(filteredRecentHosts.length / RECENT_ALL_PAGE_SIZE));
+  const clampedRecentPage = Math.min(recentPage, recentAllPageCount - 1);
+  const pagedRecentHosts = filteredRecentHosts.slice(
+    clampedRecentPage * RECENT_ALL_PAGE_SIZE,
+    (clampedRecentPage + 1) * RECENT_ALL_PAGE_SIZE
+  );
 
   return (
     <Dialog.Root
@@ -324,34 +426,20 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                       Recent
                     </div>
                     <div className="space-y-1">
-                      {recentHosts.map((h) => (
-                        <div
-                          key={h.ID}
-                          className="flex items-center justify-between px-3 py-2 rounded border border-surface-border hover:bg-surface-2"
-                        >
-                          <div className="text-sm text-surface-text truncate">
-                            {h.Name || `${h.Username}@${h.Host}`}
-                            <span className="text-xs text-surface-text-muted ml-2">{h.Kind}</span>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              className="text-xs bg-surface-3 hover:bg-surface-3/80 text-surface-text px-2 py-1 rounded disabled:opacity-50"
-                              disabled={connectStatus === "connecting"}
-                              onClick={() => handleReconnect(h)}
-                            >
-                              Connect
-                            </button>
-                            <button
-                              className="text-xs text-surface-text-muted hover:text-red-400 px-1.5 py-1"
-                              aria-label={`Forget saved host ${h.Username}@${h.Host}`}
-                              onClick={() => handleForget(h.ID)}
-                            >
-                              &times;
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                      {recentHosts.slice(0, RECENT_INLINE_CAP).map(renderHostRow)}
                     </div>
+                    {recentHosts.length > RECENT_INLINE_CAP && (
+                      <button
+                        onClick={() => {
+                          setRecentSearch("");
+                          setRecentPage(0);
+                          setStep("recentAll");
+                        }}
+                        className="w-full mt-1 text-xs text-surface-text-muted hover:text-surface-text px-3 py-1.5 rounded border border-surface-border hover:bg-surface-2"
+                      >
+                        Show All ({recentHosts.length})
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -361,6 +449,137 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                 {connectStatus === "error" && (
                   <p className="text-xs text-red-400">{connectError}</p>
                 )}
+              </div>
+            )}
+
+            {step === "recentAll" && (
+              <div className="space-y-3">
+                <input
+                  autoFocus
+                  className={inputClass}
+                  value={recentSearch}
+                  onChange={(e) => {
+                    setRecentSearch(e.target.value);
+                    setRecentPage(0);
+                  }}
+                  placeholder="Filter by name, host, or username..."
+                />
+                <div className="space-y-1">
+                  {pagedRecentHosts.length > 0 ? (
+                    pagedRecentHosts.map(renderHostRow)
+                  ) : (
+                    <p className="text-surface-text-muted text-xs text-center py-4">
+                      No saved connections match "{recentSearch}"
+                    </p>
+                  )}
+                </div>
+                {recentAllPageCount > 1 && (
+                  <div className="flex items-center justify-between text-xs text-surface-text-muted">
+                    <button
+                      className="px-2 py-1 rounded hover:bg-surface-2 disabled:opacity-40"
+                      disabled={clampedRecentPage === 0}
+                      onClick={() => setRecentPage((p) => Math.max(0, p - 1))}
+                    >
+                      &larr; Prev
+                    </button>
+                    <span>
+                      Page {clampedRecentPage + 1} of {recentAllPageCount}
+                    </span>
+                    <button
+                      className="px-2 py-1 rounded hover:bg-surface-2 disabled:opacity-40"
+                      disabled={clampedRecentPage >= recentAllPageCount - 1}
+                      onClick={() => setRecentPage((p) => Math.min(recentAllPageCount - 1, p + 1))}
+                    >
+                      Next &rarr;
+                    </button>
+                  </div>
+                )}
+
+                {saveWarning && (
+                  <p className="text-xs text-amber-400">{saveWarning}</p>
+                )}
+                {connectStatus === "error" && (
+                  <p className="text-xs text-red-400">{connectError}</p>
+                )}
+
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    onClick={() => setStep("type")}
+                    className="bg-surface-2 hover:bg-surface-3 text-surface-text-muted text-xs px-4 py-1.5 rounded"
+                  >
+                    Back
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {step === "hostKeyConfirm" && hostKeyConfirm && (
+              <div className="space-y-3">
+                {hostKeyConfirm.changed ? (
+                  <>
+                    <p className="text-sm font-medium text-red-400">
+                      Warning: this host's key has changed
+                    </p>
+                    <p className="text-xs text-surface-text-muted">
+                      PairAdmin previously connected to{" "}
+                      <span className="font-mono">
+                        {hostKeyConfirm.params.host}:{hostKeyConfirm.params.port}
+                      </span>{" "}
+                      and trusted a different key than the one it's presenting now. This can mean
+                      a man-in-the-middle attack, or that the host was legitimately
+                      reinstalled/rekeyed. PairAdmin will refuse to connect until an administrator
+                      removes this host's old entry from{" "}
+                      <span className="font-mono">known_hosts.yaml</span>.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-surface-text">Verify new host key</p>
+                    <p className="text-xs text-surface-text-muted">
+                      PairAdmin hasn't connected to{" "}
+                      <span className="font-mono">
+                        {hostKeyConfirm.params.host}:{hostKeyConfirm.params.port}
+                      </span>{" "}
+                      before. It presented the following key — accept it to continue and
+                      remember it for future connections.
+                    </p>
+                  </>
+                )}
+
+                <div className="rounded border border-surface-border-strong bg-surface-2 px-3 py-2 space-y-1">
+                  <div className="text-xs text-surface-text-muted">
+                    Type: <span className="font-mono text-surface-text">{hostKeyConfirm.keyType}</span>
+                  </div>
+                  <div className="text-xs text-surface-text-muted break-all">
+                    Fingerprint:{" "}
+                    <span className="font-mono text-surface-text">{hostKeyConfirm.fingerprint}</span>
+                  </div>
+                </div>
+
+                {saveWarning && (
+                  <p className="text-xs text-amber-400">{saveWarning}</p>
+                )}
+                {connectStatus === "error" && (
+                  <p className="text-xs text-red-400">{connectError}</p>
+                )}
+
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    onClick={handleRejectHostKey}
+                    className="bg-surface-2 hover:bg-surface-3 text-surface-text-muted text-xs px-4 py-1.5 rounded"
+                  >
+                    {hostKeyConfirm.changed ? "Back" : "Reject"}
+                  </button>
+                  {!hostKeyConfirm.changed && (
+                    <button
+                      onClick={handleAcceptHostKey}
+                      disabled={connectStatus === "connecting"}
+                      className="bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-4 py-1.5 rounded disabled:opacity-50"
+                    >
+                      {connectStatus === "connecting" ? "Connecting..." : "Accept & Connect"}
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -486,9 +705,10 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                 )}
 
                 {kind === "ssh" && (
-                  <p className="text-xs text-amber-500/80">
-                    Host key verification is not yet implemented — connections are not
-                    protected against man-in-the-middle attacks.
+                  <p className="text-xs text-surface-text-muted">
+                    {promptNewHostKeys
+                      ? "You'll be asked to confirm this host's key the first time you connect to it."
+                      : "The first connection to a new host trusts and remembers its key automatically; a later connection presenting a different key is always refused. Enable “Prompt to accept new SSH host keys” in Settings → Terminals to review each new host's fingerprint yourself."}
                   </p>
                 )}
                 {kind === "winrm" && (

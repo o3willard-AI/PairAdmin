@@ -50,6 +50,20 @@ export namespace capture {
 
 export namespace config {
 	
+	export class PinnedCommand {
+	    Command: string;
+	    OriginalQuestion: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PinnedCommand(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Command = source["Command"];
+	        this.OriginalQuestion = source["OriginalQuestion"];
+	    }
+	}
 	export class RemoteHost {
 	    ID: string;
 	    Kind: string;
@@ -108,12 +122,17 @@ export namespace config {
 	    HotkeyCopyLast: string;
 	    HotkeyFocusWindow: string;
 	    HotkeyAddClipboardCommand: string;
+	    HotkeyNewTerminal: string;
 	    Theme: string;
 	    FontSize: number;
 	    ContextLines: number;
 	    OllamaHost: string;
 	    LMStudioHost: string;
 	    RemoteHosts: RemoteHost[];
+	    TerminalsSidebarWidthCh: number;
+	    CommandsSidebarWidthCh: number;
+	    PinnedCommands: PinnedCommand[];
+	    PromptNewHostKeys: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppConfig(source);
@@ -130,12 +149,17 @@ export namespace config {
 	        this.HotkeyCopyLast = source["HotkeyCopyLast"];
 	        this.HotkeyFocusWindow = source["HotkeyFocusWindow"];
 	        this.HotkeyAddClipboardCommand = source["HotkeyAddClipboardCommand"];
+	        this.HotkeyNewTerminal = source["HotkeyNewTerminal"];
 	        this.Theme = source["Theme"];
 	        this.FontSize = source["FontSize"];
 	        this.ContextLines = source["ContextLines"];
 	        this.OllamaHost = source["OllamaHost"];
 	        this.LMStudioHost = source["LMStudioHost"];
 	        this.RemoteHosts = this.convertValues(source["RemoteHosts"], RemoteHost);
+	        this.TerminalsSidebarWidthCh = source["TerminalsSidebarWidthCh"];
+	        this.CommandsSidebarWidthCh = source["CommandsSidebarWidthCh"];
+	        this.PinnedCommands = this.convertValues(source["PinnedCommands"], PinnedCommand);
+	        this.PromptNewHostKeys = source["PromptNewHostKeys"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -156,6 +180,7 @@ export namespace config {
 		    return a;
 		}
 	}
+	
 	
 
 }
@@ -210,6 +235,24 @@ export namespace services {
 	        this.content = source["content"];
 	    }
 	}
+	export class HostKeyStatus {
+	    known: boolean;
+	    changed: boolean;
+	    keyType: string;
+	    fingerprint: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new HostKeyStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.known = source["known"];
+	        this.changed = source["changed"];
+	        this.keyType = source["keyType"];
+	        this.fingerprint = source["fingerprint"];
+	    }
+	}
 	export class LLMService {
 	
 	
@@ -235,6 +278,7 @@ export namespace services {
 	    savedHostId?: string;
 	    useTmux: boolean;
 	    tmuxSessionName?: string;
+	    trustNewHostKey?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new RemoteConnectParams(source);
@@ -254,6 +298,7 @@ export namespace services {
 	        this.savedHostId = source["savedHostId"];
 	        this.useTmux = source["useTmux"];
 	        this.tmuxSessionName = source["tmuxSessionName"];
+	        this.trustNewHostKey = source["trustNewHostKey"];
 	    }
 	}
 

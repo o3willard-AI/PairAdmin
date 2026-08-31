@@ -284,28 +284,19 @@ func applyFilterPipeline(content string) string {
 // Note: individual adapters (TmuxAdapter, ATSPIAdapter) apply their own ANSI + credential filtering;
 // this pipeline adds user-configured CustomFilter patterns on top.
 func (m *CaptureManager) buildFilterPipeline() *filter.Pipeline {
-	var filters []filter.Filter
-
 	cfg, err := config.LoadAppConfig()
-	if err == nil && len(cfg.CustomPatterns) > 0 {
-		inputs := make([]filter.CustomPatternInput, len(cfg.CustomPatterns))
-		for i, p := range cfg.CustomPatterns {
-			inputs[i] = filter.CustomPatternInput{
-				Name:   p.Name,
-				Regex:  p.Regex,
-				Action: p.Action,
-			}
-		}
-		customFilter, err := filter.NewCustomFilter(inputs)
-		if err == nil {
-			filters = append(filters, customFilter)
-		}
-	}
-
-	if len(filters) == 0 {
+	if err != nil || len(cfg.CustomPatterns) == 0 {
 		return nil // no custom patterns — skip pipeline to avoid unnecessary allocation
 	}
-	return filter.NewPipeline(filters...)
+	inputs := make([]filter.CustomPatternInput, len(cfg.CustomPatterns))
+	for i, p := range cfg.CustomPatterns {
+		inputs[i] = filter.CustomPatternInput{
+			Name:   p.Name,
+			Regex:  p.Regex,
+			Action: p.Action,
+		}
+	}
+	return filter.BuildPipelineFromPatterns(inputs)
 }
 
 // RebuildFilterPipeline reloads custom patterns from AppConfig and rebuilds the filter pipeline.

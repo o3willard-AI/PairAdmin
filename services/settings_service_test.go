@@ -180,6 +180,85 @@ func TestSettingsService_SaveSettings_PreservesRemoteHosts(t *testing.T) {
 	}
 }
 
+// TestSettingsService_SaveSettings_PreservesPinnedCommands mirrors
+// TestSettingsService_SaveSettings_PreservesRemoteHosts for PinnedCommands:
+// an unrelated Settings-tab save must never wipe previously-saved pinned commands.
+func TestSettingsService_SaveSettings_PreservesPinnedCommands(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	svc := NewSettingsService(makeTestKeychainClient(newInMemoryKeyring()))
+	svc.emitFn = nil
+	svc.ctx = context.Background()
+
+	if err := svc.SavePinnedCommands([]config.PinnedCommand{
+		{Command: "tmux set -g mouse on"},
+	}); err != nil {
+		t.Fatalf("SavePinnedCommands() unexpected error: %v", err)
+	}
+
+	// Simulate a settings tab sending only the fields it manages — PinnedCommands
+	// deliberately left as its Go zero value (nil), exactly as every real
+	// Settings tab component does today.
+	partialCfg := &config.AppConfig{Provider: "openai", Model: "gpt-4"}
+	if err := svc.SaveSettings(partialCfg); err != nil {
+		t.Fatalf("SaveSettings() unexpected error: %v", err)
+	}
+
+	loaded, err := svc.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() unexpected error: %v", err)
+	}
+	if len(loaded.PinnedCommands) != 1 || loaded.PinnedCommands[0].Command != "tmux set -g mouse on" {
+		t.Errorf("expected saved pinned command to survive an unrelated SaveSettings call, got %+v", loaded.PinnedCommands)
+	}
+}
+
+// TestSettingsService_SavePinnedCommands_RoundTrip verifies pinned commands
+// can be saved and read back via GetSettings, including replacing a previous save.
+func TestSettingsService_SavePinnedCommands_RoundTrip(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	svc := NewSettingsService(makeTestKeychainClient(newInMemoryKeyring()))
+	svc.emitFn = nil
+	svc.ctx = context.Background()
+
+	if err := svc.SavePinnedCommands([]config.PinnedCommand{
+		{Command: "df -h", OriginalQuestion: "how much space is left?"},
+		{Command: "tmux set -g mouse on"},
+	}); err != nil {
+		t.Fatalf("SavePinnedCommands() unexpected error: %v", err)
+	}
+
+	loaded, err := svc.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() unexpected error: %v", err)
+	}
+	if len(loaded.PinnedCommands) != 2 {
+		t.Fatalf("expected 2 pinned commands, got %d", len(loaded.PinnedCommands))
+	}
+	if loaded.PinnedCommands[0].Command != "df -h" || loaded.PinnedCommands[0].OriginalQuestion != "how much space is left?" {
+		t.Errorf("PinnedCommands[0] mismatch: %+v", loaded.PinnedCommands[0])
+	}
+
+	// A second save fully replaces the first, rather than appending.
+	if err := svc.SavePinnedCommands([]config.PinnedCommand{
+		{Command: "kubectl get pods"},
+	}); err != nil {
+		t.Fatalf("second SavePinnedCommands() unexpected error: %v", err)
+	}
+	reloaded, err := svc.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() unexpected error: %v", err)
+	}
+	if len(reloaded.PinnedCommands) != 1 || reloaded.PinnedCommands[0].Command != "kubectl get pods" {
+		t.Errorf("expected second save to replace the first, got %+v", reloaded.PinnedCommands)
+	}
+}
+
 // TestSettingsService_GetAPIKeyStatus_Stored returns "stored" when key exists.
 func TestSettingsService_GetAPIKeyStatus_Stored(t *testing.T) {
 	homeDir := t.TempDir()
@@ -475,32 +554,38 @@ func (m *mockCaptureManager) ForceCapture() {
 	m.forceCaptureCount++
 }
 
-// TestSettingsService_ForceRefresh_WithManager calls ForceCapture and returns success.
+// TestSettingsService_ForceRefresh_WithManager calls ForceCapture and returns success
+// for each legacy CaptureManager-backed tab prefix.
 func TestSettingsService_ForceRefresh_WithManager(t *testing.T) {
-	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
-	t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
+	for _, tabId := range []string{"tmux:%3", "atspi:42", "windows:1234"} {
+		t.Run(tabId, func(t *testing.T) {
+			homeDir := t.TempDir()
+			t.Setenv("HOME", homeDir)
+			t.Setenv("USERPROFILE", homeDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
 
-	mem := newInMemoryKeyring()
-	svc := NewSettingsService(makeTestKeychainClient(mem))
-	svc.emitFn = nil
+			mem := newInMemoryKeyring()
+			svc := NewSettingsService(makeTestKeychainClient(mem))
+			svc.emitFn = nil
 
-	mock := &mockCaptureManager{}
-	svc.SetCaptureManager(mock)
+			mock := &mockCaptureManager{}
+			svc.SetCaptureManager(mock)
 
-	result, err := svc.ForceRefresh()
-	if err != nil {
-		t.Fatalf("ForceRefresh() unexpected error: %v", err)
-	}
-	if result != "Terminal content refreshed" {
-		t.Errorf("ForceRefresh() expected 'Terminal content refreshed', got %q", result)
-	}
-	if mock.forceCaptureCount != 1 {
-		t.Errorf("ForceCapture() expected 1 call, got %d", mock.forceCaptureCount)
+			result, err := svc.ForceRefresh(tabId)
+			if err != nil {
+				t.Fatalf("ForceRefresh(%q) unexpected error: %v", tabId, err)
+			}
+			if result != "Terminal content refreshed" {
+				t.Errorf("ForceRefresh(%q) expected 'Terminal content refreshed', got %q", tabId, result)
+			}
+			if mock.forceCaptureCount != 1 {
+				t.Errorf("ForceCapture() expected 1 call, got %d", mock.forceCaptureCount)
+			}
+		})
 	}
 }
 
-// TestSettingsService_ForceRefresh_NoManager returns error when captureManager is nil.
+// TestSettingsService_ForceRefresh_NoManager returns error when captureManager is nil,
+// for a legacy-capture tab that would otherwise need one.
 func TestSettingsService_ForceRefresh_NoManager(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
@@ -510,9 +595,62 @@ func TestSettingsService_ForceRefresh_NoManager(t *testing.T) {
 	svc := NewSettingsService(makeTestKeychainClient(mem))
 	svc.emitFn = nil
 
-	_, err := svc.ForceRefresh()
+	_, err := svc.ForceRefresh("tmux:%3")
 	if err == nil {
 		t.Fatal("ForceRefresh() with nil manager expected error, got nil")
+	}
+}
+
+// TestSettingsService_ForceRefresh_NativePTYTab_NoOpNoManagerNeeded is a
+// regression test for PRE_INSTALLER_TASKS.md item 3: /refresh previously
+// reported "Terminal content refreshed" for Local/SSH/WinRM tabs even though
+// nothing was captured and nothing changed — misleading, since those tabs
+// stream live via pty:output and have no capture step at all. Covers every
+// native PTY tabId shape: bare (Local), "ssh:", and "winrm:".
+func TestSettingsService_ForceRefresh_NativePTYTab_NoOpNoManagerNeeded(t *testing.T) {
+	for _, tabId := range []string{"a1b2c3d4-local-uuid", "ssh:a1b2c3d4", "winrm:a1b2c3d4"} {
+		t.Run(tabId, func(t *testing.T) {
+			homeDir := t.TempDir()
+			t.Setenv("HOME", homeDir)
+			t.Setenv("USERPROFILE", homeDir)
+
+			mem := newInMemoryKeyring()
+			svc := NewSettingsService(makeTestKeychainClient(mem))
+			svc.emitFn = nil
+			// Deliberately no SetCaptureManager call — a native PTY tab must
+			// not require one, since it never reaches ForceCapture().
+
+			result, err := svc.ForceRefresh(tabId)
+			if err != nil {
+				t.Fatalf("ForceRefresh(%q) unexpected error: %v", tabId, err)
+			}
+			if result != "This terminal is already live — nothing to refresh." {
+				t.Errorf("ForceRefresh(%q) = %q, want the native-PTY no-op message", tabId, result)
+			}
+		})
+	}
+}
+
+// TestSettingsService_ForceRefresh_NativePTYTab_DoesNotCallCaptureManager
+// verifies a native PTY tab's refresh doesn't trigger ForceCapture() even
+// when a CaptureManager happens to be wired (it always is in the real app).
+func TestSettingsService_ForceRefresh_NativePTYTab_DoesNotCallCaptureManager(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.emitFn = nil
+
+	mock := &mockCaptureManager{}
+	svc.SetCaptureManager(mock)
+
+	if _, err := svc.ForceRefresh("ssh:a1b2c3d4"); err != nil {
+		t.Fatalf("ForceRefresh() unexpected error: %v", err)
+	}
+	if mock.forceCaptureCount != 0 {
+		t.Errorf("expected ForceCapture() not to be called for a native PTY tab, got %d calls", mock.forceCaptureCount)
 	}
 }
 

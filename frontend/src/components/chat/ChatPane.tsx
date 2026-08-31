@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useLLMStream } from "@/hooks/useLLMStream";
@@ -7,6 +7,10 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { readTerminalLines } from "@/utils/terminalContext";
 import { ChatMessageList } from "./ChatMessageList";
 import { ChatInput } from "./ChatInput";
+
+// Matches SettingsService.SetContextLines' behavior when AppConfig.ContextLines
+// is unset (0) — the original hardcoded literal, kept as the fallback.
+const DEFAULT_CONTEXT_LINES = 200;
 
 const HELP_TEXT = `/clear - Clear chat history for current tab
 /model <provider:model> - Switch LLM provider and model (e.g., /model openai:gpt-4)
@@ -22,10 +26,25 @@ const HELP_TEXT = `/clear - Clear chat history for current tab
 export function ChatPane() {
   const activeTabId = useTerminalStore((state) => state.activeTabId);
   const lastSentRef = useRef<{ text: string; terminalContext: string } | null>(null);
+  // How many trailing terminal lines to send as chat context — previously a
+  // hardcoded 200 regardless of what /context <lines> reported setting; see
+  // PRE_INSTALLER_TASKS.md item 2. Loaded once from the persisted setting on
+  // mount, then updated immediately (without a restart) whenever /context
+  // succeeds.
+  const contextLinesRef = useRef(DEFAULT_CONTEXT_LINES);
   const { setTheme } = useTheme();
 
   // Subscribe to Wails streaming events for this tab
   useLLMStream(activeTabId);
+
+  useEffect(() => {
+    import(/* @vite-ignore */ "../../../wailsjs/go/services/SettingsService")
+      .then(({ GetSettings }) => GetSettings())
+      .then((cfg) => {
+        if (cfg?.ContextLines) contextLinesRef.current = cfg.ContextLines;
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSend = async (text: string) => {
     useChatStore.getState().addUserMessage(activeTabId, text);
@@ -96,6 +115,7 @@ export function ChatPane() {
       import(/* @vite-ignore */ "../../../wailsjs/go/services/SettingsService")
         .then(({ SetContextLines }) => SetContextLines(lines))
         .then((response: string) => {
+          contextLinesRef.current = lines;
           useChatStore.getState().addSystemMessage(activeTabId, response);
         })
         .catch((err: Error) => {
@@ -107,7 +127,7 @@ export function ChatPane() {
     // /refresh — Go backend call per D-07
     if (trimmed === "/refresh") {
       import(/* @vite-ignore */ "../../../wailsjs/go/services/SettingsService")
-        .then(({ ForceRefresh }) => ForceRefresh())
+        .then(({ ForceRefresh }) => ForceRefresh(activeTabId))
         .then((response: string) => {
           useChatStore.getState().addSystemMessage(activeTabId, response);
         })
@@ -168,7 +188,7 @@ export function ChatPane() {
 
     // Not a command — send to LLM (existing behavior)
     const term = useTerminalStore.getState().getTermRef(activeTabId);
-    const terminalContext = readTerminalLines(term, 200);
+    const terminalContext = readTerminalLines(term, contextLinesRef.current);
     lastSentRef.current = { text, terminalContext };
 
     import(/* @vite-ignore */ "../../../wailsjs/go/services/LLMService").then(({ SendMessage }) => {

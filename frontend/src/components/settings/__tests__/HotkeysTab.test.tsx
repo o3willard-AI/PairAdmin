@@ -45,4 +45,29 @@ describe("HotkeysTab", () => {
       expect.objectContaining({ HotkeyAddClipboardCommand: "Ctrl+Shift+A" })
     );
   });
+
+  it("shows the built-in default for New Terminal when unset", async () => {
+    render(<HotkeysTab />);
+
+    expect(await screen.findByDisplayValue("Ctrl+Shift+N")).toBeInTheDocument();
+  });
+
+  it("loads a previously saved New Terminal combo instead of the default", async () => {
+    getSettings.mockResolvedValue({ HotkeyNewTerminal: "Ctrl+Alt+Z" });
+    render(<HotkeysTab />);
+
+    expect(await screen.findByDisplayValue("Ctrl+Alt+Z")).toBeInTheDocument();
+  });
+
+  it("saves the current New Terminal value via the Save button", async () => {
+    const user = userEvent.setup();
+    render(<HotkeysTab />);
+    await screen.findByDisplayValue("Ctrl+Shift+N");
+
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ HotkeyNewTerminal: "Ctrl+Shift+N" })
+    );
+  });
 });

@@ -5,6 +5,8 @@ import {capture} from '../models';
 import {keychain} from '../models';
 import {context} from '../models';
 
+export function CheckHostKeyTrust(arg1:string,arg2:number):Promise<services.HostKeyStatus>;
+
 export function CloseTerminal(arg1:string):Promise<void>;
 
 export function GetWindowsContent(arg1:string):Promise<string>;

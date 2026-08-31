@@ -312,6 +312,89 @@ func TestSaveAndLoadAppConfig_HotkeyAddClipboardCommandRoundTrip(t *testing.T) {
 	}
 }
 
+// TestLoadAppConfig_DefaultsHotkeyNewTerminal verifies a fresh install ships
+// with a working default "open + New" hotkey rather than an empty/unset one.
+func TestLoadAppConfig_DefaultsHotkeyNewTerminal(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	cfg, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
+	}
+	if cfg.HotkeyNewTerminal != DefaultHotkeyNewTerminal {
+		t.Errorf("HotkeyNewTerminal: expected default %q, got %q",
+			DefaultHotkeyNewTerminal, cfg.HotkeyNewTerminal)
+	}
+}
+
+// TestSaveAndLoadAppConfig_HotkeyNewTerminalRoundTrip verifies a
+// user-customized binding overrides the default and survives a save/load cycle.
+func TestSaveAndLoadAppConfig_HotkeyNewTerminalRoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	original := &AppConfig{HotkeyNewTerminal: "Ctrl+Alt+Y"}
+	if err := SaveAppConfig(original); err != nil {
+		t.Fatalf("SaveAppConfig() unexpected error: %v", err)
+	}
+
+	loaded, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
+	}
+	if loaded.HotkeyNewTerminal != "Ctrl+Alt+Y" {
+		t.Errorf("HotkeyNewTerminal: expected 'Ctrl+Alt+Y', got %q", loaded.HotkeyNewTerminal)
+	}
+}
+
+// TestLoadAppConfig_DefaultsSidebarWidths verifies a fresh install ships
+// with the sidebar widths approximating the original hardcoded pixel values.
+func TestLoadAppConfig_DefaultsSidebarWidths(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	cfg, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
+	}
+	if cfg.TerminalsSidebarWidthCh != DefaultTerminalsSidebarWidthCh {
+		t.Errorf("TerminalsSidebarWidthCh: expected default %d, got %d",
+			DefaultTerminalsSidebarWidthCh, cfg.TerminalsSidebarWidthCh)
+	}
+	if cfg.CommandsSidebarWidthCh != DefaultCommandsSidebarWidthCh {
+		t.Errorf("CommandsSidebarWidthCh: expected default %d, got %d",
+			DefaultCommandsSidebarWidthCh, cfg.CommandsSidebarWidthCh)
+	}
+}
+
+// TestSaveAndLoadAppConfig_SidebarWidthsRoundTrip verifies user-customized
+// sidebar widths survive a save/load cycle.
+func TestSaveAndLoadAppConfig_SidebarWidthsRoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	original := &AppConfig{TerminalsSidebarWidthCh: 15, CommandsSidebarWidthCh: 45}
+	if err := SaveAppConfig(original); err != nil {
+		t.Fatalf("SaveAppConfig() unexpected error: %v", err)
+	}
+
+	loaded, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
+	}
+	if loaded.TerminalsSidebarWidthCh != 15 {
+		t.Errorf("TerminalsSidebarWidthCh: expected 15, got %d", loaded.TerminalsSidebarWidthCh)
+	}
+	if loaded.CommandsSidebarWidthCh != 45 {
+		t.Errorf("CommandsSidebarWidthCh: expected 45, got %d", loaded.CommandsSidebarWidthCh)
+	}
+}
+
 // TestSaveAppConfig_PreservesCustomPatternsOnNewFieldSave verifies that saving new fields keeps CustomPatterns.
 func TestSaveAppConfig_PreservesCustomPatternsOnNewFieldSave(t *testing.T) {
 	tmpDir := t.TempDir()

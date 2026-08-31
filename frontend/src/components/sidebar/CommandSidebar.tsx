@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Pin } from "lucide-react";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useCommandStore } from "@/stores/commandStore";
 import { sendToTerminal } from "@/utils/sendToTerminal";
@@ -28,6 +28,27 @@ export function CommandSidebar() {
   );
   const draggedIdRef = useRef<string | null>(null);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [pinSaveStatus, setPinSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  const handleSavePinned = async () => {
+    setPinSaveStatus("saving");
+    try {
+      const { SavePinnedCommands } = await import(
+        /* @vite-ignore */ "../../../wailsjs/go/services/SettingsService"
+      );
+      await SavePinnedCommands(
+        pinnedCommands.map((c) => ({
+          Command: c.command,
+          OriginalQuestion: c.originalQuestion,
+        }))
+      );
+      setPinSaveStatus("saved");
+      setTimeout(() => setPinSaveStatus("idle"), 2000);
+    } catch {
+      setPinSaveStatus("error");
+      setTimeout(() => setPinSaveStatus("idle"), 3000);
+    }
+  };
 
   const handleCopy = (id: string) => {
     const text = useCommandStore.getState().consumeCommandText(id);
@@ -97,6 +118,22 @@ export function CommandSidebar() {
         >
           <Plus size={14} />
           Add Command
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleSavePinned}
+          disabled={pinSaveStatus === "saving" || pinnedCommands.length === 0}
+          className="w-full text-xs text-surface-text-muted hover:text-surface-text"
+        >
+          <Pin size={14} />
+          {pinSaveStatus === "saving"
+            ? "Saving..."
+            : pinSaveStatus === "saved"
+              ? "Saved!"
+              : pinSaveStatus === "error"
+                ? "Save failed"
+                : "Save Pinned"}
         </Button>
         <ClearHistoryButton
           onClick={() => useCommandStore.getState().clearAll()}

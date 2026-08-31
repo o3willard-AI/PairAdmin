@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"pairadmin/services/audit"
+	"pairadmin/services/config"
 	"pairadmin/services/llm"
 
 	"github.com/awnumar/memguard"
@@ -205,6 +206,106 @@ func TestSendMessageAuditAIResponse(t *testing.T) {
 	}
 	if !strings.Contains(contents, "[REDACTED:anthropic-api-key]") {
 		t.Errorf("expected credential to be redacted in audit log, got:\n%s", contents)
+	}
+}
+
+// capturingMockProvider records the messages it was given so a test can
+// inspect what context actually reached the "LLM" — used to verify filtering
+// happened before Stream was called, not just that it would have.
+type capturingMockProvider struct {
+	received []llm.Message
+}
+
+func (m *capturingMockProvider) Name() string { return "capturing-mock" }
+
+func (m *capturingMockProvider) Stream(_ context.Context, messages []llm.Message) (<-chan llm.StreamChunk, error) {
+	m.received = messages
+	ch := make(chan llm.StreamChunk, 1)
+	ch <- llm.StreamChunk{Done: true}
+	close(ch)
+	return ch, nil
+}
+
+func (m *capturingMockProvider) TestConnection(_ context.Context) error { return nil }
+
+// TestSendMessage_AppliesCustomFilterPatternsToTerminalContext is a
+// regression test for PRE_INSTALLER_TASKS.md item 1: custom patterns added
+// via /filter add previously only applied to the legacy tmux/AT-SPI2 capture
+// path, silently protecting nothing for Local/SSH/WinRM ("+ New") tabs. This
+// verifies SendMessage itself now redacts a configured custom pattern out of
+// terminalContext before it's ever handed to the provider.
+func TestSendMessage_AppliesCustomFilterPatternsToTerminalContext(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	cfg, err := config.LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig: %v", err)
+	}
+	cfg.CustomPatterns = []config.CustomPattern{
+		{Name: "secret-token", Regex: `TOKEN-\d+`, Action: "redact"},
+	}
+	if err := config.SaveAppConfig(cfg); err != nil {
+		t.Fatalf("SaveAppConfig: %v", err)
+	}
+
+	provider := &capturingMockProvider{}
+	svc := &LLMService{
+		cfg:            Config{Provider: "mock"},
+		activeProvider: provider,
+		emitFn:         func(_ context.Context, _ string, _ ...interface{}) {},
+	}
+	svc.ctx = context.Background()
+
+	err = svc.SendMessage("ssh:tab-1", "what's this?", "here is TOKEN-98765 in the output")
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	if len(provider.received) < 2 {
+		t.Fatalf("expected at least 2 messages (system, user) reaching the provider, got %d", len(provider.received))
+	}
+	userMsg := provider.received[1].Content
+	if strings.Contains(userMsg, "TOKEN-98765") {
+		t.Errorf("expected custom pattern to redact TOKEN-98765 from terminal context sent to the LLM, got: %q", userMsg)
+	}
+	if !strings.Contains(userMsg, "[REDACTED:secret-token]") {
+		t.Errorf("expected [REDACTED:secret-token] marker in context sent to the LLM, got: %q", userMsg)
+	}
+}
+
+// TestSendMessage_NoCustomPatterns_ContextPassesThroughUnaffected verifies
+// customFilterPipeline's "no patterns configured" path doesn't alter context
+// that has nothing to redact.
+func TestSendMessage_NoCustomPatterns_ContextPassesThroughUnaffected(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+	// No config.yaml written at all — LoadAppConfig() falls back to defaults.
+
+	provider := &capturingMockProvider{}
+	svc := &LLMService{
+		cfg:            Config{Provider: "mock"},
+		activeProvider: provider,
+		emitFn:         func(_ context.Context, _ string, _ ...interface{}) {},
+	}
+	svc.ctx = context.Background()
+
+	err := svc.SendMessage("ssh:tab-1", "what's this?", "plain output, nothing sensitive")
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	if len(provider.received) < 2 {
+		t.Fatalf("expected at least 2 messages (system, user) reaching the provider, got %d", len(provider.received))
+	}
+	if !strings.Contains(provider.received[1].Content, "plain output, nothing sensitive") {
+		t.Errorf("expected unfiltered context to pass through unchanged, got: %q", provider.received[1].Content)
 	}
 }
 
