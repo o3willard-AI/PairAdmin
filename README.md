@@ -86,7 +86,7 @@ curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin/master/insta
 
 The installer detects your distro and picks the right package format automatically (`.deb` for Debian/Ubuntu, `.rpm` for Fedora/RHEL, `.AppImage` fallback for others). `sudo` is required during install/uninstall.
 
-> **macOS:** Native builds are coming soon.
+> **macOS & Windows:** see the manual install sections below.
 
 ### Manual install
 
@@ -104,7 +104,23 @@ sudo dnf install -y webkit2gtk4.1 at-spi2-atk
 sudo rpm -Uvh pairadmin_*_linux_amd64.rpm
 ```
 
-> **AppImage / macOS / Windows:** Coming in a future release.
+**Windows (.exe installer)**
+
+1. Download `pairadmin-amd64-installer.exe` from the latest release and run it.
+2. Windows SmartScreen may show "Windows protected your PC" (the app is unsigned during alpha) — click **More info → Run anyway**.
+3. Requires the WebView2 Runtime (preinstalled on Windows 11; the installer fetches it on Windows 10). Windows 10 1809+ supported.
+
+**macOS (alpha — unsigned)**
+
+macOS builds ship **unsigned** during the alpha. Gatekeeper will block the app on first launch, so approve it once with:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/PairAdmin.app
+```
+
+…or via **System Settings → Privacy & Security → "Open Anyway"**. Re-run this on every update (each new download re-triggers Gatekeeper). Apple code signing + notarization is planned for the stable release. Requires **macOS 12+**.
+
+> **AppImage:** coming in a future release.
 
 ## Verifying Downloads
 
