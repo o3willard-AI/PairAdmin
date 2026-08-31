@@ -50,6 +50,9 @@ jobs:
           export VERSION="${GITHUB_REF_NAME#v}"
           nfpm package --packager deb
           nfpm package --packager rpm
+          # rename to the canonical install.sh/README convention
+          mv pairadmin_*_amd64.deb "pairadmin_${VERSION}_linux_amd64.deb"
+          mv pairadmin-*.x86_64.rpm "pairadmin_${VERSION}_linux_amd64.rpm"
           mkdir -p dist
           mv *.deb *.rpm dist/
           ls -la dist/
@@ -142,7 +145,7 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           cd dist
-          for f in *; do [ -f "$f" ] && sha256sum "$f"; done > SHA256SUMS
+          for f in *.deb *.rpm *.exe *.dmg; do [ -f "$f" ] && sha256sum "$f"; done > SHA256SUMS
           cat SHA256SUMS
 
       - name: Publish GitHub release
