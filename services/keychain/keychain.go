@@ -67,19 +67,73 @@ func NewWithOpenFunc(openFn func(keyring.Config) (keyring.Keyring, error)) *Clie
 	return &Client{open: openFn}
 }
 
-// ring opens the keyring using the configured open function. When no OS
-// backend is available, keyring falls through to the file backend, whose
-// password comes from c.masterPW via filePasswordFunc. filePasswordFunc is
-// invoked lazily — only by the file backend itself, and only when it is
-// about to encrypt or decrypt an item (file.go unlock()) — so the "file
-// backend in use" condition is enforced at exactly the right moment: an OS
-// backend never triggers it, and the file backend can never silently get
-// the old hardcoded password as a fallback.
+// probeKey is the canary key used by probeBackend.
+const probeKey = "pairadmin_probe"
+
+// probeBackend reports whether an already-opened keyring is actually
+// functional by exercising the full write/read path with a canary item:
+// Set the canary (any failure -> broken), read it back (any failure ->
+// broken), then Remove it (best-effort cleanup; a leftover canary item in a
+// working backend is harmless).
+//
+// Why a write probe instead of a Get-only probe: on a host with a D-Bus
+// session bus and a half-working Secret Service (gnome-keyring-daemon
+// running, but collection creation broken), Get on a missing key returns a
+// CLEAN keyring.ErrKeyNotFound — indistinguishable from a healthy empty
+// backend — while Set fails with D-Bus "Object does not exist at path /"
+// (verified live; this is exactly the failure that cascaded from Task 1).
+// Reads alone therefore cannot detect that class of breakage; only a write
+// can. A Set success is also authoritative for the read path via the
+// read-back check, so a backend that swallows writes or returns garbage on
+// reads is rejected.
+//
+// Note: on a system with a real but LOCKED Secret Service collection, the
+// canary Set triggers the standard desktop unlock prompt. That prompt is
+// unavoidable for this app (storing credentials requires writes anyway);
+// probing just surfaces it at startup instead of at first save.
+func probeBackend(kr keyring.Keyring) bool {
+	if kr == nil {
+		return false
+	}
+	if err := kr.Set(keyring.Item{Key: probeKey, Data: []byte(ServiceName)}); err != nil {
+		return false
+	}
+	defer func() { _ = kr.Remove(probeKey) }()
+	item, err := kr.Get(probeKey)
+	if err != nil || string(item.Data) != ServiceName {
+		return false
+	}
+	return true
+}
+
+// ring opens the keyring using the configured open function, in two stages:
+//
+//  1. Try the OS backends only. If one opens AND passes the functionality
+//     probe, use it — genuine macOS Keychain / Windows Credential Manager /
+//     Secret Service behave exactly as before.
+//  2. Otherwise open the file backend exclusively, unlocked via
+//     FilePasswordFunc with the in-memory master password (or a clear
+//     ErrNoMasterPassword — never the old hardcoded string).
+//
+// The probe is what makes stage 2 reachable on hosts whose only "OS"
+// backend is a broken Secret Service (D-Bus session bus present, daemon
+// absent): without it, keyring.Open would select that backend and every
+// operation would fail instead of falling back to the file backend.
+// FilePasswordFunc is still invoked lazily — only by the file backend
+// itself, and only when it is about to encrypt or decrypt an item (file.go
+// unlock()) — so an OS backend in use never triggers it.
 func (c *Client) ring() (keyring.Keyring, error) {
 	home, _ := os.UserHomeDir()
+	if kr, err := c.open(keyring.Config{
+		ServiceName:     ServiceName,
+		AllowedBackends: []keyring.BackendType{keyring.KeychainBackend, keyring.WinCredBackend, keyring.SecretServiceBackend},
+		FileDir:         filepath.Join(home, ".pairadmin", "keyring"),
+	}); err == nil && probeBackend(kr) {
+		return kr, nil
+	}
 	return c.open(keyring.Config{
 		ServiceName:     ServiceName,
-		AllowedBackends: []keyring.BackendType{keyring.KeychainBackend, keyring.WinCredBackend, keyring.SecretServiceBackend, keyring.FileBackend},
+		AllowedBackends: []keyring.BackendType{keyring.FileBackend},
 		FileDir:         filepath.Join(home, ".pairadmin", "keyring"),
 		FilePasswordFunc: func(_ string) (string, error) {
 			if c.masterPW == "" {
@@ -91,12 +145,12 @@ func (c *Client) ring() (keyring.Keyring, error) {
 }
 
 // NeedsMasterPassword probes ONLY the OS backends (macOS Keychain, Windows
-// Credential Manager, Linux Secret Service) and reports whether none of them
-// opens — i.e. keyring would fall back to the file backend, which requires a
-// master password. No prompting occurs.
+// Credential Manager, Linux Secret Service) and reports whether none of
+// them opens AND passes a functionality probe — i.e. the file backend would
+// be used, which requires a master password. No prompting occurs.
 func (c *Client) NeedsMasterPassword() (bool, error) {
 	home, _ := os.UserHomeDir()
-	_, err := c.open(keyring.Config{
+	kr, err := c.open(keyring.Config{
 		ServiceName:     ServiceName,
 		AllowedBackends: []keyring.BackendType{keyring.KeychainBackend, keyring.WinCredBackend, keyring.SecretServiceBackend},
 		FileDir:         filepath.Join(home, ".pairadmin", "keyring"),
@@ -107,7 +161,7 @@ func (c *Client) NeedsMasterPassword() (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("probe OS keychain backends: %w", err)
 	}
-	return false, nil
+	return !probeBackend(kr), nil
 }
 
 // Get retrieves the API key for the given provider from the OS keychain.

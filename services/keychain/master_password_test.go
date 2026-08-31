@@ -20,17 +20,34 @@ func isolateHome(t *testing.T) string {
 	return homeDir
 }
 
-// newFileBackendTestClient returns a Client pinned to the real file backend
-// (still the real keyring.Open — only the backend choice is fixed). Tests
-// that exercise the encrypted file backend must pin it: on hosts where an OS
-// backend "opens" but is non-functional (e.g. a D-Bus session bus without a
-// Secret Service), keyring.Open's normal fallback would route operations to
-// the broken OS backend instead of the file backend this suite targets.
+// newFileBackendTestClient returns a Client whose OS-backend stage behaves as
+// "no OS backend available" (keyring.ErrNoAvailImpl) while file-backend opens
+// go to the real keyring.Open. Tests that exercise the encrypted file backend
+// must pin this: (a) on hosts where an OS backend "opens" but is
+// non-functional (e.g. a D-Bus session bus without a Secret Service),
+// keyring.Open's normal fallback would route operations to the broken OS
+// backend instead of the file backend this suite targets; (b) the OS stage of
+// Client.ring must not see a file-backend keyring, whose FilePasswordFunc is
+// unset in that config and would nil-panic on first unlock.
 func newFileBackendTestClient() *Client {
 	return NewWithOpenFunc(func(cfg keyring.Config) (keyring.Keyring, error) {
-		cfg.AllowedBackends = []keyring.BackendType{keyring.FileBackend}
-		return keyring.Open(cfg)
+		if configIncludesFileBackend(cfg) {
+			return keyring.Open(cfg)
+		}
+		return nil, keyring.ErrNoAvailImpl
 	})
+}
+
+// configIncludesFileBackend reports whether cfg.AllowedBackends contains the
+// file backend, i.e. whether an open request is the file-backend stage of
+// Client.ring (or a probe that included it).
+func configIncludesFileBackend(cfg keyring.Config) bool {
+	for _, b := range cfg.AllowedBackends {
+		if b == keyring.FileBackend {
+			return true
+		}
+	}
+	return false
 }
 
 // TestMasterPassword_SetVerifyHoldsInMemory covers SetMasterPassword and
