@@ -81,12 +81,12 @@ describe("TerminalTab", () => {
   });
 
   it("renaming a tab backed by a saved host also persists the name via RenameRemoteHost", async () => {
-    useTerminalStore.getState().addTab("ssh:abc", "sblanken@192.168.101.60", false, undefined, "ssh", "host-id-1");
-    const tab = { id: "ssh:abc", name: "sblanken@192.168.101.60", savedHostId: "host-id-1" };
+    useTerminalStore.getState().addTab("ssh:abc", "user@192.0.2.10", false, undefined, "ssh", "host-id-1");
+    const tab = { id: "ssh:abc", name: "user@192.0.2.10", savedHostId: "host-id-1" };
     const user = userEvent.setup();
     render(<TerminalTab tab={tab} isActive={false} onClick={vi.fn()} />);
 
-    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("sblanken@192.168.101.60") });
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("user@192.0.2.10") });
     await user.click(screen.getByText("Rename"));
     const input = screen.getByRole("textbox");
     await user.clear(input);
