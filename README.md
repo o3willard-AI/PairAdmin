@@ -90,7 +90,7 @@ The installer detects your distro and picks the right package format automatical
 
 ### Manual install
 
-Download the latest release from the [Releases page](https://github.com/o3willard-AI/PairAdmin/releases/latest), then:
+Prebuilt binaries are **not in this repository** — CI builds them and attaches them as assets to the [Releases page](https://github.com/o3willard-AI/PairAdmin/releases/latest). Download the latest release from there, then:
 
 **Debian/Ubuntu (.deb)**
 ```bash
@@ -106,13 +106,13 @@ sudo rpm -Uvh pairadmin_*_linux_amd64.rpm
 
 **Windows (.exe installer)**
 
-1. Download `pairadmin-amd64-installer.exe` from the latest release and run it.
+1. Download `pairadmin-amd64-installer.exe` from the [latest release](https://github.com/o3willard-AI/PairAdmin/releases/latest) and run it.
 2. Windows SmartScreen may show "Windows protected your PC" (the app is unsigned during alpha) — click **More info → Run anyway**.
 3. Requires the WebView2 Runtime (preinstalled on Windows 11; the installer fetches it on Windows 10). Windows 10 1809+ supported.
 
 **macOS (alpha — unsigned)**
 
-macOS builds ship **unsigned** during the alpha. Gatekeeper will block the app on first launch, so approve it once with:
+macOS builds ship **unsigned** during the alpha. Download `PairAdmin-v*.dmg` from the [latest release](https://github.com/o3willard-AI/PairAdmin/releases/latest), mount it, and drag PairAdmin to Applications. Gatekeeper will block the app on first launch, so approve it once with:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/PairAdmin.app
@@ -185,8 +185,12 @@ wails build -platform windows/amd64
 # Binary at: build\bin\pairadmin.exe
 ```
 
-**macOS:** not yet packaged — see `PLATFORM_PARITY_NOTES.md` for the current
-state of cross-platform work and what still needs verification there.
+**macOS:**
+
+```bash
+wails build -platform darwin/universal
+# App bundle at: build/bin/pairadmin.app
+```
 
 ## License
 
