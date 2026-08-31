@@ -4,6 +4,8 @@ import {services} from '../models';
 import {config} from '../models';
 import {context} from '../models';
 
+export function ChangeMasterPassword(arg1:string,arg2:string):Promise<void>;
+
 export function ExportChat(arg1:string,arg2:string,arg3:Array<services.ExportMessage>):Promise<string>;
 
 export function ForceRefresh(arg1:string):Promise<string>;
@@ -11,6 +13,12 @@ export function ForceRefresh(arg1:string):Promise<string>;
 export function GetAPIKeyStatus(arg1:string):Promise<string>;
 
 export function GetSettings():Promise<config.AppConfig>;
+
+export function HasMasterPassword():Promise<boolean>;
+
+export function LoadAPIKeys():Promise<void>;
+
+export function NeedsMasterPassword():Promise<boolean>;
 
 export function RenameTab(arg1:string,arg2:string):Promise<string>;
 
@@ -26,8 +34,12 @@ export function SetContextLines(arg1:number):Promise<string>;
 
 export function SetLLMService(arg1:services.LLMService):Promise<void>;
 
+export function SetMasterPassword(arg1:string):Promise<void>;
+
 export function SetModel(arg1:string):Promise<string>;
 
 export function Startup(arg1:context.Context):Promise<void>;
 
 export function TestConnection(arg1:string,arg2:string,arg3:string):Promise<string>;
+
+export function VerifyMasterPassword(arg1:string):Promise<boolean>;

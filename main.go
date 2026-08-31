@@ -76,17 +76,12 @@ func main() {
 	settingsService.SetLLMService(llmService)
 	settingsService.SetCaptureManager(manager)
 
-	// Load API keys from keychain and seal into memguard Enclaves.
-	providers := []string{"openai", "anthropic", "openrouter"}
-	for _, p := range providers {
-		rawKey, err := keychainClient.Get(p)
-		if err == nil && rawKey != "" {
-			buf := memguard.NewBufferFromBytes([]byte(rawKey))
-			llmService.SetAPIKeyEnclave(p, buf.Seal())
-		}
-	}
-	// Rebuild provider now that Enclaves are loaded.
-	llmService.RebuildProvider()
+	// API keys are NOT loaded here. On a file-backend machine the keychain
+	// needs the master password, which only exists after the frontend's
+	// startup gate (NeedsMasterPassword -> Set/VerifyMasterPassword) has
+	// run. The frontend therefore calls SettingsService.LoadAPIKeys() once
+	// that gate passes; loading here would fail with ErrNoMasterPassword
+	// before the user ever sees a prompt.
 
 	// Declare sessionID and auditLogger in main() scope so both OnStartup and OnBeforeClose closures can reference them.
 	var sessionID string

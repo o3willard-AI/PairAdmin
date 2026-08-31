@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -127,6 +128,78 @@ func (s *SettingsService) SaveAPIKey(provider, key string) error {
 		s.llmService.RebuildProvider()
 	}
 	return nil
+}
+
+// apiKeysProviders lists the LLM providers whose API keys are loaded from the
+// keychain by LoadAPIKeys (mirrors the previous startup loop in main.go).
+var apiKeysProviders = []string{"openai", "anthropic", "openrouter"}
+
+// LoadAPIKeys reads every provider's API key from the keychain, seals each
+// into a memguard Enclave on LLMService, and rebuilds the provider.
+//
+// It exists so the load runs AFTER the master password is established: it is
+// called by the frontend once startup gating (NeedsMasterPassword /
+// SetMasterPassword / VerifyMasterPassword) has completed. On a file-backend
+// machine, a Get that runs before the master password is held in memory
+// fails with keychain.ErrNoMasterPassword — which is why this must not be
+// called from main().
+//
+// Per-provider failures are collected (errors.Join) and returned after all
+// providers have been attempted, so one unreadable key doesn't prevent the
+// others from loading.
+func (s *SettingsService) LoadAPIKeys() error {
+	var errs []error
+	for _, p := range apiKeysProviders {
+		rawKey, err := s.keychainClient.Get(p)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("load %s API key: %w", p, err))
+			continue
+		}
+		if rawKey == "" {
+			continue
+		}
+		if s.llmService != nil {
+			buf := memguard.NewBufferFromBytes([]byte(rawKey))
+			s.llmService.SetAPIKeyEnclave(p, buf.Seal())
+		}
+	}
+	if s.llmService != nil {
+		s.llmService.RebuildProvider()
+	}
+	return errors.Join(errs...)
+}
+
+// NeedsMasterPassword reports whether no functional OS keychain backend is
+// available (i.e. the encrypted file backend would be used) and a master
+// password is therefore required. See keychain.Client.NeedsMasterPassword.
+func (s *SettingsService) NeedsMasterPassword() (bool, error) {
+	return s.keychainClient.NeedsMasterPassword()
+}
+
+// HasMasterPassword reports whether a master password hash file exists.
+// See keychain.Client.HasMasterPassword.
+func (s *SettingsService) HasMasterPassword() bool {
+	return s.keychainClient.HasMasterPassword()
+}
+
+// SetMasterPassword sets the master password for the first time.
+// See keychain.Client.SetMasterPassword.
+func (s *SettingsService) SetMasterPassword(pw string) error {
+	return s.keychainClient.SetMasterPassword(pw)
+}
+
+// VerifyMasterPassword checks pw against the stored master password hash and,
+// on a match, holds it in memory to unlock the file backend.
+// See keychain.Client.VerifyMasterPassword.
+func (s *SettingsService) VerifyMasterPassword(pw string) (bool, error) {
+	return s.keychainClient.VerifyMasterPassword(pw)
+}
+
+// ChangeMasterPassword verifies the old master password and re-encrypts every
+// file-backend item under the new one.
+// See keychain.Client.ChangeMasterPassword.
+func (s *SettingsService) ChangeMasterPassword(oldPW, newPW string) error {
+	return s.keychainClient.ChangeMasterPassword(oldPW, newPW)
 }
 
 // TestConnection tests the LLM connection for the given provider, model, and host URL.

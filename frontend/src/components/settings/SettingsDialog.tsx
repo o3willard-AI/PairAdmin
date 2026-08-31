@@ -5,6 +5,7 @@ import { PromptsTab } from "./PromptsTab";
 import { TerminalsTab } from "./TerminalsTab";
 import { HotkeysTab } from "./HotkeysTab";
 import { AppearanceTab } from "./AppearanceTab";
+import { SecurityTab } from "./SecurityTab";
 
 const tabClass =
   "px-3 py-2 text-xs text-surface-text-muted data-[selected]:text-surface-text data-[selected]:border-b-2 data-[selected]:border-surface-border-strong cursor-pointer hover:text-surface-text transition-colors";
@@ -45,6 +46,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
               <Tabs.Tab value="appearance" className={tabClass}>
                 Appearance
               </Tabs.Tab>
+              <Tabs.Tab value="security" className={tabClass}>
+                Security
+              </Tabs.Tab>
             </Tabs.List>
             <div className="flex-1 overflow-y-auto">
               <Tabs.Panel value="llm-config">
@@ -61,6 +65,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
               </Tabs.Panel>
               <Tabs.Panel value="appearance">
                 <AppearanceTab />
+              </Tabs.Panel>
+              <Tabs.Panel value="security">
+                <SecurityTab />
               </Tabs.Panel>
             </div>
           </Tabs.Root>
