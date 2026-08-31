@@ -115,6 +115,14 @@ jobs:
       - name: Install Wails CLI (pinned to go.mod version)
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 
+      - name: Free disk space (macOS runners are tight; hdiutil needs headroom)
+        run: |
+          df -h /
+          brew cleanup --prune=all 2>/dev/null || true
+          rm -rf "$(brew --cache)" 2>/dev/null || true
+          rm -rf ~/Library/Caches/Homebrew ~/Library/Caches/pip 2>/dev/null || true
+          df -h /
+
       - name: Build .app (unsigned)
         run: |
           export PATH="$PATH:$(go env GOPATH)/bin"
