@@ -74,7 +74,7 @@ Light and dark themes throughout, including the terminal itself.
 ### One-line installer (Linux)
 
 ```bash
-# Install (auto-detects .deb / .rpm / AppImage)
+# Install (auto-detects .deb / .rpm)
 curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin/master/install.sh | bash
 
 # Upgrade to latest version
@@ -84,7 +84,7 @@ curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin/master/insta
 curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin/master/install.sh | bash -s uninstall
 ```
 
-The installer detects your distro and picks the right package format automatically (`.deb` for Debian/Ubuntu, `.rpm` for Fedora/RHEL, `.AppImage` fallback for others). `sudo` is required during install/uninstall.
+The installer detects your distro and picks the right package format automatically (`.deb` for Debian/Ubuntu, `.rpm` for Fedora and other dnf/yum-based distros). `sudo` is required during install/uninstall. No AppImage build exists yet, so a system without `dpkg` or `rpm` isn't supported by the one-line installer — use [Building from Source](#building-from-source) instead.
 
 > **macOS:** Native builds are coming soon.
 
@@ -98,7 +98,7 @@ sudo apt install -y libwebkit2gtk-4.1-0 at-spi2-core
 sudo dpkg -i pairadmin_*_linux_amd64.deb
 ```
 
-**Fedora/RHEL (.rpm)**
+**Fedora (.rpm)**
 ```bash
 sudo dnf install -y webkit2gtk4.1 at-spi2-atk
 sudo rpm -Uvh pairadmin_*_linux_amd64.rpm

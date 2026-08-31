@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"pairadmin/services/capture"
+	"pairadmin/services/config"
 	"pairadmin/services/keychain"
 
 	"github.com/creack/pty"
@@ -133,6 +134,49 @@ func (s *PTYService) OpenRemoteTerminal(tabId string, params RemoteConnectParams
 	default:
 		return "", fmt.Errorf("unknown remote kind: %q", resolved.Kind)
 	}
+}
+
+// HostKeyStatus reports whether an SSH host:port's key is already pinned in
+// ~/.pairadmin/known_hosts.yaml, alongside the key it actually presented just
+// now — used by the New Terminal dialog's "prompt for new host keys" flow
+// (config.AppConfig.PromptNewHostKeys) to decide whether to show the user an
+// accept/reject prompt before connecting.
+type HostKeyStatus struct {
+	Known   bool `json:"known"`
+	// Changed is true when this host:port has a PREVIOUSLY pinned key that
+	// no longer matches what it just presented — the real MITM-suspect case,
+	// as opposed to Known=false on a host:port PairAdmin has simply never
+	// seen before. The frontend should show a materially scarier prompt for
+	// this case; either way the backend's own openSSHTerminal always refuses
+	// to connect when this is true, regardless of what the user clicks.
+	Changed     bool   `json:"changed"`
+	KeyType     string `json:"keyType"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+// CheckHostKeyTrust probes host:port's current SSH host key (without
+// authenticating — see probeHostKey) and reports whether it matches what's
+// already pinned for that host:port. Known is false both when this is a
+// genuinely new host:port and when the presented key no longer matches a
+// previously pinned one — either way, the caller should not silently trust
+// it without asking the user first.
+func (s *PTYService) CheckHostKeyTrust(host string, port int) (*HostKeyStatus, error) {
+	keyType, fingerprint, err := probeHostKey(host, port)
+	if err != nil {
+		return nil, err
+	}
+	hosts, err := config.LoadKnownHosts()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load known hosts: %w", err)
+	}
+	existing, known := hosts[hostPortKey(host, port)]
+	matches := known && existing.Fingerprint == fingerprint
+	return &HostKeyStatus{
+		Known:       matches,
+		Changed:     known && !matches,
+		KeyType:     keyType,
+		Fingerprint: fingerprint,
+	}, nil
 }
 
 // resolveRemoteCredentials fills in a missing password/passphrase from the keychain

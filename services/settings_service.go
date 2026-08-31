@@ -70,15 +70,18 @@ func (s *SettingsService) GetSettings() (*config.AppConfig, error) {
 // SaveSettings persists the given configuration to disk, rebuilds the LLM provider,
 // and emits a settings:changed event.
 //
-// RemoteHosts is deliberately preserved from the on-disk config regardless of what
-// the caller passes in: it's exclusively owned by RemoteService (SaveRemoteHost/
-// ForgetRemoteHost/TouchRemoteHost), never by any Settings-dialog tab. Each tab
-// constructs and sends only the AppConfig fields it manages (e.g. LLMConfigTab
-// sends only Provider/Model/OllamaHost/LMStudioHost) — without this guard, saving
-// settings from any tab would silently wipe every saved remote terminal connection.
+// RemoteHosts and PinnedCommands are deliberately preserved from the on-disk
+// config regardless of what the caller passes in: RemoteHosts is exclusively
+// owned by RemoteService (SaveRemoteHost/ForgetRemoteHost/TouchRemoteHost) and
+// PinnedCommands by SavePinnedCommands below — never by any Settings-dialog
+// tab. Each tab constructs and sends only the AppConfig fields it manages
+// (e.g. LLMConfigTab sends only Provider/Model/OllamaHost/LMStudioHost) —
+// without this guard, saving settings from any tab would silently wipe every
+// saved remote terminal connection or pinned command.
 func (s *SettingsService) SaveSettings(cfg *config.AppConfig) error {
 	if existing, err := config.LoadAppConfig(); err == nil {
 		cfg.RemoteHosts = existing.RemoteHosts
+		cfg.PinnedCommands = existing.PinnedCommands
 	}
 	if err := config.SaveAppConfig(cfg); err != nil {
 		return err
@@ -257,8 +260,36 @@ func (s *SettingsService) SetContextLines(lines int) (string, error) {
 	return fmt.Sprintf("Context set to %d lines", lines), nil
 }
 
-// ForceRefresh triggers an immediate terminal capture via the CaptureManager.
-func (s *SettingsService) ForceRefresh() (string, error) {
+// legacyCaptureTabPrefixes lists the tabId prefixes backed by the legacy
+// CaptureManager polling adapters (tmux/AT-SPI2/external Windows-app
+// capture) — mirrors the prefix checks in
+// services/capture/manager.go's WriteInput. Native PTY tabs (Local — no
+// prefix — and "ssh:"/"winrm:") are deliberately NOT in this list: their
+// content streams live via "pty:output", so there's no "capture" step for
+// ForceRefresh to trigger.
+var legacyCaptureTabPrefixes = []string{"tmux:", "atspi:", "windows:"}
+
+// isLegacyCaptureTab reports whether tabId belongs to the legacy
+// CaptureManager-polled path rather than a native PTY terminal.
+func isLegacyCaptureTab(tabId string) bool {
+	for _, prefix := range legacyCaptureTabPrefixes {
+		if strings.HasPrefix(tabId, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// ForceRefresh triggers an immediate terminal capture via the CaptureManager
+// for a legacy tmux/AT-SPI2/external-Windows-app tab. Native PTY tabs
+// (Local/SSH/WinRM) have no "capture" step to force — their content is
+// always live via "pty:output" streaming — so calling this previously
+// returned a misleading "refreshed" success message with nothing actually
+// captured and nothing changed. See PRE_INSTALLER_TASKS.md item 3.
+func (s *SettingsService) ForceRefresh(tabId string) (string, error) {
+	if !isLegacyCaptureTab(tabId) {
+		return "This terminal is already live — nothing to refresh.", nil
+	}
 	if s.captureManager == nil {
 		return "", fmt.Errorf("No capture manager available")
 	}
@@ -299,6 +330,22 @@ func (s *SettingsService) ExportChat(tabId, format string, messages []ExportMess
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 	return path, nil
+}
+
+// SavePinnedCommands persists the given commands as the full set of
+// PinnedCommands, replacing whatever was previously saved — a snapshot of
+// "everything currently pinned in the sidebar right now", not an incremental
+// upsert. Called by the sidebar's "Save Pinned" button.
+func (s *SettingsService) SavePinnedCommands(commands []config.PinnedCommand) error {
+	cfg, err := config.LoadAppConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+	cfg.PinnedCommands = commands
+	if err := config.SaveAppConfig(cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+	return nil
 }
 
 // RenameTab emits a terminal:rename event so the frontend can update the tab label.

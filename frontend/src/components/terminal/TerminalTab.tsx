@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { Tooltip } from "@base-ui/react/tooltip";
 import { useTerminalStore } from "@/stores/terminalStore";
 import type { TerminalTab } from "@/stores/terminalStore";
 import {
@@ -8,6 +7,12 @@ import {
   ContextMenuContent,
   ContextMenuItem,
 } from "@/components/ui/context-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Pencil } from "lucide-react";
 
 interface TerminalTabProps {
@@ -116,24 +121,27 @@ export function TerminalTab({ tab, isActive, onClick }: TerminalTabProps) {
                 : "bg-surface-text-muted"
           }`}
         />
-        <span className="truncate flex-1">
-          {tab.name}
-        </span>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger render={<span className="truncate flex-1" />}>
+              {tab.name}
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <p className="text-xs break-words">{tab.name}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         {tab.degraded && (
-          <Tooltip.Provider>
-            <Tooltip.Root>
-              <Tooltip.Trigger className="ml-1 text-amber-500 text-xs">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger render={<span className="ml-1 text-amber-500 text-xs" />}>
                 &#9888;
-              </Tooltip.Trigger>
-              <Tooltip.Portal>
-                <Tooltip.Positioner>
-                  <Tooltip.Popup className="bg-surface-2 text-surface-text text-xs px-2 py-1 rounded shadow-lg max-w-xs">
-                    {tab.degradedMsg || "Text extraction not available"}
-                  </Tooltip.Popup>
-                </Tooltip.Positioner>
-              </Tooltip.Portal>
-            </Tooltip.Root>
-          </Tooltip.Provider>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="max-w-xs">
+                {tab.degradedMsg || "Text extraction not available"}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
         <button
           onClick={handleClose}

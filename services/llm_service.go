@@ -165,12 +165,21 @@ func (s *LLMService) SendMessage(tabId, userInput, terminalContext string) error
 		return fmt.Errorf("no LLM provider configured; set PAIRADMIN_PROVIDER environment variable")
 	}
 
-	// Apply filter pipeline: ANSI stripping + credential redaction before LLM
+	// Apply filter pipeline: ANSI stripping + credential redaction, plus any
+	// user-configured custom patterns (/filter add) — before LLM. Custom
+	// patterns previously only applied to the legacy tmux/AT-SPI2 capture
+	// path via CaptureManager, silently protecting nothing for Local/SSH/
+	// WinRM tabs, which is most of what "+ New" actually opens. See
+	// PRE_INSTALLER_TASKS.md item 1.
 	credFilter, err := filter.NewCredentialFilter()
 	if err != nil {
 		return fmt.Errorf("failed to initialize credential filter: %w", err)
 	}
-	pipeline := filter.NewPipeline(filter.NewANSIFilter(), credFilter)
+	filters := []filter.Filter{filter.NewANSIFilter(), credFilter}
+	if customPipeline := customFilterPipeline(); customPipeline != nil {
+		filters = append(filters, customPipeline)
+	}
+	pipeline := filter.NewPipeline(filters...)
 	filteredContext, _ := pipeline.Apply(terminalContext)
 
 	messages := llm.BuildMessages(llm.SystemPrompt, filteredContext, userInput)
@@ -249,6 +258,29 @@ func (s *LLMService) SendMessage(tabId, userInput, terminalContext string) error
 	}()
 
 	return nil
+}
+
+// customFilterPipeline loads AppConfig.CustomPatterns and builds a filter
+// pipeline from them, or returns nil if there are none configured (or the
+// config can't be loaded). Mirrors CaptureManager.buildFilterPipeline()'s
+// AppConfig -> filter.CustomPatternInput mapping — duplicated only because
+// the filter package must not import services/config (see
+// filter.CustomPatternInput's doc comment); the actual pattern-compilation
+// logic lives in the shared filter.BuildPipelineFromPatterns.
+func customFilterPipeline() *filter.Pipeline {
+	cfg, err := config.LoadAppConfig()
+	if err != nil || len(cfg.CustomPatterns) == 0 {
+		return nil
+	}
+	inputs := make([]filter.CustomPatternInput, len(cfg.CustomPatterns))
+	for i, p := range cfg.CustomPatterns {
+		inputs[i] = filter.CustomPatternInput{
+			Name:   p.Name,
+			Regex:  p.Regex,
+			Action: p.Action,
+		}
+	}
+	return filter.BuildPipelineFromPatterns(inputs)
 }
 
 // FilterCommand handles /filter add|list|remove commands.

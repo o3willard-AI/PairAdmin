@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 import { ThreeColumnLayout } from "@/components/layout/ThreeColumnLayout";
@@ -39,13 +39,23 @@ vi.mock("../../../wailsjs/runtime/runtime", () => ({
 
 // Mock the CaptureManager Wails binding (ThreeColumnLayout fetches adapter status on mount)
 // Path resolves from frontend/src/components/__tests__/ → frontend/wailsjs/go/services/capture/CaptureManager
-vi.mock("../../../../wailsjs/go/services/capture/CaptureManager", () => ({
+// (previously had one extra "../" — harmless before now since ThreeColumnLayout.tsx's
+// own .catch(() => {}) swallowed the resulting failed dynamic import either way, but
+// it meant this mock never actually intercepted anything).
+vi.mock("../../../wailsjs/go/services/capture/CaptureManager", () => ({
   GetAdapterStatus: vi.fn(() => Promise.resolve([])),
 }));
 
-// Mock the SettingsService Wails binding (LLMConfigTab fetches settings on mount)
-vi.mock("../../../../wailsjs/go/services/SettingsService", () => ({
-  GetSettings: vi.fn(() => Promise.resolve({})),
+// Mock the SettingsService Wails binding (LLMConfigTab fetches settings on mount).
+// GetSettings is delegated to a module-level `getSettings` mock (rather than a
+// vi.fn() defined directly in this factory) so individual tests can hold a
+// stable reference to override its resolved value with mockResolvedValueOnce —
+// a fresh `await import(...)` from inside a test body isn't guaranteed to
+// yield the same mock instance ThreeColumnLayout.tsx's own internal dynamic
+// import resolves to.
+const getSettings = vi.fn();
+vi.mock("../../../wailsjs/go/services/SettingsService", () => ({
+  GetSettings: (...args: unknown[]) => getSettings(...args),
   GetAPIKeyStatus: vi.fn(() => Promise.resolve("")),
   SaveSettings: vi.fn(() => Promise.resolve(undefined)),
   SaveAPIKey: vi.fn(() => Promise.resolve(undefined)),
@@ -67,6 +77,7 @@ beforeEach(() => {
   }
   global.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
   localStorage.clear();
+  getSettings.mockReset().mockResolvedValue({});
 });
 
 describe("ThreeColumnLayout", () => {
@@ -77,13 +88,13 @@ describe("ThreeColumnLayout", () => {
       </ThreeColumnLayout>
     );
 
-    // Left column has w-40 class
-    const leftAside = container.querySelector(".w-40");
-    expect(leftAside).toBeInTheDocument();
-
-    // Right column has w-[220px] class
-    const rightAside = container.querySelector(".w-\\[220px\\]");
-    expect(rightAside).toBeInTheDocument();
+    // Left and right columns are <aside> elements sized via an inline `ch`
+    // width (configurable in Settings → Terminals) rather than a fixed
+    // Tailwind class.
+    const asides = container.querySelectorAll("aside");
+    expect(asides).toHaveLength(2);
+    expect(asides[0].style.width).toBe("20ch"); // default Terminals width
+    expect(asides[1].style.width).toBe("30ch"); // default Commands width
 
     // Center column (main element)
     const centerMain = container.querySelector("main");
@@ -204,6 +215,44 @@ describe("ThreeColumnLayout", () => {
     );
 
     expect(screen.getByText("Show PairAdmin")).toBeInTheDocument();
+  });
+
+  it("the Hide/Show PairAdmin control spans the full sidebar width, not just its text", () => {
+    // Regression guard: this used to be a small <button> centered inside a
+    // full-width wrapper div, so only the text itself was clickable — the
+    // fix makes the bar itself the button.
+    render(
+      <ThreeColumnLayout>
+        <div>Chat</div>
+      </ThreeColumnLayout>
+    );
+
+    const toggle = screen.getByText("Hide PairAdmin");
+    expect(toggle.tagName).toBe("BUTTON");
+    expect(toggle.className).toContain("w-full");
+  });
+
+  it("applies sidebar widths loaded from settings, in ch units", async () => {
+    // mockResolvedValue (not Once): SettingsDialog's own tabs (HotkeysTab,
+    // TerminalsTab, etc.) each call GetSettings() on their own mount too —
+    // even while the dialog is closed, since base-ui may keep tab panels
+    // mounted — so more than one call can race here, in no guaranteed order.
+    getSettings.mockResolvedValue({
+      TerminalsSidebarWidthCh: 25,
+      CommandsSidebarWidthCh: 40,
+    });
+
+    const { container } = render(
+      <ThreeColumnLayout sidebar={<div>Commands</div>}>
+        <div>Chat</div>
+      </ThreeColumnLayout>
+    );
+
+    await waitFor(() => {
+      const asides = container.querySelectorAll("aside");
+      expect(asides[0].style.width).toBe("25ch");
+      expect(asides[1].style.width).toBe("40ch");
+    });
   });
 
   it("renders SettingsDialog component (closed by default)", () => {

@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { TerminalTab } from "./TerminalTab";
 import { NewTerminalDialog } from "./NewTerminalDialog";
@@ -6,7 +5,8 @@ import { NewTerminalDialog } from "./NewTerminalDialog";
 export function TerminalTabList() {
   const tabs = useTerminalStore((state) => state.tabs);
   const activeTabId = useTerminalStore((state) => state.activeTabId);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const dialogOpen = useTerminalStore((state) => state.newTerminalDialogOpen);
+  const setDialogOpen = useTerminalStore((state) => state.setNewTerminalDialogOpen);
 
   return (
     <div className="flex flex-col h-full">

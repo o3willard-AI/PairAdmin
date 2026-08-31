@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { mergeAndSaveSettings } from "@/utils/settingsSync";
 import { DEFAULT_ADD_CLIPBOARD_COMMAND_HOTKEY } from "@/hooks/useAddClipboardCommandHotkey";
+import { DEFAULT_NEW_TERMINAL_HOTKEY } from "@/hooks/useNewTerminalHotkey";
 
 function buildKeyCombo(event: KeyboardEvent): string {
   const parts: string[] = [];
@@ -68,6 +69,7 @@ export function HotkeysTab() {
   const [hotkeyAddClipboardCommand, setHotkeyAddClipboardCommand] = useState(
     DEFAULT_ADD_CLIPBOARD_COMMAND_HOTKEY
   );
+  const [hotkeyNewTerminal, setHotkeyNewTerminal] = useState(DEFAULT_NEW_TERMINAL_HOTKEY);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
@@ -77,6 +79,7 @@ export function HotkeysTab() {
         if (cfg.HotkeyCopyLast) setHotkeyCopyLast(cfg.HotkeyCopyLast);
         if (cfg.HotkeyFocusWindow) setHotkeyFocusWindow(cfg.HotkeyFocusWindow);
         if (cfg.HotkeyAddClipboardCommand) setHotkeyAddClipboardCommand(cfg.HotkeyAddClipboardCommand);
+        if (cfg.HotkeyNewTerminal) setHotkeyNewTerminal(cfg.HotkeyNewTerminal);
       })
       .catch(() => {});
   }, []);
@@ -88,6 +91,7 @@ export function HotkeysTab() {
         HotkeyCopyLast: hotkeyCopyLast,
         HotkeyFocusWindow: hotkeyFocusWindow,
         HotkeyAddClipboardCommand: hotkeyAddClipboardCommand,
+        HotkeyNewTerminal: hotkeyNewTerminal,
       });
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
@@ -114,6 +118,17 @@ export function HotkeysTab() {
         value={hotkeyFocusWindow}
         onChange={setHotkeyFocusWindow}
       />
+
+      <div className="space-y-1">
+        <HotkeyInput
+          label="New Terminal"
+          value={hotkeyNewTerminal}
+          onChange={setHotkeyNewTerminal}
+        />
+        <p className="text-xs text-surface-text-muted">
+          Opens the "+ New" terminal dialog without needing to click it.
+        </p>
+      </div>
 
       <div className="space-y-1">
         <HotkeyInput

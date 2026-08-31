@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -15,6 +16,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"pairadmin/services/config"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -154,7 +157,21 @@ func splitTestAddr(t *testing.T, addr string) (string, int) {
 	return host, port
 }
 
+// isolateHomeDir points os.UserHomeDir() (and therefore
+// config.LoadKnownHosts/SaveKnownHosts's ~/.pairadmin/known_hosts.yaml) at a
+// fresh temp directory for the duration of the test, matching the pattern
+// already used throughout services/config/config_test.go — without this,
+// tests that connect via openSSHTerminal would pin real host keys into the
+// actual developer's ~/.pairadmin/known_hosts.yaml.
+func isolateHomeDir(t *testing.T) {
+	t.Helper()
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
+}
+
 func TestOpenSSHTerminal_PasswordAuth_EchoesInputAndCloses(t *testing.T) {
+	isolateHomeDir(t)
 	addr := startTestSSHServer(t, "testuser", "testpass")
 	host, port := splitTestAddr(t, addr)
 
@@ -214,6 +231,7 @@ func TestOpenSSHTerminal_PasswordAuth_EchoesInputAndCloses(t *testing.T) {
 }
 
 func TestOpenSSHTerminal_WrongPassword_ReturnsErrorAndNoSession(t *testing.T) {
+	isolateHomeDir(t)
 	addr := startTestSSHServer(t, "testuser", "testpass")
 	host, port := splitTestAddr(t, addr)
 
@@ -263,6 +281,7 @@ func TestSanitizeTmuxSessionName(t *testing.T) {
 }
 
 func TestOpenSSHTerminal_UseTmux_SendsCreateOrAttachCommand(t *testing.T) {
+	isolateHomeDir(t)
 	addr := startTestSSHServer(t, "testuser", "testpass")
 	host, port := splitTestAddr(t, addr)
 
@@ -307,6 +326,7 @@ func TestOpenSSHTerminal_UseTmux_SendsCreateOrAttachCommand(t *testing.T) {
 }
 
 func TestOpenSSHTerminal_NoTmux_NoTmuxCommandSent(t *testing.T) {
+	isolateHomeDir(t)
 	addr := startTestSSHServer(t, "testuser", "testpass")
 	host, port := splitTestAddr(t, addr)
 
@@ -434,6 +454,219 @@ func TestExpandHomeDir(t *testing.T) {
 				t.Errorf("expandHomeDir(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestOpenSSHTerminal_FirstConnect_PinsHostKeySilently(t *testing.T) {
+	isolateHomeDir(t)
+	addr := startTestSSHServer(t, "testuser", "testpass")
+	host, port := splitTestAddr(t, addr)
+	svc, _ := newTestPTYService()
+
+	tabId := "ssh:pin-tab"
+	if _, err := svc.openSSHTerminal(tabId, RemoteConnectParams{
+		Kind: RemoteKindSSH, Host: host, Port: port,
+		Username: "testuser", AuthType: RemoteAuthPassword, Password: "testpass",
+	}); err != nil {
+		t.Fatalf("openSSHTerminal() unexpected error: %v", err)
+	}
+	defer svc.CloseTerminal(tabId)
+
+	hosts, err := config.LoadKnownHosts()
+	if err != nil {
+		t.Fatalf("LoadKnownHosts() unexpected error: %v", err)
+	}
+	pinned, ok := hosts[hostPortKey(host, port)]
+	if !ok {
+		t.Fatal("expected host key to be pinned after first connect (default PromptNewHostKeys=false)")
+	}
+	if pinned.Fingerprint == "" {
+		t.Error("expected a non-empty pinned fingerprint")
+	}
+}
+
+func TestOpenSSHTerminal_SecondConnect_MatchingPinnedKey_Succeeds(t *testing.T) {
+	isolateHomeDir(t)
+	addr := startTestSSHServer(t, "testuser", "testpass")
+	host, port := splitTestAddr(t, addr)
+	svc, _ := newTestPTYService()
+
+	params := RemoteConnectParams{
+		Kind: RemoteKindSSH, Host: host, Port: port,
+		Username: "testuser", AuthType: RemoteAuthPassword, Password: "testpass",
+	}
+	firstTab := "ssh:first-tab"
+	if _, err := svc.openSSHTerminal(firstTab, params); err != nil {
+		t.Fatalf("first openSSHTerminal() unexpected error: %v", err)
+	}
+	svc.CloseTerminal(firstTab)
+
+	secondTab := "ssh:second-tab"
+	if _, err := svc.openSSHTerminal(secondTab, params); err != nil {
+		t.Fatalf("second openSSHTerminal() with matching pinned key unexpected error: %v", err)
+	}
+	svc.CloseTerminal(secondTab)
+}
+
+func TestOpenSSHTerminal_KeyMismatch_AlwaysRejected(t *testing.T) {
+	isolateHomeDir(t)
+	addr := startTestSSHServer(t, "testuser", "testpass")
+	host, port := splitTestAddr(t, addr)
+	svc, _ := newTestPTYService()
+
+	// Pre-seed known_hosts with a bogus fingerprint for this host:port,
+	// simulating a previously-trusted key that the server no longer presents.
+	if err := config.SaveKnownHosts(map[string]config.KnownHostKey{
+		hostPortKey(host, port): {KeyType: "ssh-rsa", Fingerprint: "SHA256:not-the-real-key"},
+	}); err != nil {
+		t.Fatalf("SaveKnownHosts() unexpected error: %v", err)
+	}
+
+	_, err := svc.openSSHTerminal("ssh:mismatch-tab", RemoteConnectParams{
+		Kind: RemoteKindSSH, Host: host, Port: port,
+		Username: "testuser", AuthType: RemoteAuthPassword, Password: "testpass",
+	})
+	if err == nil {
+		t.Fatal("expected error connecting to a host presenting a key that doesn't match the pinned one")
+	}
+	var mismatchErr *HostKeyMismatchError
+	if !errors.As(err, &mismatchErr) {
+		t.Errorf("expected error to wrap *HostKeyMismatchError, got: %v", err)
+	}
+
+	// Setting PromptNewHostKeys or TrustNewHostKey must NOT bypass this — it
+	// only applies to genuinely unrecognized hosts, not key changes.
+	_, err = svc.openSSHTerminal("ssh:mismatch-tab-2", RemoteConnectParams{
+		Kind: RemoteKindSSH, Host: host, Port: port,
+		Username: "testuser", AuthType: RemoteAuthPassword, Password: "testpass",
+		TrustNewHostKey: true,
+	})
+	if err == nil {
+		t.Fatal("expected TrustNewHostKey=true to NOT bypass a host key mismatch")
+	}
+}
+
+func TestOpenSSHTerminal_PromptNewHostKeys_UnknownHost_RejectsWithoutTrust(t *testing.T) {
+	isolateHomeDir(t)
+	if err := config.SaveAppConfig(&config.AppConfig{PromptNewHostKeys: true}); err != nil {
+		t.Fatalf("SaveAppConfig() unexpected error: %v", err)
+	}
+	addr := startTestSSHServer(t, "testuser", "testpass")
+	host, port := splitTestAddr(t, addr)
+	svc, _ := newTestPTYService()
+
+	_, err := svc.openSSHTerminal("ssh:prompt-tab", RemoteConnectParams{
+		Kind: RemoteKindSSH, Host: host, Port: port,
+		Username: "testuser", AuthType: RemoteAuthPassword, Password: "testpass",
+	})
+	if err == nil {
+		t.Fatal("expected error connecting to an unrecognized host with PromptNewHostKeys=true and no trust flag")
+	}
+	var unknownErr *UnknownHostKeyError
+	if !errors.As(err, &unknownErr) {
+		t.Errorf("expected error to wrap *UnknownHostKeyError, got: %v", err)
+	}
+
+	hosts, err := config.LoadKnownHosts()
+	if err != nil {
+		t.Fatalf("LoadKnownHosts() unexpected error: %v", err)
+	}
+	if _, pinned := hosts[hostPortKey(host, port)]; pinned {
+		t.Error("expected host key to NOT be pinned when the prompt was required but not accepted")
+	}
+}
+
+func TestOpenSSHTerminal_PromptNewHostKeys_TrustNewHostKey_PinsAndSucceeds(t *testing.T) {
+	isolateHomeDir(t)
+	if err := config.SaveAppConfig(&config.AppConfig{PromptNewHostKeys: true}); err != nil {
+		t.Fatalf("SaveAppConfig() unexpected error: %v", err)
+	}
+	addr := startTestSSHServer(t, "testuser", "testpass")
+	host, port := splitTestAddr(t, addr)
+	svc, _ := newTestPTYService()
+
+	tabId := "ssh:trust-tab"
+	if _, err := svc.openSSHTerminal(tabId, RemoteConnectParams{
+		Kind: RemoteKindSSH, Host: host, Port: port,
+		Username: "testuser", AuthType: RemoteAuthPassword, Password: "testpass",
+		TrustNewHostKey: true,
+	}); err != nil {
+		t.Fatalf("openSSHTerminal() with TrustNewHostKey=true unexpected error: %v", err)
+	}
+	defer svc.CloseTerminal(tabId)
+
+	hosts, err := config.LoadKnownHosts()
+	if err != nil {
+		t.Fatalf("LoadKnownHosts() unexpected error: %v", err)
+	}
+	if _, pinned := hosts[hostPortKey(host, port)]; !pinned {
+		t.Error("expected host key to be pinned after explicit TrustNewHostKey accept")
+	}
+}
+
+func TestCheckHostKeyTrust_UnknownHost_ReturnsKnownFalse(t *testing.T) {
+	isolateHomeDir(t)
+	addr := startTestSSHServer(t, "testuser", "testpass")
+	host, port := splitTestAddr(t, addr)
+	svc, _ := newTestPTYService()
+
+	status, err := svc.CheckHostKeyTrust(host, port)
+	if err != nil {
+		t.Fatalf("CheckHostKeyTrust() unexpected error: %v", err)
+	}
+	if status.Known {
+		t.Error("expected Known=false for a host with no pinned key yet")
+	}
+	if status.Fingerprint == "" {
+		t.Error("expected a non-empty fingerprint from the probe")
+	}
+}
+
+func TestCheckHostKeyTrust_AfterPinning_ReturnsKnownTrue(t *testing.T) {
+	isolateHomeDir(t)
+	addr := startTestSSHServer(t, "testuser", "testpass")
+	host, port := splitTestAddr(t, addr)
+	svc, _ := newTestPTYService()
+
+	tabId := "ssh:precheck-tab"
+	if _, err := svc.openSSHTerminal(tabId, RemoteConnectParams{
+		Kind: RemoteKindSSH, Host: host, Port: port,
+		Username: "testuser", AuthType: RemoteAuthPassword, Password: "testpass",
+	}); err != nil {
+		t.Fatalf("openSSHTerminal() unexpected error: %v", err)
+	}
+	svc.CloseTerminal(tabId)
+
+	status, err := svc.CheckHostKeyTrust(host, port)
+	if err != nil {
+		t.Fatalf("CheckHostKeyTrust() unexpected error: %v", err)
+	}
+	if !status.Known {
+		t.Error("expected Known=true after the key was already pinned by a prior connect")
+	}
+}
+
+func TestCheckHostKeyTrust_MismatchedPinnedKey_ReturnsChangedTrue(t *testing.T) {
+	isolateHomeDir(t)
+	addr := startTestSSHServer(t, "testuser", "testpass")
+	host, port := splitTestAddr(t, addr)
+	svc, _ := newTestPTYService()
+
+	if err := config.SaveKnownHosts(map[string]config.KnownHostKey{
+		hostPortKey(host, port): {KeyType: "ssh-rsa", Fingerprint: "SHA256:not-the-real-key"},
+	}); err != nil {
+		t.Fatalf("SaveKnownHosts() unexpected error: %v", err)
+	}
+
+	status, err := svc.CheckHostKeyTrust(host, port)
+	if err != nil {
+		t.Fatalf("CheckHostKeyTrust() unexpected error: %v", err)
+	}
+	if status.Known {
+		t.Error("expected Known=false when the pinned key no longer matches")
+	}
+	if !status.Changed {
+		t.Error("expected Changed=true when a previously pinned key no longer matches")
 	}
 }
 

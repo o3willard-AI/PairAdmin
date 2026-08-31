@@ -91,7 +91,7 @@ do_install() {
       sudo rpm -Uvh "${tmpdir}/${file}"
       ;;
     appimage)
-      error "No supported package manager found (dpkg or rpm required).\nSupported distros: Debian, Ubuntu, Fedora, RHEL, and derivatives."
+      error "No supported package manager found (dpkg or rpm required).\nSupported distros: Debian, Ubuntu, Fedora, and other dnf/yum-based distros.\nNo AppImage build exists yet — build from source instead: https://github.com/${REPO}#building-from-source"
       ;;
   esac
 

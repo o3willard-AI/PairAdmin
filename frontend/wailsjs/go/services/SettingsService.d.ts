@@ -6,7 +6,7 @@ import {context} from '../models';
 
 export function ExportChat(arg1:string,arg2:string,arg3:Array<services.ExportMessage>):Promise<string>;
 
-export function ForceRefresh():Promise<string>;
+export function ForceRefresh(arg1:string):Promise<string>;
 
 export function GetAPIKeyStatus(arg1:string):Promise<string>;
 
@@ -15,6 +15,8 @@ export function GetSettings():Promise<config.AppConfig>;
 export function RenameTab(arg1:string,arg2:string):Promise<string>;
 
 export function SaveAPIKey(arg1:string,arg2:string):Promise<void>;
+
+export function SavePinnedCommands(arg1:Array<config.PinnedCommand>):Promise<void>;
 
 export function SaveSettings(arg1:config.AppConfig):Promise<void>;
 

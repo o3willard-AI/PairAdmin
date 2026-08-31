@@ -13,11 +13,20 @@ vi.mock("../../../../wailsjs/go/services/LLMService", () => ({
 }));
 
 // Mock Wails SettingsService
+const getSettings = vi.fn();
 vi.mock("../../../../wailsjs/go/services/SettingsService", () => ({
   SetModel: vi.fn().mockResolvedValue("Model set to openai:gpt-4"),
   SetContextLines: vi.fn().mockResolvedValue("Context set to 300 lines"),
   ForceRefresh: vi.fn().mockResolvedValue("Terminal content refreshed"),
   ExportChat: vi.fn().mockResolvedValue("/home/user/pairadmin-export.json"),
+  GetSettings: (...args: unknown[]) => getSettings(...args),
+}));
+
+// Mock readTerminalLines so tests can observe the maxLines argument it's
+// called with, without depending on a real xterm.js Terminal instance.
+const readTerminalLines = vi.fn().mockReturnValue("mock terminal output");
+vi.mock("@/utils/terminalContext", () => ({
+  readTerminalLines: (...args: unknown[]) => readTerminalLines(...args),
 }));
 
 // Mock Wails PTYService
@@ -66,6 +75,8 @@ beforeEach(() => {
   mockSetTheme.mockClear();
   mockCloseTerminal.mockClear();
   mockQuit.mockClear();
+  readTerminalLines.mockReturnValue("mock terminal output");
+  getSettings.mockResolvedValue({});
   // Reset stores — initialize messagesByTab with the active tab key to avoid
   // getSnapshot returning a new [] on every selector call (Zustand infinite loop).
   useChatStore.setState({ messagesByTab: { "test-tab": [] } });
@@ -181,18 +192,73 @@ describe("ChatPane slash command router", () => {
     });
   });
 
-  it("/refresh dispatches to SettingsService.ForceRefresh", async () => {
+  it("loads a previously saved ContextLines setting and uses it for the next plain-text send", async () => {
+    getSettings.mockResolvedValue({ ContextLines: 500 });
+    const { SendMessage } = await import("../../../../wailsjs/go/services/LLMService");
+    render(<ChatPane />);
+
+    await sendCommand(getInput(), "hello world");
+
+    await waitFor(() => {
+      expect(readTerminalLines).toHaveBeenCalledWith(undefined, 500);
+      expect(SendMessage).toHaveBeenCalled();
+    });
+  });
+
+  it("falls back to the 200-line default when no ContextLines setting is saved", async () => {
+    getSettings.mockResolvedValue({});
+    render(<ChatPane />);
+
+    await sendCommand(getInput(), "hello world");
+
+    await waitFor(() => {
+      expect(readTerminalLines).toHaveBeenCalledWith(undefined, 200);
+    });
+  });
+
+  it("/context 300 immediately changes the line count used by the next send, without a restart", async () => {
+    render(<ChatPane />);
+    await sendCommand(getInput(), "/context 300");
+    await waitFor(() => {
+      const sysMessages = getSystemMessages();
+      expect(sysMessages.some((m) => m.content === "Context set to 300 lines")).toBe(true);
+    });
+
+    await sendCommand(getInput(), "hello world");
+
+    await waitFor(() => {
+      expect(readTerminalLines).toHaveBeenCalledWith(undefined, 300);
+    });
+  });
+
+  it("/refresh dispatches to SettingsService.ForceRefresh with the active tab ID", async () => {
     const { ForceRefresh } = await import("../../../../wailsjs/go/services/SettingsService");
     render(<ChatPane />);
     await sendCommand(getInput(), "/refresh");
 
     await waitFor(() => {
-      expect(ForceRefresh).toHaveBeenCalled();
+      expect(ForceRefresh).toHaveBeenCalledWith("test-tab");
     });
 
     await waitFor(() => {
       const sysMessages = getSystemMessages();
       expect(sysMessages.some((m) => m.content === "Terminal content refreshed")).toBe(true);
+    });
+  });
+
+  it("/refresh on a native PTY tab shows the backend's no-op message instead of a misleading success", async () => {
+    const { ForceRefresh } = await import("../../../../wailsjs/go/services/SettingsService");
+    (ForceRefresh as ReturnType<typeof vi.fn>).mockResolvedValue(
+      "This terminal is already live — nothing to refresh."
+    );
+    render(<ChatPane />);
+    await sendCommand(getInput(), "/refresh");
+
+    await waitFor(() => {
+      const sysMessages = getSystemMessages();
+      expect(
+        sysMessages.some((m) => m.content === "This terminal is already live — nothing to refresh.")
+      ).toBe(true);
     });
   });
 

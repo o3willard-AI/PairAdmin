@@ -6,8 +6,8 @@ export function ExportChat(arg1, arg2, arg3) {
   return window['go']['services']['SettingsService']['ExportChat'](arg1, arg2, arg3);
 }
 
-export function ForceRefresh() {
-  return window['go']['services']['SettingsService']['ForceRefresh']();
+export function ForceRefresh(arg1) {
+  return window['go']['services']['SettingsService']['ForceRefresh'](arg1);
 }
 
 export function GetAPIKeyStatus(arg1) {
@@ -24,6 +24,10 @@ export function RenameTab(arg1, arg2) {
 
 export function SaveAPIKey(arg1, arg2) {
   return window['go']['services']['SettingsService']['SaveAPIKey'](arg1, arg2);
+}
+
+export function SavePinnedCommands(arg1) {
+  return window['go']['services']['SettingsService']['SavePinnedCommands'](arg1);
 }
 
 export function SaveSettings(arg1) {

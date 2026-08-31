@@ -8,14 +8,17 @@ import { useCommandStore } from "@/stores/commandStore";
 
 const openNewTerminal = vi.fn();
 const openRemoteTerminal = vi.fn();
+const checkHostKeyTrust = vi.fn();
 const listRemoteHosts = vi.fn();
 const saveRemoteHost = vi.fn();
 const touchRemoteHost = vi.fn();
 const forgetRemoteHost = vi.fn();
+const getSettings = vi.fn();
 
 vi.mock("../../../../wailsjs/go/services/PTYService", () => ({
   OpenNewTerminal: (...args: unknown[]) => openNewTerminal(...args),
   OpenRemoteTerminal: (...args: unknown[]) => openRemoteTerminal(...args),
+  CheckHostKeyTrust: (...args: unknown[]) => checkHostKeyTrust(...args),
 }));
 
 vi.mock("../../../../wailsjs/go/services/RemoteService", () => ({
@@ -25,11 +28,16 @@ vi.mock("../../../../wailsjs/go/services/RemoteService", () => ({
   ForgetRemoteHost: (...args: unknown[]) => forgetRemoteHost(...args),
 }));
 
+vi.mock("../../../../wailsjs/go/services/SettingsService", () => ({
+  GetSettings: (...args: unknown[]) => getSettings(...args),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
   useTerminalStore.setState({ tabs: [], activeTabId: "", nextTabNumber: 1 });
   useCommandStore.setState({ commands: [] });
   listRemoteHosts.mockResolvedValue([]);
+  getSettings.mockResolvedValue({ PromptNewHostKeys: false });
 });
 
 describe("NewTerminalDialog", () => {
@@ -313,63 +321,6 @@ describe("NewTerminalDialog", () => {
     expect(tab?.savedHostId).toBe("new-host-id");
   });
 
-  it("pins tmux mouse-mode toggle commands when connecting with Use tmux checked", async () => {
-    const user = userEvent.setup();
-    openRemoteTerminal.mockResolvedValue("ssh:resolved-id");
-    render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
-
-    await user.click(screen.getByText("Unix / Linux (SSH)"));
-    await user.type(screen.getByPlaceholderText("10.0.1.5"), "10.0.1.5");
-    const usernameInput = screen.getByText("Username").parentElement?.querySelector(
-      "input"
-    ) as HTMLInputElement;
-    await user.type(usernameInput, "ubuntu");
-    await user.click(screen.getByText("Save Terminal"));
-    await user.click(screen.getByText("Use tmux if available"));
-
-    await user.click(screen.getByText("Connect"));
-
-    const commands = useCommandStore.getState().commands;
-    expect(commands.some((c) => c.command === "tmux set -g mouse on" && c.pinned)).toBe(true);
-    expect(commands.some((c) => c.command === "tmux set -g mouse off" && c.pinned)).toBe(true);
-  });
-
-  it("does not pin tmux commands when Use tmux is left unchecked", async () => {
-    const user = userEvent.setup();
-    openRemoteTerminal.mockResolvedValue("ssh:resolved-id");
-    render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
-
-    await user.click(screen.getByText("Unix / Linux (SSH)"));
-    await user.type(screen.getByPlaceholderText("10.0.1.5"), "10.0.1.5");
-    const usernameInput = screen.getByText("Username").parentElement?.querySelector(
-      "input"
-    ) as HTMLInputElement;
-    await user.type(usernameInput, "ubuntu");
-
-    await user.click(screen.getByText("Connect"));
-
-    expect(useCommandStore.getState().commands).toHaveLength(0);
-  });
-
-  it("reconnecting to the same tmux-enabled saved host twice does not duplicate pinned commands", async () => {
-    const user = userEvent.setup();
-    listRemoteHosts.mockResolvedValue([
-      { ID: "abc-1", Kind: "ssh", Host: "10.0.1.5", Port: 22, Username: "ubuntu", AuthType: "password", PrivateKeyPath: "", LastUsed: "2026-01-01T00:00:00Z", UseTmux: true, TmuxSessionName: "" },
-    ]);
-    openRemoteTerminal.mockResolvedValue("ssh:reconnected");
-    render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
-
-    await screen.findByText(/ubuntu@10.0.1.5/);
-    await user.click(screen.getByText("Connect"));
-    expect(useCommandStore.getState().commands.filter((c) => c.pinned)).toHaveLength(2);
-
-    // Reconnect again in the same session (onClose is a no-op mock here, so
-    // the dialog stays open on the same "Recent" list) — must not duplicate.
-    await user.click(screen.getByText("Connect"));
-
-    expect(useCommandStore.getState().commands.filter((c) => c.pinned)).toHaveLength(2);
-  });
-
   it("surfaces a plain-string OpenRemoteTerminal rejection verbatim (the real Wails v2 shape, not a JS Error)", async () => {
     const user = userEvent.setup();
     // Wails v2 rejects RPC failures with a raw string, never `new Error(...)`.
@@ -433,5 +384,147 @@ describe("NewTerminalDialog", () => {
     expect(forgetRemoteHost).toHaveBeenCalledWith("abc-1");
     expect(await screen.findByText("Local")).toBeInTheDocument();
     expect(screen.queryByText(/ubuntu@10.0.1.5/)).not.toBeInTheDocument();
+  });
+
+  describe("SSH host key confirmation", () => {
+    const fillSshForm = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(screen.getByText("Unix / Linux (SSH)"));
+      await user.type(screen.getByPlaceholderText("10.0.1.5"), "10.0.1.5");
+      const usernameInput = screen.getByText("Username").parentElement?.querySelector(
+        "input"
+      ) as HTMLInputElement;
+      await user.type(usernameInput, "ubuntu");
+    };
+
+    it("connects directly without checking the host key when PromptNewHostKeys is off (default)", async () => {
+      const user = userEvent.setup();
+      getSettings.mockResolvedValue({ PromptNewHostKeys: false });
+      openRemoteTerminal.mockResolvedValue("ssh:resolved-id");
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await fillSshForm(user);
+      await user.click(screen.getByText("Connect"));
+
+      await vi.waitFor(() => expect(openRemoteTerminal).toHaveBeenCalledTimes(1));
+      expect(checkHostKeyTrust).not.toHaveBeenCalled();
+    });
+
+    it("shows an accept/reject prompt with the fingerprint for an unrecognized host when PromptNewHostKeys is on", async () => {
+      const user = userEvent.setup();
+      getSettings.mockResolvedValue({ PromptNewHostKeys: true });
+      checkHostKeyTrust.mockResolvedValue({
+        known: false,
+        changed: false,
+        keyType: "ssh-ed25519",
+        fingerprint: "SHA256:abc123fingerprint",
+      });
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await fillSshForm(user);
+      await user.click(screen.getByText("Connect"));
+
+      expect(checkHostKeyTrust).toHaveBeenCalledWith("10.0.1.5", 22);
+      expect(await screen.findByText("Verify new host key")).toBeInTheDocument();
+      expect(screen.getByText("SHA256:abc123fingerprint")).toBeInTheDocument();
+      expect(screen.getByText("ssh-ed25519")).toBeInTheDocument();
+      expect(openRemoteTerminal).not.toHaveBeenCalled();
+    });
+
+    it("accepting an unrecognized host key connects with trustNewHostKey set", async () => {
+      const user = userEvent.setup();
+      getSettings.mockResolvedValue({ PromptNewHostKeys: true });
+      checkHostKeyTrust.mockResolvedValue({
+        known: false,
+        changed: false,
+        keyType: "ssh-ed25519",
+        fingerprint: "SHA256:abc123fingerprint",
+      });
+      openRemoteTerminal.mockResolvedValue("ssh:resolved-id");
+      const onClose = vi.fn();
+      render(<NewTerminalDialog open={true} onClose={onClose} />);
+
+      await fillSshForm(user);
+      await user.click(screen.getByText("Connect"));
+      await screen.findByText("Verify new host key");
+      await user.click(screen.getByText("Accept & Connect"));
+
+      expect(openRemoteTerminal).toHaveBeenCalledTimes(1);
+      const [, params] = openRemoteTerminal.mock.calls[0];
+      expect(params).toMatchObject({ host: "10.0.1.5", username: "ubuntu", trustNewHostKey: true });
+      expect(onClose).toHaveBeenCalled();
+    });
+
+    it("rejecting an unrecognized host key returns to the form without connecting", async () => {
+      const user = userEvent.setup();
+      getSettings.mockResolvedValue({ PromptNewHostKeys: true });
+      checkHostKeyTrust.mockResolvedValue({
+        known: false,
+        changed: false,
+        keyType: "ssh-ed25519",
+        fingerprint: "SHA256:abc123fingerprint",
+      });
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await fillSshForm(user);
+      await user.click(screen.getByText("Connect"));
+      await screen.findByText("Verify new host key");
+      await user.click(screen.getByText("Reject"));
+
+      expect(await screen.findByText("Host")).toBeInTheDocument(); // back on the connection form
+      expect(openRemoteTerminal).not.toHaveBeenCalled();
+    });
+
+    it("skips the prompt and connects directly when the host key is already known/matching", async () => {
+      const user = userEvent.setup();
+      getSettings.mockResolvedValue({ PromptNewHostKeys: true });
+      checkHostKeyTrust.mockResolvedValue({
+        known: true,
+        changed: false,
+        keyType: "ssh-ed25519",
+        fingerprint: "SHA256:abc123fingerprint",
+      });
+      openRemoteTerminal.mockResolvedValue("ssh:resolved-id");
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await fillSshForm(user);
+      await user.click(screen.getByText("Connect"));
+
+      expect(checkHostKeyTrust).toHaveBeenCalled();
+      await vi.waitFor(() => expect(openRemoteTerminal).toHaveBeenCalledTimes(1));
+      expect(screen.queryByText("Verify new host key")).not.toBeInTheDocument();
+    });
+
+    it("shows a scary warning with no Accept button when the host's key has changed since it was pinned", async () => {
+      const user = userEvent.setup();
+      getSettings.mockResolvedValue({ PromptNewHostKeys: true });
+      checkHostKeyTrust.mockResolvedValue({
+        known: false,
+        changed: true,
+        keyType: "ssh-ed25519",
+        fingerprint: "SHA256:newkeyfingerprint",
+      });
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await fillSshForm(user);
+      await user.click(screen.getByText("Connect"));
+
+      expect(await screen.findByText("Warning: this host's key has changed")).toBeInTheDocument();
+      expect(screen.queryByText("Accept & Connect")).not.toBeInTheDocument();
+      expect(openRemoteTerminal).not.toHaveBeenCalled();
+    });
+
+    it("falls through to a direct connection attempt when the host key probe itself fails", async () => {
+      const user = userEvent.setup();
+      getSettings.mockResolvedValue({ PromptNewHostKeys: true });
+      checkHostKeyTrust.mockRejectedValue("failed to reach 10.0.1.5:22: dial tcp: timeout");
+      openRemoteTerminal.mockResolvedValue("ssh:resolved-id");
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await fillSshForm(user);
+      await user.click(screen.getByText("Connect"));
+
+      await vi.waitFor(() => expect(openRemoteTerminal).toHaveBeenCalledTimes(1));
+      expect(screen.queryByText("Verify new host key")).not.toBeInTheDocument();
+    });
   });
 });
