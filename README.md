@@ -159,6 +159,22 @@ To connect somewhere else, choose **Unix / Linux (SSH)** or **Remote Windows
 the connection (credentials go to the OS keychain), and **Use tmux if available**
 to land in a persistent, reattachable session every time you connect.
 
+## Configuration & Data Storage
+
+A properly-installed release build (the one-line installer, the packaged
+`.deb`/`.rpm`, or the official `.exe`/`.dmg`) keeps its settings, saved
+connections, SSH known-host pins, and audit log under an OS-conventional
+per-user data directory:
+
+- **Windows:** `%LOCALAPPDATA%\PairAdmin\`
+- **macOS:** `~/Library/Application Support/PairAdmin/`
+- **Linux:** `$XDG_DATA_HOME/pairadmin/` (falls back to `~/.local/share/pairadmin/`)
+
+A binary you build yourself from source (`wails build` without the release
+pipeline's flags, or `wails dev`) instead uses the legacy `~/.pairadmin/`,
+so local dev/QA testing never mixes its data with a real install on the same
+machine.
+
 ## Building from Source
 
 **Linux:**

@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/scrypt"
+
+	"pairadmin/services/config"
 )
 
 // The file backend of 99designs/keyring encrypts every item with AES-256-GCM
@@ -72,13 +74,10 @@ var (
 )
 
 // masterPasswordHashPath returns the path of the master password hash file,
-// ~/.pairadmin/master_password.hash.
+// ConfigDir()/master_password.hash — the same per-user data dir as config.yaml,
+// known_hosts.yaml, and the keyring file backend (see config.ConfigDir).
 func masterPasswordHashPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve home directory: %w", err)
-	}
-	return filepath.Join(home, ".pairadmin", masterPasswordHashFile), nil
+	return filepath.Join(config.ConfigDir(), masterPasswordHashFile), nil
 }
 
 // writeMasterPasswordHash writes a salted scrypt hash of pw to path in the

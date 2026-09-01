@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/spf13/viper"
 )
@@ -65,13 +66,13 @@ type AppConfig struct {
 	HotkeyAddClipboardCommand string `mapstructure:"hotkey_add_clipboard_command" yaml:"hotkey_add_clipboard_command"`
 	// HotkeyNewTerminal opens the "+ New" terminal dialog without requiring a
 	// mouse trip to the bottom of the terminal list — see DefaultHotkeyNewTerminal.
-	HotkeyNewTerminal string `mapstructure:"hotkey_new_terminal" yaml:"hotkey_new_terminal"`
-	Theme              string          `mapstructure:"theme" yaml:"theme"`
-	FontSize           int             `mapstructure:"font_size" yaml:"font_size"`
-	ContextLines       int             `mapstructure:"context_lines" yaml:"context_lines"`
-	OllamaHost         string          `mapstructure:"ollama_host" yaml:"ollama_host"`
-	LMStudioHost       string          `mapstructure:"lmstudio_host" yaml:"lmstudio_host"`
-	RemoteHosts        []RemoteHost    `mapstructure:"remote_hosts" yaml:"remote_hosts"`
+	HotkeyNewTerminal string       `mapstructure:"hotkey_new_terminal" yaml:"hotkey_new_terminal"`
+	Theme             string       `mapstructure:"theme" yaml:"theme"`
+	FontSize          int          `mapstructure:"font_size" yaml:"font_size"`
+	ContextLines      int          `mapstructure:"context_lines" yaml:"context_lines"`
+	OllamaHost        string       `mapstructure:"ollama_host" yaml:"ollama_host"`
+	LMStudioHost      string       `mapstructure:"lmstudio_host" yaml:"lmstudio_host"`
+	RemoteHosts       []RemoteHost `mapstructure:"remote_hosts" yaml:"remote_hosts"`
 	// TerminalsSidebarWidthCh/CommandsSidebarWidthCh size the left (terminal
 	// list) and right (Quick Commands) sidebars, in CSS `ch` units (~1
 	// character's width in the active UI font) rather than a fixed pixel
@@ -122,15 +123,84 @@ const DefaultHotkeyNewTerminal = "Ctrl+Shift+N"
 const DefaultTerminalsSidebarWidthCh = 20
 const DefaultCommandsSidebarWidthCh = 30
 
-// configDir returns the ~/.pairadmin directory path.
-func configDir() string {
+// releaseBuild is set to "true" via
+//
+//	-ldflags "-X pairadmin/services/config.releaseBuild=true"
+//
+// by the official release pipeline (.github/workflows/release.yml) — every
+// `wails build` invocation there passes it. A plain local `wails build` or
+// `wails dev` (and every `go test` binary) leaves this at its zero value, so
+// dev/QA runs keep using the legacy ~/.pairadmin location unchanged. This
+// exists because a dev binary and the properly-installed release binary
+// otherwise resolve to the exact same config/keychain/audit-log directory —
+// a QA session's pinned commands, saved hosts, and audit history silently
+// carry over into what should have been a pristine first-run of the
+// installed app. See the investigation that led here for the concrete
+// repro (config.yaml with test-session pinned commands and saved SSH hosts
+// showing up immediately after a fresh install).
+var releaseBuild = ""
+
+func isReleaseBuild() bool {
+	return releaseBuild == "true"
+}
+
+// releaseDataDirForGOOS resolves the OS-conventional per-user application
+// data directory for the given goos, given the caller's home directory and
+// (Windows-only/Linux-only) the relevant environment variable if set. Broken
+// out from releaseDataDir() as a pure function so all three OS branches are
+// unit-testable regardless of which OS actually runs the test suite.
+func releaseDataDirForGOOS(goos, home, localAppData, xdgDataHome string) string {
+	switch goos {
+	case "windows":
+		base := localAppData
+		if base == "" {
+			base = filepath.Join(home, "AppData", "Local")
+		}
+		return filepath.Join(base, "PairAdmin")
+	case "darwin":
+		return filepath.Join(home, "Library", "Application Support", "PairAdmin")
+	default: // linux and anything else Wails targets
+		base := xdgDataHome
+		if base == "" {
+			base = filepath.Join(home, ".local", "share")
+		}
+		return filepath.Join(base, "pairadmin")
+	}
+}
+
+// releaseDataDir resolves the real per-user application data directory a
+// properly-installed release build should use, per current-OS convention:
+// %LOCALAPPDATA%\PairAdmin on Windows, ~/Library/Application Support/PairAdmin
+// on macOS, $XDG_DATA_HOME/pairadmin (or ~/.local/share/pairadmin) on Linux.
+func releaseDataDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return releaseDataDirForGOOS(runtime.GOOS, home, os.Getenv("LOCALAPPDATA"), os.Getenv("XDG_DATA_HOME")), nil
+}
+
+// ConfigDir returns the directory PairAdmin stores its persistent data in:
+// config.yaml, known_hosts.yaml, the keyring/ fallback credential store, and
+// (via main.go) the audit logs/ directory. A release build (see
+// isReleaseBuild) uses releaseDataDir()'s OS-conventional location; a dev/QA
+// build falls back to the legacy ~/.pairadmin, unchanged from before this
+// distinction existed — including when releaseDataDir() itself fails to
+// resolve a home directory, so a release build never ends up with no
+// storage location at all.
+func ConfigDir() string {
+	if isReleaseBuild() {
+		if dir, err := releaseDataDir(); err == nil {
+			return dir
+		}
+	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".pairadmin")
 }
 
-// configPath returns the full path to ~/.pairadmin/config.yaml.
+// configPath returns the full path to ConfigDir()/config.yaml.
 func configPath() string {
-	return filepath.Join(configDir(), "config.yaml")
+	return filepath.Join(ConfigDir(), "config.yaml")
 }
 
 // LoadAppConfig reads the application configuration from ~/.pairadmin/config.yaml.
@@ -139,7 +209,7 @@ func LoadAppConfig() (*AppConfig, error) {
 	v := viper.New()
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
-	v.AddConfigPath(configDir())
+	v.AddConfigPath(ConfigDir())
 	v.SetDefault("custom_patterns", []CustomPattern{})
 	v.SetDefault("remote_hosts", []RemoteHost{})
 	v.SetDefault("pinned_commands", []PinnedCommand{})
@@ -159,13 +229,13 @@ func LoadAppConfig() (*AppConfig, error) {
 // Merges new fields without overwriting unrelated existing fields in the config file.
 func SaveAppConfig(cfg *AppConfig) error {
 	// Ensure directory exists before writing.
-	if err := os.MkdirAll(configDir(), 0o700); err != nil {
+	if err := os.MkdirAll(ConfigDir(), 0o700); err != nil {
 		return err
 	}
 	v := viper.New()
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
-	v.AddConfigPath(configDir())
+	v.AddConfigPath(ConfigDir())
 	_ = v.ReadInConfig() // Load existing values first — merge, don't overwrite
 
 	v.Set("custom_patterns", cfg.CustomPatterns)

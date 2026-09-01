@@ -6,6 +6,96 @@ import (
 	"testing"
 )
 
+// TestConfigDir_DevBuild_UsesLegacyDotPairadmin verifies that with
+// releaseBuild unset (the state of every `go test` binary, `wails dev`, and
+// a plain local `wails build`), ConfigDir() is unchanged from before the
+// release/dev distinction existed — dev/QA workflows keep working exactly
+// as they did.
+func TestConfigDir_DevBuild_UsesLegacyDotPairadmin(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	if isReleaseBuild() {
+		t.Fatal("expected isReleaseBuild() to be false by default in a test binary")
+	}
+	want := filepath.Join(tmpDir, ".pairadmin")
+	if got := ConfigDir(); got != want {
+		t.Errorf("ConfigDir() = %q, want %q", got, want)
+	}
+}
+
+// TestConfigDir_ReleaseBuild_UsesOSConventionalDir is a regression test for
+// the actual bug report: a dev-built binary and the properly-installed
+// release binary previously resolved to the exact same ~/.pairadmin,
+// so a QA session's pinned commands and saved hosts silently carried over
+// into a "fresh" install. Flips the package-level releaseBuild var directly
+// (this test is in-package, so it can) to simulate what the official release
+// pipeline's ldflag produces, and confirms ConfigDir() now diverges from the
+// dev path.
+func TestConfigDir_ReleaseBuild_UsesOSConventionalDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+	t.Setenv("LOCALAPPDATA", "")
+	t.Setenv("XDG_DATA_HOME", "")
+
+	releaseBuild = "true"
+	t.Cleanup(func() { releaseBuild = "" })
+
+	got := ConfigDir()
+	devPath := filepath.Join(tmpDir, ".pairadmin")
+	if got == devPath {
+		t.Errorf("ConfigDir() = %q, expected it to differ from the legacy dev path %q", got, devPath)
+	}
+}
+
+// TestReleaseDataDirForGOOS covers all three OS branches directly, so the
+// logic is verified regardless of which OS actually runs the test suite.
+func TestReleaseDataDirForGOOS(t *testing.T) {
+	home := filepath.FromSlash("/home/testuser")
+
+	t.Run("windows with LOCALAPPDATA set", func(t *testing.T) {
+		got := releaseDataDirForGOOS("windows", home, `C:\Users\testuser\AppData\Local`, "")
+		want := filepath.Join(`C:\Users\testuser\AppData\Local`, "PairAdmin")
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("windows without LOCALAPPDATA falls back to home-relative path", func(t *testing.T) {
+		got := releaseDataDirForGOOS("windows", home, "", "")
+		want := filepath.Join(home, "AppData", "Local", "PairAdmin")
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("darwin uses Library/Application Support", func(t *testing.T) {
+		got := releaseDataDirForGOOS("darwin", home, "", "")
+		want := filepath.Join(home, "Library", "Application Support", "PairAdmin")
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("linux with XDG_DATA_HOME set", func(t *testing.T) {
+		got := releaseDataDirForGOOS("linux", home, "", "/xdg/data")
+		want := filepath.Join("/xdg/data", "pairadmin")
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("linux without XDG_DATA_HOME falls back to ~/.local/share", func(t *testing.T) {
+		got := releaseDataDirForGOOS("linux", home, "", "")
+		want := filepath.Join(home, ".local", "share", "pairadmin")
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+}
+
 // TestLoadAppConfig_EmptyWhenNoFile returns empty CustomPatterns when no config file exists.
 func TestLoadAppConfig_EmptyWhenNoFile(t *testing.T) {
 	tmpDir := t.TempDir()

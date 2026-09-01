@@ -8,6 +8,16 @@ on:
 permissions:
   contents: write
 
+env:
+  # Marks every release-pipeline binary as a "release build" (see
+  # services/config/config.go's isReleaseBuild) so it stores its config,
+  # known_hosts, keyring fallback, and audit logs under the OS-conventional
+  # per-user data directory instead of the legacy ~/.pairadmin a local dev
+  # `wails build`/`wails dev` still uses — otherwise a QA session's dev
+  # binary and the properly-installed release binary silently share the
+  # exact same storage, and QA data leaks into what should be a fresh install.
+  RELEASE_LDFLAGS: "-X pairadmin/services/config.releaseBuild=true"
+
 jobs:
   build-linux:
     runs-on: ubuntu-latest
@@ -41,7 +51,7 @@ jobs:
       - name: Build binary
         run: |
           export PATH="$PATH:$(go env GOPATH)/bin"
-          wails build -platform linux/amd64 -tags webkit2_41
+          wails build -platform linux/amd64 -tags webkit2_41 -ldflags "$RELEASE_LDFLAGS"
 
       - name: Package .deb and .rpm (nfpm)
         run: |
@@ -91,7 +101,7 @@ jobs:
         shell: pwsh
         run: |
           $env:PATH = "$(go env GOPATH)\bin;$env:PATH"
-          wails build -platform windows/amd64 --nsis
+          wails build -platform windows/amd64 --nsis -ldflags "$env:RELEASE_LDFLAGS"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -126,7 +136,7 @@ jobs:
       - name: Build .app (unsigned)
         run: |
           export PATH="$PATH:$(go env GOPATH)/bin"
-          wails build -platform darwin/universal
+          wails build -platform darwin/universal -ldflags "$RELEASE_LDFLAGS"
 
       - name: Package .dmg (unsigned)
         run: |

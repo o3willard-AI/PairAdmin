@@ -8,6 +8,7 @@ import (
 	"regexp"
 
 	"github.com/99designs/keyring"
+	"pairadmin/services/config"
 )
 
 // ServiceName is the keychain service identifier for PairAdmin.
@@ -123,18 +124,17 @@ func probeBackend(kr keyring.Keyring) bool {
 // itself, and only when it is about to encrypt or decrypt an item (file.go
 // unlock()) — so an OS backend in use never triggers it.
 func (c *Client) ring() (keyring.Keyring, error) {
-	home, _ := os.UserHomeDir()
 	if kr, err := c.open(keyring.Config{
 		ServiceName:     ServiceName,
 		AllowedBackends: []keyring.BackendType{keyring.KeychainBackend, keyring.WinCredBackend, keyring.SecretServiceBackend},
-		FileDir:         filepath.Join(home, ".pairadmin", "keyring"),
+		FileDir:         filepath.Join(config.ConfigDir(), "keyring"),
 	}); err == nil && probeBackend(kr) {
 		return kr, nil
 	}
 	return c.open(keyring.Config{
 		ServiceName:     ServiceName,
 		AllowedBackends: []keyring.BackendType{keyring.FileBackend},
-		FileDir:         filepath.Join(home, ".pairadmin", "keyring"),
+		FileDir:         filepath.Join(config.ConfigDir(), "keyring"),
 		FilePasswordFunc: func(_ string) (string, error) {
 			if c.masterPW == "" {
 				return "", ErrNoMasterPassword
@@ -149,11 +149,10 @@ func (c *Client) ring() (keyring.Keyring, error) {
 // them opens AND passes a functionality probe — i.e. the file backend would
 // be used, which requires a master password. No prompting occurs.
 func (c *Client) NeedsMasterPassword() (bool, error) {
-	home, _ := os.UserHomeDir()
 	kr, err := c.open(keyring.Config{
 		ServiceName:     ServiceName,
 		AllowedBackends: []keyring.BackendType{keyring.KeychainBackend, keyring.WinCredBackend, keyring.SecretServiceBackend},
-		FileDir:         filepath.Join(home, ".pairadmin", "keyring"),
+		FileDir:         filepath.Join(config.ConfigDir(), "keyring"),
 	})
 	if err == keyring.ErrNoAvailImpl {
 		return true, nil
@@ -296,11 +295,10 @@ func (c *Client) ChangeMasterPassword(oldPW, newPW string) error {
 // with a keyring instance unlocked under oldPW and written back with one
 // unlocked under newPW.
 func (c *Client) reencryptFileItems(oldPW, newPW string) error {
-	home, _ := os.UserHomeDir()
 	oldRing, err := keyring.Open(keyring.Config{
 		ServiceName:      ServiceName,
 		AllowedBackends:  []keyring.BackendType{keyring.FileBackend},
-		FileDir:          filepath.Join(home, ".pairadmin", "keyring"),
+		FileDir:          filepath.Join(config.ConfigDir(), "keyring"),
 		FilePasswordFunc: keyring.FixedStringPrompt(oldPW),
 	})
 	if err != nil {
@@ -309,7 +307,7 @@ func (c *Client) reencryptFileItems(oldPW, newPW string) error {
 	newRing, err := keyring.Open(keyring.Config{
 		ServiceName:      ServiceName,
 		AllowedBackends:  []keyring.BackendType{keyring.FileBackend},
-		FileDir:          filepath.Join(home, ".pairadmin", "keyring"),
+		FileDir:          filepath.Join(config.ConfigDir(), "keyring"),
 		FilePasswordFunc: keyring.FixedStringPrompt(newPW),
 	})
 	if err != nil {

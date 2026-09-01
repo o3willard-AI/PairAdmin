@@ -15,6 +15,7 @@ import (
 	"pairadmin/services"
 	"pairadmin/services/audit"
 	"pairadmin/services/capture"
+	"pairadmin/services/config"
 	"pairadmin/services/keychain"
 )
 
@@ -99,8 +100,7 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			// Generate session UUID and create audit logger.
 			sessionID = uuid.New().String()
-			home, _ := os.UserHomeDir()
-			auditLogger, _ = audit.NewAuditLogger(filepath.Join(home, ".pairadmin", "logs"))
+			auditLogger, _ = audit.NewAuditLogger(filepath.Join(config.ConfigDir(), "logs"))
 
 			// Inject audit logger into services.
 			llmService.SetAuditLogger(auditLogger, sessionID)
