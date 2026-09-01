@@ -51,14 +51,17 @@ describe("TerminalsTab", () => {
     );
   });
 
-  it("clamps the Terminals list width to the 10-80 range", async () => {
+  it("allows free typing and clamps the width on blur", async () => {
     const user = userEvent.setup();
     render(<TerminalsTab />);
     const input = await screen.findByDisplayValue("20");
 
     await user.clear(input);
     await user.type(input, "500");
+    // Typing is not clamped mid-keystroke (a multi-digit entry must survive).
+    expect(input).toHaveValue(500);
 
+    await user.tab(); // blur
     expect(input).toHaveValue(80);
   });
 });

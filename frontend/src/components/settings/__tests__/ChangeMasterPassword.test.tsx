@@ -66,7 +66,7 @@ describe("SecurityTab", () => {
     hasMasterPassword.mockResolvedValue(false);
     render(<SecurityTab />);
     expect(
-      await screen.findByText("No master password configured — credentials are stored in the OS keychain.")
+      await screen.findByText(/No master password configured/)
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Change master password" })).not.toBeInTheDocument();
   });
@@ -89,7 +89,7 @@ describe("SecurityTab backend failure", () => {
     render(<SecurityTab />);
     await waitFor(() =>
       expect(
-        screen.getByText("No master password configured — credentials are stored in the OS keychain.")
+        screen.getByText(/No master password configured/)
       ).toBeInTheDocument()
     );
   });

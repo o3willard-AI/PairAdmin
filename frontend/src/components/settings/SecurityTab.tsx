@@ -40,7 +40,7 @@ export function SecurityTab() {
             ? "Checking keychain status…"
             : hasMasterPassword
               ? "Stored credentials are encrypted on disk and unlocked with your master password."
-              : "No master password configured — credentials are stored in the OS keychain."}
+              : "No master password configured — this is expected on Windows and macOS, where credentials are protected by the OS keychain (Windows Credential Manager / macOS Keychain). A master password is only used when no OS keychain is available (typically on Linux)."}
         </p>
       </div>
       {!checking && hasMasterPassword && (

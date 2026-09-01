@@ -6,6 +6,9 @@ import { mergeAndSaveSettings } from "@/utils/settingsSync";
 const DEFAULT_TERMINALS_SIDEBAR_WIDTH_CH = 20;
 const DEFAULT_COMMANDS_SIDEBAR_WIDTH_CH = 30;
 
+const clamp = (v: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, v));
+
 export function TerminalsTab() {
   const [atspiPollingMs, setAtspiPollingMs] = useState(500);
   const [clipboardClearSecs, setClipboardClearSecs] = useState(60);
@@ -37,10 +40,10 @@ export function TerminalsTab() {
     setSaveStatus("saving");
     try {
       await mergeAndSaveSettings({
-        ATSPIPollingMs: atspiPollingMs,
-        ClipboardClearSecs: clipboardClearSecs,
-        TerminalsSidebarWidthCh: terminalsSidebarWidthCh,
-        CommandsSidebarWidthCh: commandsSidebarWidthCh,
+        ATSPIPollingMs: clamp(atspiPollingMs, 100, 5000),
+        ClipboardClearSecs: clamp(clipboardClearSecs, 0, 600),
+        TerminalsSidebarWidthCh: clamp(terminalsSidebarWidthCh, 10, 80),
+        CommandsSidebarWidthCh: clamp(commandsSidebarWidthCh, 10, 80),
         PromptNewHostKeys: promptNewHostKeys,
       });
       setSaveStatus("saved");
@@ -62,12 +65,13 @@ export function TerminalsTab() {
         <input
           type="number"
           value={atspiPollingMs}
-          onChange={(e) => setAtspiPollingMs(Math.max(100, Math.min(5000, Number(e.target.value))))}
+          onChange={(e) => setAtspiPollingMs(Number(e.target.value))}
+          onBlur={() => setAtspiPollingMs(clamp(atspiPollingMs, 100, 5000))}
           min={100}
           max={5000}
           className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
         />
-        <p className="text-xs text-surface-text-muted">Min: 100ms, Max: 5000ms. Default: 500ms.</p>
+        <p className="text-xs text-surface-text-muted">Min: 100ms, Max: 5000ms.</p>
       </div>
 
       <div className="space-y-1">
@@ -75,14 +79,13 @@ export function TerminalsTab() {
         <input
           type="number"
           value={clipboardClearSecs}
-          onChange={(e) =>
-            setClipboardClearSecs(Math.max(0, Math.min(600, Number(e.target.value))))
-          }
+          onChange={(e) => setClipboardClearSecs(Number(e.target.value))}
+          onBlur={() => setClipboardClearSecs(clamp(clipboardClearSecs, 0, 600))}
           min={0}
           max={600}
           className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
         />
-        <p className="text-xs text-surface-text-muted">0 = disabled. Min: 0, Max: 600s. Default: 60s.</p>
+        <p className="text-xs text-surface-text-muted">0 disables auto-clear. Max: 600 seconds.</p>
       </div>
 
       <h3 className="text-xs font-semibold text-surface-text-muted uppercase tracking-wider pt-2">
@@ -100,14 +103,13 @@ export function TerminalsTab() {
         <input
           type="number"
           value={terminalsSidebarWidthCh}
-          onChange={(e) =>
-            setTerminalsSidebarWidthCh(Math.max(10, Math.min(80, Number(e.target.value))))
-          }
+          onChange={(e) => setTerminalsSidebarWidthCh(Number(e.target.value))}
+          onBlur={() => setTerminalsSidebarWidthCh(clamp(terminalsSidebarWidthCh, 10, 80))}
           min={10}
           max={80}
           className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
         />
-        <p className="text-xs text-surface-text-muted">Min: 10, Max: 80. Default: 20.</p>
+        <p className="text-xs text-surface-text-muted">Min: 10, Max: 80.</p>
       </div>
 
       <div className="space-y-1">
@@ -115,14 +117,13 @@ export function TerminalsTab() {
         <input
           type="number"
           value={commandsSidebarWidthCh}
-          onChange={(e) =>
-            setCommandsSidebarWidthCh(Math.max(10, Math.min(80, Number(e.target.value))))
-          }
+          onChange={(e) => setCommandsSidebarWidthCh(Number(e.target.value))}
+          onBlur={() => setCommandsSidebarWidthCh(clamp(commandsSidebarWidthCh, 10, 80))}
           min={10}
           max={80}
           className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
         />
-        <p className="text-xs text-surface-text-muted">Min: 10, Max: 80. Default: 30.</p>
+        <p className="text-xs text-surface-text-muted">Min: 10, Max: 80.</p>
       </div>
 
       <h3 className="text-xs font-semibold text-surface-text-muted uppercase tracking-wider pt-2">
