@@ -140,4 +140,58 @@ describe("commandStore", () => {
     useCommandStore.getState().reorderPinned(c.id, a.id);
     expect(useCommandStore.getState().commands.map((cmd) => cmd.command)).toEqual(["c", "a", "b"]);
   });
+
+  it("addCommand stores an optional name on the command", () => {
+    useCommandStore.getState().addCommand("tab-1", {
+      command: "kubectl get pods",
+      originalQuestion: "show pods",
+      name: "List Pods",
+    });
+    const cmd = useCommandStore.getState().commands[0];
+    expect(cmd.name).toBe("List Pods");
+    expect(cmd.command).toBe("kubectl get pods");
+  });
+
+  it("addCommand without a name leaves name undefined", () => {
+    useCommandStore.getState().addCommand("tab-1", {
+      command: "ls",
+      originalQuestion: "",
+    });
+    const cmd = useCommandStore.getState().commands[0];
+    expect(cmd.name).toBeUndefined();
+  });
+
+  it("addPinnedCommand stores an optional name on the command", () => {
+    useCommandStore.getState().addPinnedCommand("ssh:1", {
+      command: "tmux set -g mouse on",
+      originalQuestion: "mouse scroll",
+      name: "Enable Mouse",
+    });
+    const cmd = useCommandStore.getState().commands[0];
+    expect(cmd.name).toBe("Enable Mouse");
+    expect(cmd.pinned).toBe(true);
+  });
+
+  it("renameCommand sets a name on a command", () => {
+    useCommandStore.getState().addCommand("tab-1", {
+      command: "sudo systemctl restart nginx",
+      originalQuestion: "restart nginx",
+    });
+    const id = useCommandStore.getState().commands[0].id;
+
+    useCommandStore.getState().renameCommand(id, "Restart Nginx");
+    expect(useCommandStore.getState().commands[0].name).toBe("Restart Nginx");
+  });
+
+  it("renameCommand with an empty string clears the name", () => {
+    useCommandStore.getState().addCommand("tab-1", {
+      command: "sudo systemctl restart nginx",
+      originalQuestion: "restart nginx",
+      name: "Restart Nginx",
+    });
+    const id = useCommandStore.getState().commands[0].id;
+
+    useCommandStore.getState().renameCommand(id, "");
+    expect(useCommandStore.getState().commands[0].name).toBeUndefined();
+  });
 });

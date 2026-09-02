@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Copy, RotateCw, Pin, PinOff, Trash2, Pencil, History } from "lucide-react";
+import { Copy, RotateCw, Pin, PinOff, Trash2, Pencil, History, Edit3 } from "lucide-react";
 import { useCommandStore, type Command } from "@/stores/commandStore";
 import {
   Tooltip,
@@ -15,6 +15,7 @@ import {
   ContextMenuSeparator,
 } from "@/components/ui/context-menu";
 import { EditCommandDialog } from "./EditCommandDialog";
+import { RenameDialog } from "./RenameDialog";
 
 interface CommandCardProps {
   command: Command;
@@ -34,29 +35,47 @@ export function CommandCard({
   onDropOnId,
 }: CommandCardProps) {
   const [editing, setEditing] = useState<"permanent" | "temporary" | null>(null);
-  const displayText = command.tempOverride ?? command.command;
+  const [renaming, setRenaming] = useState(false);
+  const displayText = command.name ?? (command.tempOverride ?? command.command);
+  const fullCommandText = command.command;
 
   const startEdit = (mode: "permanent" | "temporary") => setEditing(mode);
+  const cancelEdit = () => setEditing(null);
 
-  const saveEdit = (value: string) => {
+  const saveEdit = (value: string, name?: string) => {
     if (editing === "permanent") {
       useCommandStore.getState().editCommand(command.id, value);
+      if (name !== undefined) {
+        useCommandStore.getState().renameCommand(command.id, name);
+      }
     } else if (editing === "temporary") {
       useCommandStore.getState().editForNextUse(command.id, value);
     }
     setEditing(null);
   };
 
-  const cancelEdit = () => setEditing(null);
+  const cancelRename = () => setRenaming(false);
+
+  const saveRename = (name: string) => {
+    useCommandStore.getState().renameCommand(command.id, name);
+    setRenaming(false);
+  };
 
   return (
     <>
       <EditCommandDialog
         open={editing !== null}
         mode={editing ?? "permanent"}
-        initialValue={displayText}
+        initialValue={command.tempOverride ?? command.command}
+        initialName={command.name}
         onSave={saveEdit}
         onClose={cancelEdit}
+      />
+      <RenameDialog
+        open={renaming}
+        initialValue={command.name ?? ""}
+        onClose={cancelRename}
+        onSave={saveRename}
       />
       <TooltipProvider>
       <ContextMenu>
@@ -113,7 +132,12 @@ export function CommandCard({
             </button>
           </ContextMenuTrigger>
           <TooltipContent side="left" className="max-w-[280px]">
-            <p className="text-xs font-mono break-all">{displayText}</p>
+            {command.name && (
+              <p className="text-xs font-semibold text-surface-text mb-1">
+                {command.name}
+              </p>
+            )}
+            <p className="text-xs font-mono break-all">{fullCommandText}</p>
             {command.originalQuestion && (
               <>
                 <p className="text-xs text-surface-text-muted mt-1.5 mb-0.5">Generated from:</p>
@@ -137,6 +161,10 @@ export function CommandCard({
           <ContextMenuItem onClick={() => startEdit("temporary")}>
             <History size={12} />
             Edit/Append for next use
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => setRenaming(true)}>
+            <Edit3 size={12} />
+            Rename
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem

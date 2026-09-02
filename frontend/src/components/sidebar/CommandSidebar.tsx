@@ -40,6 +40,7 @@ export function CommandSidebar() {
         pinnedCommands.map((c) => ({
           Command: c.command,
           OriginalQuestion: c.originalQuestion,
+          Name: c.name ?? "",
         }))
       );
       setPinSaveStatus("saved");
@@ -144,10 +145,11 @@ export function CommandSidebar() {
         open={addDialogOpen}
         mode="add"
         initialValue=""
-        onSave={(value) => {
+        onSave={(value, name) => {
           useCommandStore.getState().addCommand(activeTabId, {
             command: value,
             originalQuestion: "",
+            name,
           });
           setAddDialogOpen(false);
         }}

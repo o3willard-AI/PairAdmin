@@ -509,6 +509,40 @@ func TestSaveAppConfig_PreservesCustomPatternsOnNewFieldSave(t *testing.T) {
 		t.Fatalf("CustomPatterns: expected 1, got %d", len(loaded.CustomPatterns))
 	}
 	if loaded.Provider != "openai" {
-		t.Errorf("Provider: expected 'openai', got %q", loaded.Provider)
+		t.Errorf("Provider: expected 'openai' after merge, got %q", loaded.Provider)
+	}
+}
+
+// TestSaveAndLoadAppConfig_PinnedCommandsRoundTrip verifies that a user-assigned
+// Name on a PinnedCommand survives a save/load cycle — so a custom sidebar label
+// persists across app restarts.
+func TestSaveAndLoadAppConfig_PinnedCommandsRoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir) // os.UserHomeDir() reads USERPROFILE on Windows, not HOME
+
+	original := &AppConfig{
+		PinnedCommands: []PinnedCommand{
+			{Command: "kubectl get pods", Name: "List Pods", OriginalQuestion: "show me pods"},
+		},
+	}
+
+	if err := SaveAppConfig(original); err != nil {
+		t.Fatalf("SaveAppConfig() unexpected error: %v", err)
+	}
+
+	loaded, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
+	}
+
+	if len(loaded.PinnedCommands) != 1 {
+		t.Fatalf("expected 1 pinned command, got %d", len(loaded.PinnedCommands))
+	}
+	if loaded.PinnedCommands[0].Name != "List Pods" {
+		t.Errorf("Name: expected 'List Pods', got %q", loaded.PinnedCommands[0].Name)
+	}
+	if loaded.PinnedCommands[0].Command != "kubectl get pods" {
+		t.Errorf("Command: expected 'kubectl get pods', got %q", loaded.PinnedCommands[0].Command)
 	}
 }
