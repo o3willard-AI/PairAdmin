@@ -5,7 +5,8 @@ export interface EditCommandDialogProps {
   open: boolean;
   mode: "permanent" | "temporary" | "add";
   initialValue: string;
-  onSave: (value: string) => void;
+  initialName?: string;
+  onSave: (value: string, name?: string) => void;
   onClose: () => void;
 }
 
@@ -13,22 +14,30 @@ export function EditCommandDialog({
   open,
   mode,
   initialValue,
+  initialName,
   onSave,
   onClose,
 }: EditCommandDialogProps) {
   const [value, setValue] = useState(initialValue);
+  const [name, setName] = useState(initialName ?? "");
 
   // Re-seed from the latest command text every time the dialog opens, rather
   // than once on mount — the dialog stays mounted (just closed) between edits.
   useEffect(() => {
-    if (open) setValue(initialValue);
-  }, [open, initialValue]);
+    if (open) {
+      setValue(initialValue);
+      setName(initialName ?? "");
+    }
+  }, [open, initialValue, initialName]);
 
   const handleSave = () => {
     const trimmed = value.trim();
     if (!trimmed) return;
-    onSave(trimmed);
+    const trimmedName = name.trim();
+    onSave(trimmed, trimmedName || undefined);
   };
+
+  const showNameField = mode === "add" || mode === "permanent";
 
   return (
     <Dialog.Root
@@ -47,7 +56,29 @@ export function EditCommandDialog({
                 ? "Edit Command"
                 : "Edit/Append for Next Use"}
           </Dialog.Title>
-          <div className="flex-1 overflow-y-auto p-6 space-y-2">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            {showNameField && (
+              <div className="space-y-1">
+                <label
+                  htmlFor="command-name"
+                  className="text-xs font-medium text-surface-text-muted"
+                >
+                  Name (optional)
+                </label>
+                <input
+                  id="command-name"
+                  type="text"
+                  placeholder="e.g. Restart nginx"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm font-mono text-surface-text focus:border-surface-text-muted focus:outline-none"
+                />
+                <p className="text-xs text-surface-text-muted">
+                  A custom name replaces the command text in the sidebar. Hover
+                  to see the full command.
+                </p>
+              </div>
+            )}
             <textarea
               autoFocus
               value={value}

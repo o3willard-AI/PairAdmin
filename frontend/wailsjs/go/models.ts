@@ -51,19 +51,21 @@ export namespace capture {
 export namespace config {
 	
 	export class PinnedCommand {
-	    Command: string;
-	    OriginalQuestion: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new PinnedCommand(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.Command = source["Command"];
-	        this.OriginalQuestion = source["OriginalQuestion"];
-	    }
-	}
+    Command: string;
+    OriginalQuestion: string;
+    Name: string;
+
+    static createFrom(source: any = {}) {
+        return new PinnedCommand(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.Command = source["Command"];
+        this.OriginalQuestion = source["OriginalQuestion"];
+        this.Name = source["Name"];
+    }
+}
 	export class RemoteHost {
 	    ID: string;
 	    Kind: string;

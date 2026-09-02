@@ -22,6 +22,9 @@ type CustomPattern struct {
 type PinnedCommand struct {
 	Command          string `mapstructure:"command" yaml:"command"`
 	OriginalQuestion string `mapstructure:"original_question" yaml:"original_question"`
+	// Name is an optional user-assigned label that replaces the command text
+	// in the sidebar display. Empty means "show the command text as-is".
+	Name string `mapstructure:"name" yaml:"name"`
 }
 
 // RemoteHost holds non-secret metadata for a saved remote terminal connection.

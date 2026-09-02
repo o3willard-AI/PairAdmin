@@ -100,7 +100,11 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
         if (cfg?.PinnedCommands?.length) {
           const { addPinnedCommand } = useCommandStore.getState();
           for (const pc of cfg.PinnedCommands) {
-            addPinnedCommand("", { command: pc.Command, originalQuestion: pc.OriginalQuestion });
+            addPinnedCommand("", {
+              command: pc.Command,
+              originalQuestion: pc.OriginalQuestion,
+              name: pc.Name,
+            });
           }
         }
         if (!provider) {

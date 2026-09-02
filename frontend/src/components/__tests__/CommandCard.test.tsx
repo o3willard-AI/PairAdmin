@@ -120,7 +120,9 @@ describe("CommandCard", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /edit command/i }));
-    const input = screen.getByRole("textbox");
+    // In permanent edit mode, both the name input and the command textarea
+    // are textboxes — target the textarea by its initial display value.
+    const input = screen.getByDisplayValue("sudo systemctl restart nginx");
     await user.clear(input);
     await user.type(input, "echo left-click-edit");
     await user.click(screen.getByRole("button", { name: /^save$/i }));
@@ -128,7 +130,7 @@ describe("CommandCard", () => {
     expect(useCommandStore.getState().commands[0].command).toBe("echo left-click-edit");
   });
 
-  it("right-clicking opens a context menu with Pin, Edit, Edit/Append for next use, and Remove", async () => {
+  it("right-clicking opens a context menu with Pin, Edit, Edit/Append for next use, Rename, and Remove", async () => {
     const user = userEvent.setup();
     render(
       <TooltipProvider>
@@ -141,6 +143,7 @@ describe("CommandCard", () => {
     expect(screen.getByText("Pin")).toBeInTheDocument();
     expect(screen.getByText("Edit")).toBeInTheDocument();
     expect(screen.getByText("Edit/Append for next use")).toBeInTheDocument();
+    expect(screen.getByText("Rename")).toBeInTheDocument();
     expect(screen.getByText("Remove")).toBeInTheDocument();
   });
 
@@ -182,7 +185,9 @@ describe("CommandCard", () => {
 
     await user.pointer({ keys: "[MouseRight]", target: screen.getByTestId("command-card") });
     await user.click(screen.getByText("Edit"));
-    const input = screen.getByRole("textbox");
+    // In permanent mode, both name input and textarea are textboxes.
+    // Target the textarea by its initial display value.
+    const input = screen.getByDisplayValue("sudo systemctl restart nginx");
     await user.clear(input);
     await user.type(input, "echo permanently-edited");
     await user.click(screen.getByRole("button", { name: /^save$/i }));
@@ -201,6 +206,7 @@ describe("CommandCard", () => {
 
     await user.pointer({ keys: "[MouseRight]", target: screen.getByTestId("command-card") });
     await user.click(screen.getByText("Edit/Append for next use"));
+    // In temporary mode, only the textarea is shown (no name field).
     const input = screen.getByRole("textbox");
     await user.clear(input);
     await user.type(input, "echo one-time");
@@ -212,5 +218,125 @@ describe("CommandCard", () => {
     // consumeCommandText (used by copy/execute) returns the override once, then clears it
     expect(useCommandStore.getState().consumeCommandText("test-id-1")).toBe("echo one-time");
     expect(useCommandStore.getState().commands[0].tempOverride).toBeUndefined();
+  });
+
+  it("displays the custom name instead of the command text when name is set", () => {
+    render(
+      <TooltipProvider>
+        <CommandCard
+          command={{ ...mockCommand, name: "Restart Nginx" }}
+          onCopy={vi.fn()}
+          onExecute={vi.fn()}
+        />
+      </TooltipProvider>
+    );
+
+    expect(screen.getByText("Restart Nginx")).toBeInTheDocument();
+    expect(screen.queryByText("sudo systemctl restart nginx")).not.toBeInTheDocument();
+  });
+
+  it("displays the command text when no name is set", () => {
+    render(
+      <TooltipProvider>
+        <CommandCard command={mockCommand} onCopy={vi.fn()} onExecute={vi.fn()} />
+      </TooltipProvider>
+    );
+
+    expect(screen.getByText("sudo systemctl restart nginx")).toBeInTheDocument();
+  });
+
+  it("tooltip shows the custom name as a header line, then the full command text", async () => {
+    const user = userEvent.setup();
+    render(
+      <TooltipProvider>
+        <CommandCard
+          command={{ ...mockCommand, name: "Restart Nginx" }}
+          onCopy={vi.fn()}
+          onExecute={vi.fn()}
+        />
+      </TooltipProvider>
+    );
+
+    await user.hover(screen.getByTestId("command-card"));
+
+    // The display text "Restart Nginx" appears both in the sidebar and in
+    // the tooltip header — use getAllBy to confirm both render.
+    expect(screen.getAllByText("Restart Nginx").length).toBeGreaterThanOrEqual(1);
+    // The full command text only appears in the tooltip (not the sidebar),
+    // since the name replaces it in the display.
+    expect(screen.getByText("sudo systemctl restart nginx")).toBeInTheDocument();
+  });
+
+  it("context menu includes a Rename item", async () => {
+    const user = userEvent.setup();
+    render(
+      <TooltipProvider>
+        <CommandCard command={mockCommand} onCopy={vi.fn()} onExecute={vi.fn()} />
+      </TooltipProvider>
+    );
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByTestId("command-card") });
+
+    expect(screen.getByText("Rename")).toBeInTheDocument();
+  });
+
+  it("clicking Rename in the context menu opens a rename dialog", async () => {
+    const user = userEvent.setup();
+    render(
+      <TooltipProvider>
+        <CommandCard command={mockCommand} onCopy={vi.fn()} onExecute={vi.fn()} />
+      </TooltipProvider>
+    );
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByTestId("command-card") });
+    await user.click(screen.getByText("Rename"));
+
+    expect(screen.getByText("Rename Command")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("e.g. Restart nginx")).toBeInTheDocument();
+  });
+
+  it("saving a rename updates the command's name in the store", async () => {
+    const user = userEvent.setup();
+    render(
+      <TooltipProvider>
+        <CommandCard command={mockCommand} onCopy={vi.fn()} onExecute={vi.fn()} />
+      </TooltipProvider>
+    );
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByTestId("command-card") });
+    await user.click(screen.getByText("Rename"));
+
+    const input = screen.getByPlaceholderText("e.g. Restart nginx");
+    await user.clear(input);
+    await user.type(input, "My Custom Name");
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(useCommandStore.getState().commands[0].name).toBe("My Custom Name");
+  });
+
+  it("editing a command permanently with a name saves both command and name", async () => {
+    const user = userEvent.setup();
+    render(
+      <TooltipProvider>
+        <CommandCard command={mockCommand} onCopy={vi.fn()} onExecute={vi.fn()} />
+      </TooltipProvider>
+    );
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByTestId("command-card") });
+    await user.click(screen.getByText("Edit"));
+
+    // The name input should appear in permanent edit mode
+    expect(screen.getByLabelText("Name (optional)")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Name (optional)"), "New Name");
+    // In permanent mode, target the textarea by its initial display value
+    const textarea = screen.getByDisplayValue("sudo systemctl restart nginx");
+    await user.clear(textarea);
+    await user.type(textarea, "echo edited");
+
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(useCommandStore.getState().commands[0].command).toBe("echo edited");
+    expect(useCommandStore.getState().commands[0].name).toBe("New Name");
   });
 });

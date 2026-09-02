@@ -17,11 +17,14 @@ export interface Command {
   // Set by editForNextUse — overrides `command` for exactly one
   // copy/execute, then is cleared automatically (see consumeCommandText).
   tempOverride?: string;
+  // An optional user-assigned name that, when set, replaces the command text
+  // in the sidebar display. The full command text is still shown on hover.
+  name?: string;
 }
 
 interface CommandState {
   commands: Command[];
-  addCommand: (tabId: string, cmd: { command: string; originalQuestion: string }) => void;
+  addCommand: (tabId: string, cmd: { command: string; originalQuestion: string; name?: string }) => void;
   /**
    * Adds a command already pinned — used for auto-added helper commands
    * (e.g. tmux mouse-mode toggles) rather than AI-suggested ones. A no-op if
@@ -29,7 +32,7 @@ interface CommandState {
    * repeatedly (e.g. on every reconnect to the same tmux host) doesn't stack
    * duplicate cards.
    */
-  addPinnedCommand: (tabId: string, cmd: { command: string; originalQuestion: string }) => void;
+  addPinnedCommand: (tabId: string, cmd: { command: string; originalQuestion: string; name?: string }) => void;
   clearAll: () => void;
   togglePin: (id: string) => void;
   removeCommand: (id: string) => void;
@@ -45,6 +48,12 @@ interface CommandState {
   consumeCommandText: (id: string) => string;
   /** Reorders a pinned command to sit immediately before the target command. */
   reorderPinned: (draggedId: string, targetId: string) => void;
+  /**
+   * Assigns a custom name to a command. When set, the name is used as the
+   * display text in the sidebar instead of the command text. Pass an empty
+   * string to clear the name.
+   */
+  renameCommand: (id: string, name: string) => void;
 }
 
 export const useCommandStore = create<CommandState>()(
@@ -53,27 +62,31 @@ export const useCommandStore = create<CommandState>()(
       commands: [],
       addCommand: (tabId, cmd) => {
         set((state) => {
-          state.commands.push({
+          const entry: Command = {
             id: crypto.randomUUID(),
             command: cmd.command,
             originalQuestion: cmd.originalQuestion,
             timestamp: Date.now(),
             tabId,
             pinned: false,
-          });
+          };
+          if (cmd.name) entry.name = cmd.name;
+          state.commands.push(entry);
         });
       },
       addPinnedCommand: (tabId, cmd) => {
         set((state) => {
           if (state.commands.some((c) => c.pinned && c.command === cmd.command)) return;
-          state.commands.push({
+          const entry: Command = {
             id: crypto.randomUUID(),
             command: cmd.command,
             originalQuestion: cmd.originalQuestion,
             timestamp: Date.now(),
             tabId,
             pinned: true,
-          });
+          };
+          if (cmd.name) entry.name = cmd.name;
+          state.commands.push(entry);
         });
       },
       clearAll: () => {
@@ -130,6 +143,12 @@ export const useCommandStore = create<CommandState>()(
           const [moved] = state.commands.splice(fromIndex, 1);
           const insertAt = state.commands.findIndex((c) => c.id === targetId);
           state.commands.splice(insertAt, 0, moved);
+        });
+      },
+      renameCommand: (id, name) => {
+        set((state) => {
+          const cmd = state.commands.find((c) => c.id === id);
+          if (cmd) cmd.name = name || undefined;
         });
       },
     })),
