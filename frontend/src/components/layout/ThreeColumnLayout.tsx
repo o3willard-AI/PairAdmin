@@ -9,6 +9,7 @@ import { useNewTerminalHotkey } from "@/hooks/useNewTerminalHotkey";
 import { useAddCommandHotkey } from "@/hooks/useAddCommandHotkey";
 import { TerminalTabList } from "@/components/terminal/TerminalTabList";
 import { TerminalPreview } from "@/components/terminal/TerminalPreview";
+import { QuickSelectOverlay } from "@/components/QuickSelectOverlay";
 import { StatusBar } from "./StatusBar";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 
@@ -209,6 +210,11 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
           {sidebar}
         </aside>
       </div>
+
+      {/* Quick-select F-key labels — fixed overlay above both sidebars
+          (terminal tabs left, pinned commands right). pointer-events-none,
+          so it can't intercept clicks or steal focus; purely visual. */}
+      <QuickSelectOverlay />
 
       <StatusBar />
       <SettingsDialog open={settingsOpen} onClose={handleCloseSettings} />
