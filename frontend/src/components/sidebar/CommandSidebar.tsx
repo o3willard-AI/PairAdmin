@@ -27,7 +27,8 @@ export function CommandSidebar() {
     [allCommands]
   );
   const draggedIdRef = useRef<string | null>(null);
-  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const addDialogOpen = useCommandStore((state) => state.addCommandDialogOpen);
+  const setAddDialogOpen = useCommandStore((state) => state.setAddCommandDialogOpen);
   const [pinSaveStatus, setPinSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   const handleSavePinned = async () => {

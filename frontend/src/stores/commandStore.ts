@@ -24,6 +24,10 @@ export interface Command {
 
 interface CommandState {
   commands: Command[];
+  /** Add Command dialog open state — lifted into the store so
+   * useAddCommandHotkey can toggle it in sync with the Add Command button. */
+  addCommandDialogOpen: boolean;
+  setAddCommandDialogOpen: (open: boolean) => void;
   addCommand: (tabId: string, cmd: { command: string; originalQuestion: string; name?: string }) => void;
   /**
    * Adds a command already pinned — used for auto-added helper commands
@@ -60,6 +64,12 @@ export const useCommandStore = create<CommandState>()(
   devtools(
     immer((set, get) => ({
       commands: [],
+      addCommandDialogOpen: false,
+      setAddCommandDialogOpen: (open) => {
+        set((state) => {
+          state.addCommandDialogOpen = open;
+        });
+      },
       addCommand: (tabId, cmd) => {
         set((state) => {
           const entry: Command = {

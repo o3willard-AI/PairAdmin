@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { mergeAndSaveSettings } from "@/utils/settingsSync";
 import { DEFAULT_ADD_CLIPBOARD_COMMAND_HOTKEY } from "@/hooks/useAddClipboardCommandHotkey";
 import { DEFAULT_NEW_TERMINAL_HOTKEY } from "@/hooks/useNewTerminalHotkey";
+import { DEFAULT_ADD_COMMAND_HOTKEY } from "@/hooks/useAddCommandHotkey";
 
 function buildKeyCombo(event: KeyboardEvent): string {
   const parts: string[] = [];
@@ -70,6 +71,7 @@ export function HotkeysTab() {
     DEFAULT_ADD_CLIPBOARD_COMMAND_HOTKEY
   );
   const [hotkeyNewTerminal, setHotkeyNewTerminal] = useState(DEFAULT_NEW_TERMINAL_HOTKEY);
+  const [hotkeyAddCommand, setHotkeyAddCommand] = useState(DEFAULT_ADD_COMMAND_HOTKEY);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
@@ -80,6 +82,7 @@ export function HotkeysTab() {
         if (cfg.HotkeyFocusWindow) setHotkeyFocusWindow(cfg.HotkeyFocusWindow);
         if (cfg.HotkeyAddClipboardCommand) setHotkeyAddClipboardCommand(cfg.HotkeyAddClipboardCommand);
         if (cfg.HotkeyNewTerminal) setHotkeyNewTerminal(cfg.HotkeyNewTerminal);
+        if (cfg.HotkeyAddCommand) setHotkeyAddCommand(cfg.HotkeyAddCommand);
       })
       .catch(() => {});
   }, []);
@@ -92,6 +95,7 @@ export function HotkeysTab() {
         HotkeyFocusWindow: hotkeyFocusWindow,
         HotkeyAddClipboardCommand: hotkeyAddClipboardCommand,
         HotkeyNewTerminal: hotkeyNewTerminal,
+        HotkeyAddCommand: hotkeyAddCommand,
       });
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
@@ -139,6 +143,17 @@ export function HotkeysTab() {
         <p className="text-xs text-surface-text-muted">
           Grabs whatever is currently on the clipboard and adds it as a new command in the
           sidebar — copy a command in the terminal, then press this to save it.
+        </p>
+      </div>
+
+      <div className="space-y-1">
+        <HotkeyInput
+          label="Add Command"
+          value={hotkeyAddCommand}
+          onChange={setHotkeyAddCommand}
+        />
+        <p className="text-xs text-surface-text-muted">
+          Opens the "Add Command" dialog in the sidebar without needing to click the button.
         </p>
       </div>
 

@@ -3,7 +3,12 @@ import { useCommandStore } from "@/stores/commandStore";
 
 describe("commandStore", () => {
   beforeEach(() => {
-    useCommandStore.setState({ commands: [] });
+    useCommandStore.setState({
+      commands: [],
+      addCommandDialogOpen: false,
+      setAddCommandDialogOpen: (open: boolean) =>
+        useCommandStore.setState({ addCommandDialogOpen: open }),
+    });
   });
 
   it("addCommand adds to the shared commands list, unpinned by default", () => {
