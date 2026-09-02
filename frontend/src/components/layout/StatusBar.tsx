@@ -7,12 +7,16 @@ const CONNECTION_LABEL: Record<string, string> = {
   checking: "Checking…",
   connected: "Connected",
   disconnected: "Disconnected",
+  disabled: "Disabled",
 };
 
+// "disabled" uses an amber dot (deliberately chosen, not an error): the LLM
+// isn't unreachable, the user turned it off in Settings → LLM Config.
 const CONNECTION_DOT: Record<string, string> = {
   checking: "bg-surface-text-muted",
   connected: "bg-green-500",
   disconnected: "bg-red-500",
+  disabled: "bg-amber-500",
 };
 
 export function StatusBar() {

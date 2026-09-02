@@ -45,7 +45,14 @@ export function useLLMStream(tabId: string) {
       pendingRef.current.clear();
       // A successful response confirms the provider is actually reachable,
       // independent of whatever the startup connectivity check found.
-      useSettingsStore.getState().setConnectionStatus("connected");
+      // "disabled" always wins, though: it's an explicit user opt-out (Settings
+      // → LLM Config), not a connectivity result — a stale in-flight stream's
+      // done/error event must not flip it back to connected/disconnected.
+      const { connectionStatus, setConnectionStatus } =
+        useSettingsStore.getState();
+      if (connectionStatus !== "disabled") {
+        setConnectionStatus("connected");
+      }
     };
 
     const handleError = (event: { error: string }) => {
@@ -53,7 +60,12 @@ export function useLLMStream(tabId: string) {
       msgIdRef.current = null;
       nextSeqRef.current = 0;
       pendingRef.current.clear();
-      useSettingsStore.getState().setConnectionStatus("disconnected");
+      // See handleDone: "disabled" is a user choice, not a stream outcome.
+      const { connectionStatus, setConnectionStatus } =
+        useSettingsStore.getState();
+      if (connectionStatus !== "disabled") {
+        setConnectionStatus("disconnected");
+      }
     };
 
     let unsubChunk: (() => void) | null = null;
