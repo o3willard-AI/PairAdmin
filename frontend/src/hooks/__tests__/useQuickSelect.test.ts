@@ -65,6 +65,13 @@ function chordDown(extra?: { metaKey?: boolean; altKey?: boolean }) {
 describe("useQuickSelect", () => {
   beforeEach(() => {
     mockedSendToTerminal.mockClear();
+    // Remove any textareas a previous test left behind AND blur whatever
+    // holds focus — isForeignTextEntry consults document.activeElement, so a
+    // stray focused input from an earlier test would silently disable
+    // activation in this one (the guard working as designed, but leaking
+    // across tests).
+    document.body.innerHTML = "";
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     seedState();
   });
 
@@ -262,6 +269,109 @@ describe("useQuickSelect", () => {
     expect(result.current.visible).toBe(true);
   });
 
+  it("skips activation while focus is in a non-terminal text input (isForeignTextEntry guard)", () => {
+    seedState({
+      commands: [{ id: "c1", command: "echo pinned", pinned: true }],
+      tabs: [{ id: "t1", name: "main" }],
+      activeTabId: "t1",
+    });
+    const { result } = renderHook(() => useQuickSelect());
+
+    // Focus in the chat input (a foreign text entry — not the terminal's textarea)
+    const chatInput = document.createElement("textarea");
+    document.body.appendChild(chatInput);
+    chatInput.focus();
+    expect(document.activeElement).toBe(chatInput);
+
+    act(() => {
+      chordDown();
+    });
+    expect(result.current.visible).toBe(false);
+
+    act(() => {
+      dispatchKey("keydown", { key: "F1", ctrlKey: true, altKey: true });
+    });
+    expect(mockedSendToTerminal).not.toHaveBeenCalled();
+  });
+
+  it("still activates while the terminal's own hidden textarea has focus (guard exemption)", () => {
+    seedState({
+      commands: [{ id: "c1", command: "echo pinned", pinned: true }],
+      tabs: [{ id: "t1", name: "main" }],
+      activeTabId: "t1",
+    });
+    const { result } = renderHook(() => useQuickSelect());
+
+    // Mimic xterm: a hidden textarea stored as the active tab's term ref
+    const termTextarea = document.createElement("textarea");
+    document.body.appendChild(termTextarea);
+    useTerminalStore.getState().setTermRef("t1", {
+      textarea: termTextarea,
+    } as unknown as import("@xterm/xterm").Terminal);
+    termTextarea.focus();
+    expect(document.activeElement).toBe(termTextarea);
+
+    act(() => {
+      chordDown();
+    });
+    expect(result.current.visible).toBe(true);
+    expect(result.current.items).toEqual([
+      { label: "F1", kind: "command", id: "c1" },
+      { label: "F2", kind: "terminal", id: "t1" },
+    ]);
+  });
+
+  it("registers document listeners in the CAPTURE phase and detaches with the same flag on unmount", () => {
+    seedState({
+      commands: [{ id: "c1", command: "echo pinned", pinned: true }],
+      tabs: [{ id: "t1", name: "main" }],
+      activeTabId: "t1",
+    });
+    const addSpy = vi.spyOn(document, "addEventListener");
+    const removeSpy = vi.spyOn(document, "removeEventListener");
+    const { unmount } = renderHook(() => useQuickSelect());
+
+    // Capture phase on both listeners: run before xterm's own key handlers
+    // (which listen on its textarea, not the document) so (a) the chorded
+    // F-key routing wins while the terminal has focus instead of the shell
+    // also seeing it, and (b) the chord-release keyup reliably hides the
+    // overlay even if xterm swallows a keyup. Mirrors useConfiguredHotkey.
+    expect(addSpy).toHaveBeenCalledWith("keydown", expect.any(Function), { capture: true });
+    expect(addSpy).toHaveBeenCalledWith("keyup", expect.any(Function), { capture: true });
+
+    unmount();
+
+    // removeEventListener MUST carry the same capture flag or the cleanup
+    // won't actually detach the listener.
+    expect(removeSpy).toHaveBeenCalledWith("keydown", expect.any(Function), { capture: true });
+    expect(removeSpy).toHaveBeenCalledWith("keyup", expect.any(Function), { capture: true });
+
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
+
+  it("still routes keys normally after unmount+remount (cleanup genuinely detaches capture listeners)", () => {
+    seedState({
+      commands: [{ id: "c1", command: "echo pinned", pinned: true }],
+      tabs: [{ id: "t1", name: "main" }],
+      activeTabId: "t1",
+    });
+    const first = renderHook(() => useQuickSelect());
+    first.unmount();
+
+    // Second mount's activation must work — proves the first mount's capture
+    // listeners were really removed, not silently left attached (a botched
+    // removeEventListener with a mismatched capture flag would leave the
+    // first handler consuming the chord).
+    const second = renderHook(() => useQuickSelect());
+
+    act(() => {
+      chordDown();
+    });
+    expect(second.result.current.visible).toBe(true);
+    second.unmount();
+  });
+
   it("removes document listeners on unmount (no stale activation or insertion)", () => {
     seedState({
       commands: [{ id: "c1", command: "echo pinned", pinned: true }],
@@ -272,13 +382,15 @@ describe("useQuickSelect", () => {
     const removeSpy = vi.spyOn(document, "removeEventListener");
     const { unmount } = renderHook(() => useQuickSelect());
 
-    expect(addSpy).toHaveBeenCalledWith("keydown", expect.any(Function));
-    expect(addSpy).toHaveBeenCalledWith("keyup", expect.any(Function));
+    expect(addSpy).toHaveBeenCalledWith("keydown", expect.any(Function), { capture: true });
+    expect(addSpy).toHaveBeenCalledWith("keyup", expect.any(Function), { capture: true });
 
     unmount();
 
-    expect(removeSpy).toHaveBeenCalledWith("keydown", expect.any(Function));
-    expect(removeSpy).toHaveBeenCalledWith("keyup", expect.any(Function));
+    // Same capture flag on removal — a flagless removeEventListener would
+    // silently no-op against a capture-phase registration.
+    expect(removeSpy).toHaveBeenCalledWith("keydown", expect.any(Function), { capture: true });
+    expect(removeSpy).toHaveBeenCalledWith("keyup", expect.any(Function), { capture: true });
 
     // Events after unmount must be ignored entirely
     act(() => {
