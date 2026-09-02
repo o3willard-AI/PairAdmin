@@ -440,6 +440,44 @@ func TestSaveAndLoadAppConfig_HotkeyNewTerminalRoundTrip(t *testing.T) {
 	}
 }
 
+// TestLoadAppConfig_DefaultsHotkeyAddCommand verifies a fresh install ships
+// with a working default "Add Command" hotkey rather than an empty/unset one.
+func TestLoadAppConfig_DefaultsHotkeyAddCommand(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	cfg, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
+	}
+	if cfg.HotkeyAddCommand != DefaultHotkeyAddCommand {
+		t.Errorf("HotkeyAddCommand: expected default %q, got %q",
+			DefaultHotkeyAddCommand, cfg.HotkeyAddCommand)
+	}
+}
+
+// TestSaveAndLoadAppConfig_HotkeyAddCommandRoundTrip verifies a
+// user-customized binding overrides the default and survives a save/load cycle.
+func TestSaveAndLoadAppConfig_HotkeyAddCommandRoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	original := &AppConfig{HotkeyAddCommand: "Ctrl+Alt+P"}
+	if err := SaveAppConfig(original); err != nil {
+		t.Fatalf("SaveAppConfig() unexpected error: %v", err)
+	}
+
+	loaded, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
+	}
+	if loaded.HotkeyAddCommand != "Ctrl+Alt+P" {
+		t.Errorf("HotkeyAddCommand: expected 'Ctrl+Alt+P', got %q", loaded.HotkeyAddCommand)
+	}
+}
+
 // TestLoadAppConfig_DefaultsSidebarWidths verifies a fresh install ships
 // with the sidebar widths approximating the original hardcoded pixel values.
 func TestLoadAppConfig_DefaultsSidebarWidths(t *testing.T) {

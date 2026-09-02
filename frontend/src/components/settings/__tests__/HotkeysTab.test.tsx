@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
+import { DEFAULT_ADD_CLIPBOARD_COMMAND_HOTKEY } from "@/hooks/useAddClipboardCommandHotkey";
+import { DEFAULT_NEW_TERMINAL_HOTKEY } from "@/hooks/useNewTerminalHotkey";
+import { DEFAULT_ADD_COMMAND_HOTKEY } from "@/hooks/useAddCommandHotkey";
 import { HotkeysTab } from "@/components/settings/HotkeysTab";
 
 const getSettings = vi.fn();
@@ -68,6 +71,31 @@ describe("HotkeysTab", () => {
 
     expect(saveSettings).toHaveBeenCalledWith(
       expect.objectContaining({ HotkeyNewTerminal: "Ctrl+Shift+N" })
+    );
+  });
+
+  it("shows the built-in default for Add Command when unset", async () => {
+    render(<HotkeysTab />);
+
+    expect(await screen.findByDisplayValue(DEFAULT_ADD_COMMAND_HOTKEY)).toBeInTheDocument();
+  });
+
+  it("loads a previously saved Add Command combo instead of the default", async () => {
+    getSettings.mockResolvedValue({ HotkeyAddCommand: "Ctrl+Alt+P" });
+    render(<HotkeysTab />);
+
+    expect(await screen.findByDisplayValue("Ctrl+Alt+P")).toBeInTheDocument();
+  });
+
+  it("saves the current Add Command value via the Save button", async () => {
+    const user = userEvent.setup();
+    render(<HotkeysTab />);
+    await screen.findByDisplayValue(DEFAULT_ADD_COMMAND_HOTKEY);
+
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ HotkeyAddCommand: DEFAULT_ADD_COMMAND_HOTKEY })
     );
   });
 });

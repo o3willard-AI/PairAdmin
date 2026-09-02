@@ -20,7 +20,12 @@ vi.mock("@/utils/sendToTerminal", () => ({
 
 describe("CommandSidebar — Add Command", () => {
   beforeEach(() => {
-    useCommandStore.setState({ commands: [] });
+    useCommandStore.setState({
+      commands: [],
+      addCommandDialogOpen: false,
+      setAddCommandDialogOpen: (open: boolean) =>
+        useCommandStore.setState({ addCommandDialogOpen: open }),
+    });
     useTerminalStore.setState({
       tabs: [{ id: "tab-1", name: "main" }],
       activeTabId: "tab-1",
@@ -98,7 +103,12 @@ describe("CommandSidebar — Add Command", () => {
 
 describe("CommandSidebar — Save Pinned", () => {
   beforeEach(() => {
-    useCommandStore.setState({ commands: [] });
+    useCommandStore.setState({
+      commands: [],
+      addCommandDialogOpen: false,
+      setAddCommandDialogOpen: (open: boolean) =>
+        useCommandStore.setState({ addCommandDialogOpen: open }),
+    });
     useTerminalStore.setState({
       tabs: [{ id: "tab-1", name: "main" }],
       activeTabId: "tab-1",

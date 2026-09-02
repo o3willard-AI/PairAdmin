@@ -125,6 +125,7 @@ export namespace config {
 	    HotkeyFocusWindow: string;
 	    HotkeyAddClipboardCommand: string;
 	    HotkeyNewTerminal: string;
+	    HotkeyAddCommand: string;
 	    Theme: string;
 	    FontSize: number;
 	    ContextLines: number;
@@ -152,6 +153,7 @@ export namespace config {
 	        this.HotkeyFocusWindow = source["HotkeyFocusWindow"];
 	        this.HotkeyAddClipboardCommand = source["HotkeyAddClipboardCommand"];
 	        this.HotkeyNewTerminal = source["HotkeyNewTerminal"];
+	        this.HotkeyAddCommand = source["HotkeyAddCommand"];
 	        this.Theme = source["Theme"];
 	        this.FontSize = source["FontSize"];
 	        this.ContextLines = source["ContextLines"];

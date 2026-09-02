@@ -6,6 +6,7 @@ import { useTerminalCapture } from "@/hooks/useTerminalCapture";
 import { useDefaultTerminalFocus } from "@/hooks/useDefaultTerminalFocus";
 import { useAddClipboardCommandHotkey } from "@/hooks/useAddClipboardCommandHotkey";
 import { useNewTerminalHotkey } from "@/hooks/useNewTerminalHotkey";
+import { useAddCommandHotkey } from "@/hooks/useAddCommandHotkey";
 import { TerminalTabList } from "@/components/terminal/TerminalTabList";
 import { TerminalPreview } from "@/components/terminal/TerminalPreview";
 import { StatusBar } from "./StatusBar";
@@ -31,6 +32,7 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
   useDefaultTerminalFocus(); // Keep keyboard focus on the terminal by default
   useAddClipboardCommandHotkey(); // Ctrl+Shift+A (configurable): clipboard -> new sidebar command
   useNewTerminalHotkey(); // Ctrl+Shift+N (configurable): opens the "+ New" terminal dialog
+  useAddCommandHotkey(); // Ctrl+Shift+P (configurable): opens the "Add Command" dialog
 
   const activeTabId = useTerminalStore((state) => state.activeTabId);
   const tabs = useTerminalStore((state) => state.tabs);

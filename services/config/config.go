@@ -70,6 +70,11 @@ type AppConfig struct {
 	// HotkeyNewTerminal opens the "+ New" terminal dialog without requiring a
 	// mouse trip to the bottom of the terminal list — see DefaultHotkeyNewTerminal.
 	HotkeyNewTerminal string       `mapstructure:"hotkey_new_terminal" yaml:"hotkey_new_terminal"`
+	// HotkeyAddCommand opens the "Add Command" dialog in the Commands sidebar
+	// — for a user who already knows the interface, saving a command shouldn't
+	// require a mouse trip to the bottom of the sidebar. See
+	// DefaultHotkeyAddCommand.
+	HotkeyAddCommand   string       `mapstructure:"hotkey_add_command" yaml:"hotkey_add_command"`
 	Theme             string       `mapstructure:"theme" yaml:"theme"`
 	FontSize          int          `mapstructure:"font_size" yaml:"font_size"`
 	ContextLines      int          `mapstructure:"context_lines" yaml:"context_lines"`
@@ -119,6 +124,11 @@ const DefaultHotkeyAddClipboardCommand = "Ctrl+Shift+A"
 // are unclaimed here. Chosen over a Ctrl+Alt combo for the same AltGr
 // composition reason as DefaultHotkeyAddClipboardCommand.
 const DefaultHotkeyNewTerminal = "Ctrl+Shift+N"
+
+// DefaultHotkeyAddCommand is the out-of-the-box binding for
+// HotkeyAddCommand. Opens the "Add Command" dialog in the Commands sidebar —
+// Ctrl+Shift+P is a common, non-conflicting combo (P for "Prompt/add").
+const DefaultHotkeyAddCommand = "Ctrl+Shift+P"
 
 // DefaultTerminalsSidebarWidthCh / DefaultCommandsSidebarWidthCh approximate
 // the sidebars' original hardcoded pixel widths (10rem/160px and 220px) in
@@ -218,6 +228,7 @@ func LoadAppConfig() (*AppConfig, error) {
 	v.SetDefault("pinned_commands", []PinnedCommand{})
 	v.SetDefault("hotkey_add_clipboard_command", DefaultHotkeyAddClipboardCommand)
 	v.SetDefault("hotkey_new_terminal", DefaultHotkeyNewTerminal)
+	v.SetDefault("hotkey_add_command", DefaultHotkeyAddCommand)
 	v.SetDefault("terminals_sidebar_width_ch", DefaultTerminalsSidebarWidthCh)
 	v.SetDefault("commands_sidebar_width_ch", DefaultCommandsSidebarWidthCh)
 	v.SetDefault("prompt_new_host_keys", false)
@@ -251,6 +262,7 @@ func SaveAppConfig(cfg *AppConfig) error {
 	v.Set("hotkey_focus_window", cfg.HotkeyFocusWindow)
 	v.Set("hotkey_add_clipboard_command", cfg.HotkeyAddClipboardCommand)
 	v.Set("hotkey_new_terminal", cfg.HotkeyNewTerminal)
+	v.Set("hotkey_add_command", cfg.HotkeyAddCommand)
 	v.Set("theme", cfg.Theme)
 	v.Set("font_size", cfg.FontSize)
 	v.Set("context_lines", cfg.ContextLines)
