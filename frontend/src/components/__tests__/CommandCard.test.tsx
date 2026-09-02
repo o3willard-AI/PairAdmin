@@ -339,4 +339,91 @@ describe("CommandCard", () => {
     expect(useCommandStore.getState().commands[0].command).toBe("echo edited");
     expect(useCommandStore.getState().commands[0].name).toBe("New Name");
   });
+
+  it("clearing the Name (optional) field in permanent edit removes an existing name", async () => {
+    const user = userEvent.setup();
+    // Start with a command that already has a name
+    useCommandStore.setState({
+      commands: [{ ...mockCommand, name: "Old Name" }],
+    });
+
+    render(
+      <TooltipProvider>
+        <CommandCard
+          command={{ ...mockCommand, name: "Old Name" }}
+          onCopy={vi.fn()}
+          onExecute={vi.fn()}
+        />
+      </TooltipProvider>
+    );
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByTestId("command-card") });
+    await user.click(screen.getByText("Edit"));
+
+    // The name field should be pre-filled with "Old Name"
+    const nameInput = screen.getByLabelText("Name (optional)");
+    await user.clear(nameInput);
+    // Don't type anything — leave it empty to clear
+
+    // Change the command text too and save
+    const textarea = screen.getByDisplayValue("sudo systemctl restart nginx");
+    await user.clear(textarea);
+    await user.type(textarea, "echo cleared-name");
+
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(useCommandStore.getState().commands[0].command).toBe("echo cleared-name");
+    expect(useCommandStore.getState().commands[0].name).toBeUndefined();
+  });
+
+  it("tooltip shows the tempOverride text when a one-time edit is pending", async () => {
+    const user = userEvent.setup();
+    useCommandStore.setState({
+      commands: [{ ...mockCommand, tempOverride: "echo one-time-edit" }],
+    });
+
+    render(
+      <TooltipProvider>
+        <CommandCard
+          command={{ ...mockCommand, tempOverride: "echo one-time-edit" }}
+          onCopy={vi.fn()}
+          onExecute={vi.fn()}
+        />
+      </TooltipProvider>
+    );
+
+    await user.hover(screen.getByTestId("command-card"));
+
+    // The tooltip's fullCommandText should reflect the tempOverride, not the
+    // permanent command text. Since there's no name, the display text in the
+    // sidebar also shows the tempOverride — both should contain it.
+    expect(screen.getAllByText("echo one-time-edit").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("tooltip shows the tempOverride when both a name and a one-time edit are set", async () => {
+    const user = userEvent.setup();
+    render(
+      <TooltipProvider>
+        <CommandCard
+          command={{
+            ...mockCommand,
+            name: "My Named Command",
+            tempOverride: "echo temp-override",
+          }}
+          onCopy={vi.fn()}
+          onExecute={vi.fn()}
+        />
+      </TooltipProvider>
+    );
+
+    // Sidebar shows the name, not the command text or temp override
+    expect(screen.getByText("My Named Command")).toBeInTheDocument();
+    expect(screen.queryByText("sudo systemctl restart nginx")).not.toBeInTheDocument();
+    expect(screen.queryByText("echo temp-override")).not.toBeInTheDocument();
+
+    // Tooltip shows the name header + the temp override as the command text
+    await user.hover(screen.getByTestId("command-card"));
+
+    expect(screen.getByText("echo temp-override")).toBeInTheDocument();
+  });
 });

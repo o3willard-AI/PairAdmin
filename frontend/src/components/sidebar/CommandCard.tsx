@@ -37,7 +37,7 @@ export function CommandCard({
   const [editing, setEditing] = useState<"permanent" | "temporary" | null>(null);
   const [renaming, setRenaming] = useState(false);
   const displayText = command.name ?? (command.tempOverride ?? command.command);
-  const fullCommandText = command.command;
+  const fullCommandText = command.tempOverride ?? command.command;
 
   const startEdit = (mode: "permanent" | "temporary") => setEditing(mode);
   const cancelEdit = () => setEditing(null);
@@ -45,9 +45,12 @@ export function CommandCard({
   const saveEdit = (value: string, name?: string) => {
     if (editing === "permanent") {
       useCommandStore.getState().editCommand(command.id, value);
-      if (name !== undefined) {
-        useCommandStore.getState().renameCommand(command.id, name);
-      }
+      // Always sync the name in permanent edit mode — passing an empty
+      // string (or undefined coerced to "") clears any previously-set name,
+      // matching the RenameDialog behavior where clearing the field removes
+      // the name. Only applies in permanent mode; temporary edits don't
+      // touch the name.
+      useCommandStore.getState().renameCommand(command.id, name ?? "");
     } else if (editing === "temporary") {
       useCommandStore.getState().editForNextUse(command.id, value);
     }
