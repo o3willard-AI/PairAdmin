@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { devtools } from "zustand/middleware";
 
-export type ConnectionStatus = "checking" | "connected" | "disconnected";
+export type ConnectionStatus = "checking" | "connected" | "disconnected" | "disabled";
 
 interface SettingsState {
   activeModel: string; // "provider:model" display string

@@ -3,8 +3,19 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { mergeAndSaveSettings } from "@/utils/settingsSync";
 import { wailsErrorMessage } from "@/utils/wailsError";
 
-const PROVIDERS = ["openai", "anthropic", "ollama", "openrouter", "lmstudio"] as const;
+const PROVIDERS = ["openai", "anthropic", "ollama", "openrouter", "lmstudio", "disabled"] as const;
 type Provider = (typeof PROVIDERS)[number];
+
+// "disabled" renders as the user-facing "Disable Pair LLM" option; the other
+// providers keep their bare IDs as labels.
+const PROVIDER_LABELS: Record<Provider, string> = {
+  openai: "openai",
+  anthropic: "anthropic",
+  ollama: "ollama",
+  openrouter: "openrouter",
+  lmstudio: "lmstudio",
+  disabled: "Disable Pair LLM",
+};
 
 const NO_KEY_PROVIDERS: Provider[] = ["ollama", "lmstudio"];
 
@@ -14,6 +25,7 @@ interface LLMConfigTabProps {
 
 export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
   const setActiveModel = useSettingsStore((s) => s.setActiveModel);
+  const setConnectionStatus = useSettingsStore((s) => s.setConnectionStatus);
 
   const [provider, setProvider] = useState<Provider>("openai");
   const [model, setModel] = useState("");
@@ -77,6 +89,27 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
   };
 
   const handleSave = async () => {
+    // "Disable Pair LLM": persist Provider="disabled" and set the active
+    // model to the bare string "disabled" — the provider:model format
+    // SetModel expects doesn't fit a model-less disabled state, so that call
+    // is skipped. The status is set to "disabled" immediately (the startup
+    // probe in ThreeColumnLayout only runs on mount, so without this the
+    // status bar / chat input wouldn't reflect the opt-out until restart).
+    if (provider === "disabled") {
+      setSaveStatus("saving");
+      try {
+        await mergeAndSaveSettings({ Provider: "disabled" });
+        setActiveModel("disabled");
+        setConnectionStatus("disabled");
+        setSaveStatus("saved");
+        setTimeout(() => setSaveStatus("idle"), 2000);
+        onClose();
+      } catch {
+        setSaveStatus("error");
+        setTimeout(() => setSaveStatus("idle"), 3000);
+      }
+      return;
+    }
     if (model.includes("\\")) {
       setSaveStatus("error");
       setTimeout(() => setSaveStatus("idle"), 3000);
@@ -98,6 +131,15 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
       }
       const activeModelStr = await SetModel(`${provider}:${model}`);
       setActiveModel(activeModelStr || `${provider}:${model}`);
+      // Re-enable restore: release the "disabled" state so normal
+      // connected/disconnected status updates resume (stream events drive
+      // them from here on). "disconnected" is the honest baseline — nothing
+      // re-probes on save — but it un-blocks the stream-event path, whereas
+      // leaving "disabled" in place would dead-end the chat input until
+      // restart.
+      if (useSettingsStore.getState().connectionStatus === "disabled") {
+        setConnectionStatus("disconnected");
+      }
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
       onClose();
@@ -108,6 +150,9 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
   };
 
   const requiresApiKey = !NO_KEY_PROVIDERS.includes(provider);
+  // "Disable Pair LLM" is model-less: no Model, no Server URL, no API Key,
+  // nothing to test — only the Provider dropdown and Save remain.
+  const isDisabledProvider = provider === "disabled";
 
   return (
     <div className="space-y-4 p-6">
@@ -121,25 +166,27 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
           >
             {PROVIDERS.map((p) => (
               <option key={p} value={p} className="bg-surface-2 text-surface-text">
-                {p}
+                {PROVIDER_LABELS[p]}
               </option>
             ))}
           </select>
         </div>
       </div>
 
-      <div className="space-y-1">
-        <label className="text-xs text-surface-text-muted">Model</label>
-        <input
-          type="text"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          placeholder="e.g. gpt-4o, claude-3-5-sonnet-20241022"
-          className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
-        />
-      </div>
+      {!isDisabledProvider && (
+        <div className="space-y-1">
+          <label className="text-xs text-surface-text-muted">Model</label>
+          <input
+            type="text"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder="e.g. gpt-4o, claude-3-5-sonnet-20241022"
+            className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
+          />
+        </div>
+      )}
 
-      {(provider === "ollama") ? (
+      {!isDisabledProvider && (provider === "ollama") ? (
         <div className="space-y-1">
           <label className="text-xs text-surface-text-muted">Server URL</label>
           <input
@@ -168,7 +215,7 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
         </div>
       ) : null}
 
-      {requiresApiKey ? (
+      {!isDisabledProvider && requiresApiKey ? (
         <div className="space-y-1">
           <label className="text-xs text-surface-text-muted">API Key</label>
           <input
@@ -179,28 +226,30 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
             className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
           />
         </div>
-      ) : (
+      ) : !isDisabledProvider ? (
         <div className="space-y-1">
           <label className="text-xs text-surface-text-muted">API Key</label>
           <p className="text-xs text-surface-text-muted">No API key required for {provider}</p>
         </div>
-      )}
+      ) : null}
 
-      <div className="space-y-1">
-        <button
-          onClick={handleTestConnection}
-          disabled={testStatus === "testing"}
-          className="bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-4 py-1.5 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {testStatus === "testing" ? "Testing..." : "Test Connection"}
-        </button>
-        {testStatus === "ok" && (
-          <p className="text-xs text-green-400 mt-1">&#x2713; {testMessage}</p>
-        )}
-        {testStatus === "error" && (
-          <p className="text-xs text-red-400 mt-1">&#x2717; {testMessage}</p>
-        )}
-      </div>
+      {!isDisabledProvider && (
+        <div className="space-y-1">
+          <button
+            onClick={handleTestConnection}
+            disabled={testStatus === "testing"}
+            className="bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-4 py-1.5 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {testStatus === "testing" ? "Testing..." : "Test Connection"}
+          </button>
+          {testStatus === "ok" && (
+            <p className="text-xs text-green-400 mt-1">&#x2713; {testMessage}</p>
+          )}
+          {testStatus === "error" && (
+            <p className="text-xs text-red-400 mt-1">&#x2717; {testMessage}</p>
+          )}
+        </div>
+      )}
 
       <div className="pt-2 flex items-center gap-3">
         <button

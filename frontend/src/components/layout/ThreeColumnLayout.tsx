@@ -111,11 +111,27 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
           setConnectionStatus("disconnected");
           return;
         }
+        // "Disable Pair LLM" (Settings → LLM Config) is an explicit opt-out:
+        // never probe, never show Connected/Disconnected — show Disabled and
+        // surface it in the chat input too.
+        if (provider === "disabled") {
+          setConnectionStatus("disabled");
+          return;
+        }
         try {
           await TestConnection(provider, model ?? "", "");
-          setConnectionStatus("connected");
+          // The probe must only fill in the answer while it's still the
+          // newest authority: if the status has moved on while this network
+          // call was in flight — most importantly the user saving "Disable
+          // Pair LLM" mid-probe — their choice wins and this stale result is
+          // discarded rather than flipping "disabled" back to connected.
+          if (useSettingsStore.getState().connectionStatus === "checking") {
+            setConnectionStatus("connected");
+          }
         } catch {
-          setConnectionStatus("disconnected");
+          if (useSettingsStore.getState().connectionStatus === "checking") {
+            setConnectionStatus("disconnected");
+          }
         }
       })
       .catch(() => {}); // Wails runtime unavailable in test/dev environments

@@ -162,6 +162,11 @@ func (s *LLMService) Startup(ctx context.Context) {
 // Returns immediately; response tokens arrive asynchronously via events.
 func (s *LLMService) SendMessage(tabId, userInput, terminalContext string) error {
 	if s.activeProvider == nil {
+		if s.cfg.Provider == "disabled" {
+			// Explicit user opt-out ("Disable Pair LLM" in Settings → LLM
+			// Config) — not a misconfiguration, so word the error accordingly.
+			return fmt.Errorf("Pair LLM is disabled; re-enable it in Settings → LLM Config")
+		}
 		return fmt.Errorf("no LLM provider configured; set PAIRADMIN_PROVIDER environment variable")
 	}
 
@@ -420,6 +425,13 @@ func buildProvider(cfg Config, keyFn func(string) string) llm.Provider {
 			return nil
 		}
 		return p
+	case "disabled":
+		// Explicit opt-out (Settings → LLM Config "Disable Pair LLM"): never
+		// construct a provider, so SendMessage can never attempt any
+		// connection. Returning nil here (same as the default case, but with
+		// the intent spelled out) makes SendMessage reject with a descriptive
+		// error instead of reaching out to any LLM endpoint.
+		return nil
 	default:
 		return nil
 	}
