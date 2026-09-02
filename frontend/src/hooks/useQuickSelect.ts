@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useCommandStore } from "@/stores/commandStore";
 import { sendToTerminal } from "@/utils/sendToTerminal";
+import { isForeignTextEntry } from "@/utils/hotkey";
 
 export interface QuickSelectItem {
   label: string; // "F1" .. "F12"
@@ -51,6 +52,19 @@ export function useQuickSelect(): { visible: boolean; items: QuickSelectItem[] }
       const chordHeld = event.ctrlKey && (event.altKey || event.metaKey);
       if (!chordHeld) return;
 
+      // Don't activate or route F-keys while the user is typing in a
+      // non-terminal text entry (chat box, dialog inputs, settings fields) —
+      // same isForeignTextEntry check useConfiguredHotkey applies; the active
+      // terminal's own hidden textarea is exempted, so the primary use case
+      // (terminal focused) is unaffected. The keyup release handler below is
+      // deliberately NOT guarded: releasing the chord must always hide the
+      // overlay, whatever the focus landed in meanwhile.
+      const { activeTabId, getTermRef } = useTerminalStore.getState();
+      const term = getTermRef(activeTabId);
+      const terminalTextarea = (term as unknown as { textarea?: HTMLTextAreaElement } | null)
+        ?.textarea;
+      if (isForeignTextEntry(document.activeElement, terminalTextarea)) return;
+
       if (FKEY_RE.test(event.key)) {
         // Suppress the F-key's default meaning for every chorded press —
         // F5 must not refresh, F11 must not fullscreen, F1 must not open
@@ -94,11 +108,18 @@ export function useQuickSelect(): { visible: boolean; items: QuickSelectItem[] }
       }
     };
 
-    document.addEventListener("keydown", handleKeyDown);
-    document.addEventListener("keyup", handleKeyUp);
+    // Capture phase on both listeners: run before xterm's own key handlers
+    // (which listen on its textarea, not the document) so (a) the chorded
+    // F-key routing wins while the terminal has focus instead of the shell
+    // also seeing it, and (b) the chord-release keyup reliably hides the
+    // overlay even if xterm swallows a keyup. Mirrors useConfiguredHotkey.
+    // removeEventListener MUST carry the same capture flag or the cleanup
+    // won't actually detach.
+    document.addEventListener("keydown", handleKeyDown, { capture: true });
+    document.addEventListener("keyup", handleKeyUp, { capture: true });
     return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      document.removeEventListener("keyup", handleKeyUp);
+      document.removeEventListener("keydown", handleKeyDown, { capture: true });
+      document.removeEventListener("keyup", handleKeyUp, { capture: true });
     };
   }, [activate]);
 
