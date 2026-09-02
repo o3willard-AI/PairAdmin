@@ -60,6 +60,44 @@ func (s *RemoteService) ListRemoteHosts() ([]config.RemoteHost, error) {
 	return hosts, nil
 }
 
+// RemoteHostStatus couples a saved host's non-secret metadata with whether a
+// credential is present for it in the keychain — lets the UI flag saved hosts
+// that will still prompt for authentication on connect (those that were saved
+// metadata-only, e.g. via "Save Terminal" on the tab context menu).
+type RemoteHostStatus struct {
+	Host          config.RemoteHost `json:"host"`
+	HasCredential bool              `json:"hasCredential"`
+}
+
+// ListRemoteHostsWithStatus returns saved hosts (most-recently-used first),
+// each annotated with whether a password or key passphrase is stored for it.
+// A non-empty stored value for either secretKind counts as "has a credential";
+// a Get error (backend unavailable) is treated the same as "absent" so a
+// transient keychain failure can't fabricate a false-positive credential flag.
+func (s *RemoteService) ListRemoteHostsWithStatus() ([]RemoteHostStatus, error) {
+	hosts, err := s.ListRemoteHosts()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]RemoteHostStatus, 0, len(hosts))
+	for _, h := range hosts {
+		has := keychainHasCredential(s.keychainClient, h.ID)
+		out = append(out, RemoteHostStatus{Host: h, HasCredential: has})
+	}
+	return out, nil
+}
+
+// keychainHasCredential reports whether the keychain holds a non-empty secret
+// for the given host under either of its secret kinds (password or passphrase).
+func keychainHasCredential(kc *keychain.Client, hostID string) bool {
+	for _, kind := range []string{"password", "passphrase"} {
+		if v, err := kc.Get(remoteKeychainKey(hostID, kind)); err == nil && v != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // SaveRemoteHost upserts a RemoteHost entry (by ID, generating one if empty).
 // Callers should only invoke this after a successful connection — secrets are
 // never persisted for hosts that haven't been verified reachable. If

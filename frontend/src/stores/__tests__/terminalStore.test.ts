@@ -54,6 +54,59 @@ describe("terminalStore", () => {
     expect(useTerminalStore.getState().activeTabId).toBe("%0");
   });
 
+  // --- addTab with remote metadata ---
+  it("addTab stores host, port, and remote metadata for a remote tab", () => {
+    const remote = {
+      host: "10.0.1.5",
+      port: 22,
+      username: "ubuntu",
+      authType: "privatekey" as const,
+      privateKeyPath: "/home/user/.ssh/id_ed25519",
+      useTmux: true,
+      tmuxSessionName: "work",
+    };
+    useTerminalStore.getState().addTab(
+      "ssh:1",
+      "ubuntu@10.0.1.5",
+      false,
+      undefined,
+      "ssh",
+      "host-id-1",
+      "10.0.1.5",
+      22,
+      remote
+    );
+    const tab = useTerminalStore.getState().tabs[0];
+    expect(tab.host).toBe("10.0.1.5");
+    expect(tab.port).toBe(22);
+    expect(tab.remote).toEqual(remote);
+  });
+
+  it("addTab for a local tab leaves host, port, and remote undefined", () => {
+    useTerminalStore.getState().addTab("%0", "Terminal 1");
+    const tab = useTerminalStore.getState().tabs[0];
+    expect(tab.host).toBeUndefined();
+    expect(tab.port).toBeUndefined();
+    expect(tab.remote).toBeUndefined();
+  });
+
+  // --- setSavedHostId ---
+  it("setSavedHostId updates savedHostId on the targeted tab only", () => {
+    useTerminalStore.getState().addTab("ssh:1", "m[a]", false, undefined, "ssh");
+    useTerminalStore.getState().addTab("ssh:2", "m[b]", false, undefined, "ssh", "old-id");
+    useTerminalStore.getState().setSavedHostId("ssh:1", "new-host-id");
+    const { tabs } = useTerminalStore.getState();
+    expect(tabs.find((t) => t.id === "ssh:1")?.savedHostId).toBe("new-host-id");
+    // The other tab's savedHostId is untouched.
+    expect(tabs.find((t) => t.id === "ssh:2")?.savedHostId).toBe("old-id");
+  });
+
+  it("setSavedHostId on an unknown id is a no-op", () => {
+    useTerminalStore.getState().addTab("ssh:1", "m[a]", false, undefined, "ssh", "orig");
+    useTerminalStore.getState().setSavedHostId("does-not-exist", "ignored");
+    expect(useTerminalStore.getState().tabs[0].savedHostId).toBe("orig");
+  });
+
   // --- removeTab ---
   it("removeTab removes a tab from the array", () => {
     useTerminalStore.getState().addTab("%0", "main:0.0");
