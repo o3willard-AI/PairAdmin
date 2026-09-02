@@ -243,6 +243,76 @@ func TestRemoteService_RenameRemoteHost_SetsNameWithoutClobberingOtherFields(t *
 	}
 }
 
+func TestRemoteService_ListRemoteHostsWithStatus_CredentialPresent(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	mem := newInMemoryKeyring()
+	kc := makeTestKeychainClient(mem)
+	svc := NewRemoteService(kc)
+
+	// A host saved WITH a password should be reported as having a credential.
+	withPW, err := svc.SaveRemoteHost(config.RemoteHost{Kind: "ssh", Host: "10.0.1.5", Username: "ubuntu", AuthType: "password"}, "hunter2", "")
+	if err != nil {
+		t.Fatalf("SaveRemoteHost() unexpected error: %v", err)
+	}
+
+	// A host saved WITHOUT any secret (metadata-only) should be reported as lacking one.
+	metaOnly, err := svc.SaveRemoteHost(config.RemoteHost{Kind: "ssh", Host: "10.0.1.6", Username: "deploy", AuthType: "privatekey", PrivateKeyPath: "/home/user/.ssh/id_ed25519"}, "", "")
+	if err != nil {
+		t.Fatalf("SaveRemoteHost() unexpected error: %v", err)
+	}
+
+	statuses, err := svc.ListRemoteHostsWithStatus()
+	if err != nil {
+		t.Fatalf("ListRemoteHostsWithStatus() unexpected error: %v", err)
+	}
+	if len(statuses) != 2 {
+		t.Fatalf("expected 2 statuses, got %d", len(statuses))
+	}
+
+	got := map[string]bool{}
+	for _, st := range statuses {
+		got[st.Host.ID] = st.HasCredential
+	}
+	if !got[withPW.ID] {
+		t.Errorf("expected host %q (password stored) to have a credential, got hasCredential=false", withPW.ID)
+	}
+	if got[metaOnly.ID] {
+		t.Errorf("expected host %q (metadata-only) to lack a credential, got hasCredential=true", metaOnly.ID)
+	}
+}
+
+func TestRemoteService_ListRemoteHostsWithStatus_PassphraseCountsAsCredential(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	mem := newInMemoryKeyring()
+	kc := makeTestKeychainClient(mem)
+	svc := NewRemoteService(kc)
+
+	saved, err := svc.SaveRemoteHost(config.RemoteHost{Kind: "ssh", Host: "10.0.1.7", Username: "ubuntu", AuthType: "privatekey", PrivateKeyPath: "/home/user/.ssh/id_ed25519"}, "", "correct horse")
+	if err != nil {
+		t.Fatalf("SaveRemoteHost() unexpected error: %v", err)
+	}
+	if saved.ID == "" {
+		t.Fatal("expected generated host ID")
+	}
+
+	statuses, err := svc.ListRemoteHostsWithStatus()
+	if err != nil {
+		t.Fatalf("ListRemoteHostsWithStatus() unexpected error: %v", err)
+	}
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 status, got %d", len(statuses))
+	}
+	if !statuses[0].HasCredential {
+		t.Error("expected a stored key passphrase to count as a credential, got hasCredential=false")
+	}
+}
+
 func TestRemoteService_RenameRemoteHost_UnknownID(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)

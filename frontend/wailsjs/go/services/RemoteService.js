@@ -10,6 +10,10 @@ export function ListRemoteHosts() {
   return window['go']['services']['RemoteService']['ListRemoteHosts']();
 }
 
+export function ListRemoteHostsWithStatus() {
+  return window['go']['services']['RemoteService']['ListRemoteHostsWithStatus']();
+}
+
 export function RenameRemoteHost(arg1, arg2) {
   return window['go']['services']['RemoteService']['RenameRemoteHost'](arg1, arg2);
 }

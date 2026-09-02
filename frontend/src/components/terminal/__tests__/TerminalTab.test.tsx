@@ -6,16 +6,193 @@ import { TerminalTab } from "@/components/terminal/TerminalTab";
 import { useTerminalStore } from "@/stores/terminalStore";
 
 const renameRemoteHost = vi.fn();
+const saveRemoteHost = vi.fn();
 
 vi.mock("../../../../wailsjs/go/services/RemoteService", () => ({
   RenameRemoteHost: (...args: unknown[]) => renameRemoteHost(...args),
+  SaveRemoteHost: (...args: unknown[]) => saveRemoteHost(...args),
 }));
 
 describe("TerminalTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     renameRemoteHost.mockResolvedValue(undefined);
+    saveRemoteHost.mockResolvedValue({ ID: "saved-host-99" });
     useTerminalStore.setState({ tabs: [], activeTabId: "" });
+  });
+
+  // Test A1: hover on a remote tab shows name + host:port; local shows name only.
+  it("shows host:port in the tooltip when the tab has a host", async () => {
+    const remote = {
+      host: "10.0.1.5",
+      port: 22,
+      username: "ubuntu",
+      authType: "password" as const,
+      privateKeyPath: "",
+      useTmux: false,
+      tmuxSessionName: "",
+    };
+    const tab = {
+      id: "ssh:abc",
+      name: "ubuntu@10.0.1.5",
+      kind: "ssh" as const,
+      host: "10.0.1.5",
+      port: 22,
+      remote,
+    };
+    const user = userEvent.setup();
+    render(<TerminalTab tab={tab} isActive={false} onClick={vi.fn()} />);
+
+    await user.hover(screen.getByText("ubuntu@10.0.1.5"));
+
+    expect(await screen.findByText("10.0.1.5:22")).toBeInTheDocument();
+  });
+
+  it("does NOT show host:port in the tooltip for a local tab", async () => {
+    const tab = { id: "tmux:%0", name: "main:0.0" };
+    const user = userEvent.setup();
+    render(<TerminalTab tab={tab} isActive={false} onClick={vi.fn()} />);
+
+    await user.hover(screen.getByText("main:0.0"));
+
+    // A little wait to give an erroneously-rendered tooltip a chance to appear.
+    await new Promise((r) => setTimeout(r, 30));
+    // The tab name itself contains a colon ("main:0.0"), so match the distinct
+    // host:port shape (an IP followed by :port) rather than any colon.
+    expect(screen.queryByText(/\d+\.\d+\.\d+\.\d+:\d+/)).not.toBeInTheDocument();
+  });
+
+  // Test A2: context-menu states.
+  it("local tab context menu offers Rename only (no Save/Saved)", async () => {
+    const tab = { id: "tmux:%0", name: "main:0.0", kind: "local" as const };
+    const user = userEvent.setup();
+    render(<TerminalTab tab={tab} isActive={false} onClick={vi.fn()} />);
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("main:0.0") });
+
+    expect(screen.getByText("Rename")).toBeInTheDocument();
+    expect(screen.queryByText("Save Terminal")).not.toBeInTheDocument();
+    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
+  });
+
+  it("unsaved remote tab offers Rename and Save Terminal", async () => {
+    const tab = {
+      id: "ssh:abc",
+      name: "ubuntu@10.0.1.5",
+      kind: "ssh" as const,
+      host: "10.0.1.5",
+      port: 22,
+      remote: {
+        host: "10.0.1.5",
+        port: 22,
+        username: "ubuntu",
+        authType: "password" as const,
+        privateKeyPath: "",
+        useTmux: false,
+        tmuxSessionName: "",
+      },
+    };
+    const user = userEvent.setup();
+    render(<TerminalTab tab={tab} isActive={false} onClick={vi.fn()} />);
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("ubuntu@10.0.1.5") });
+
+    expect(screen.getByText("Rename")).toBeInTheDocument();
+    expect(screen.getByText("Save Terminal")).toBeInTheDocument();
+    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
+  });
+
+  it("saved remote tab shows a disabled 'Saved' item instead of 'Save Terminal'", async () => {
+    const tab = {
+      id: "ssh:abc",
+      name: "Prod Web Server",
+      kind: "ssh" as const,
+      savedHostId: "host-id-1",
+      host: "10.0.1.5",
+      port: 22,
+    };
+    const user = userEvent.setup();
+    render(<TerminalTab tab={tab} isActive={false} onClick={vi.fn()} />);
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("Prod Web Server") });
+
+    const saved = screen.getByText("Saved");
+    expect(saved).toBeInTheDocument();
+    expect(screen.queryByText("Save Terminal")).not.toBeInTheDocument();
+    // It must be non-selectable (disabled / pointer-events-none per the styling).
+    expect(saved.closest("[data-disabled]")).not.toBeNull();
+  });
+
+  it("'Save Terminal' persists metadata only (no secrets) and flips the tab to saved", async () => {
+    useTerminalStore.getState().addTab(
+      "ssh:abc",
+      "ubuntu@10.0.1.5",
+      false,
+      undefined,
+      "ssh",
+      undefined,
+      "10.0.1.5",
+      22,
+      {
+        host: "10.0.1.5",
+        port: 22,
+        username: "ubuntu",
+        authType: "password" as const,
+        privateKeyPath: "",
+        useTmux: true,
+        tmuxSessionName: "work",
+      }
+    );
+    const tab = {
+      id: "ssh:abc",
+      name: "ubuntu@10.0.1.5",
+      kind: "ssh" as const,
+      host: "10.0.1.5",
+      port: 22,
+      remote: {
+        host: "10.0.1.5",
+        port: 22,
+        username: "ubuntu",
+        authType: "password" as const,
+        privateKeyPath: "",
+        useTmux: true,
+        tmuxSessionName: "work",
+      },
+    };
+    const user = userEvent.setup();
+    render(<TerminalTab tab={tab} isActive={false} onClick={vi.fn()} />);
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("ubuntu@10.0.1.5") });
+    await user.click(screen.getByText("Save Terminal"));
+
+    await vi.waitFor(() => expect(saveRemoteHost).toHaveBeenCalledTimes(1));
+    const [record, password, passphrase] = saveRemoteHost.mock.calls[0];
+    expect(record).toMatchObject({
+      Host: "10.0.1.5",
+      Port: 22,
+      Username: "ubuntu",
+      AuthType: "password",
+      Name: "ubuntu@10.0.1.5",
+      UseTmux: true,
+      TmuxSessionName: "work",
+      Kind: "ssh",
+    });
+    // No credentials may be passed — metadata only.
+    expect(password).toBe("");
+    expect(passphrase).toBe("");
+    // The returned ID is written back onto the tab so the menu flips to "Saved".
+    expect(useTerminalStore.getState().tabs[0].savedHostId).toBe("saved-host-99");
+  });
+
+  it("'Save Terminal' is not offered for a tab with no remote metadata", async () => {
+    const tab = { id: "ssh:orphan", name: "orphan@10.0.1.5", kind: "ssh" as const };
+    const user = userEvent.setup();
+    render(<TerminalTab tab={tab} isActive={false} onClick={vi.fn()} />);
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("orphan@10.0.1.5") });
+
+    expect(screen.queryByText("Save Terminal")).not.toBeInTheDocument();
+    expect(saveRemoteHost).not.toHaveBeenCalled();
   });
 
   // Test 4: renders warning icon when tab.degraded is true

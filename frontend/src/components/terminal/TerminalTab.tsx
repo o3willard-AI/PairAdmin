@@ -13,7 +13,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Pencil } from "lucide-react";
+import { Pencil, Save, Check } from "lucide-react";
 
 interface TerminalTabProps {
   tab: TerminalTab;
@@ -67,6 +67,38 @@ export function TerminalTab({ tab, isActive, onClick }: TerminalTabProps) {
   };
 
   const cancelRename = () => setRenaming(false);
+
+  // Builds a config.RemoteHost from this tab's non-secret connection metadata
+  // and persists it (metadata only — password and passphrase are passed empty,
+  // so nothing reaches the keychain). On success the returned generated host ID
+  // is written back onto the tab so its context menu flips from "Save Terminal"
+  // to a disabled "Saved" item. Best-effort: failures are logged, and since the
+  // connection is already open, there's no user-facing error to raise.
+  const handleSaveTerminal = async () => {
+    if (!tab.remote) return;
+    try {
+      const { SaveRemoteHost } = await import(
+        /* @vite-ignore */ "../../../wailsjs/go/services/RemoteService"
+      );
+      const record = {
+        ID: "",
+        Kind: tab.kind === "winrm" ? "winrm" : "ssh",
+        Name: tab.name,
+        Host: tab.remote.host,
+        Port: tab.remote.port,
+        Username: tab.remote.username,
+        AuthType: tab.remote.authType,
+        PrivateKeyPath: tab.remote.privateKeyPath,
+        LastUsed: "",
+        UseTmux: tab.remote.useTmux,
+        TmuxSessionName: tab.remote.tmuxSessionName,
+      };
+      const saved = await SaveRemoteHost(record, "", "");
+      useTerminalStore.getState().setSavedHostId(tab.id, saved.ID);
+    } catch (err) {
+      console.error("Failed to save terminal:", err);
+    }
+  };
 
   // The context menu closes when "Rename" is clicked and returns focus to
   // its trigger asynchronously for accessibility — but entering rename mode
@@ -128,6 +160,11 @@ export function TerminalTab({ tab, isActive, onClick }: TerminalTabProps) {
             </TooltipTrigger>
             <TooltipContent side="right">
               <p className="text-xs break-words">{tab.name}</p>
+              {tab.host && (
+                <p className="text-xs break-words text-surface-text-muted">
+                  {tab.host}:{tab.port}
+                </p>
+              )}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -156,6 +193,17 @@ export function TerminalTab({ tab, isActive, onClick }: TerminalTabProps) {
           <Pencil size={12} />
           Rename
         </ContextMenuItem>
+        {tab.savedHostId ? (
+          <ContextMenuItem disabled>
+            <Check size={12} />
+            Saved
+          </ContextMenuItem>
+        ) : tab.host ? (
+          <ContextMenuItem onClick={handleSaveTerminal}>
+            <Save size={12} />
+            Save Terminal
+          </ContextMenuItem>
+        ) : null}
       </ContextMenuContent>
     </ContextMenu>
   );

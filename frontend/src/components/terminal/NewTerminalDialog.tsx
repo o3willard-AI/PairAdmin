@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { wailsErrorMessage } from "@/utils/wailsError";
-import type { config } from "../../../wailsjs/go/models";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { AlertTriangle } from "lucide-react";
+import type { config, services } from "../../../wailsjs/go/models";
 
 export interface NewTerminalDialogProps {
   open: boolean;
@@ -80,15 +82,15 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
   const [useTmux, setUseTmux] = useState(false);
   const [tmuxSessionName, setTmuxSessionName] = useState("");
 
-  const [recentHosts, setRecentHosts] = useState<config.RemoteHost[]>([]);
+  const [recentHosts, setRecentHosts] = useState<services.RemoteHostStatus[]>([]);
   const [connectStatus, setConnectStatus] = useState<"idle" | "connecting" | "error">("idle");
   const [connectError, setConnectError] = useState("");
   const [saveWarning, setSaveWarning] = useState("");
 
   const refreshRecentHosts = () => {
     import(/* @vite-ignore */ "../../../wailsjs/go/services/RemoteService")
-      .then(({ ListRemoteHosts }) => ListRemoteHosts())
-      .then((hosts: config.RemoteHost[]) => setRecentHosts(hosts || []))
+      .then(({ ListRemoteHostsWithStatus }) => ListRemoteHostsWithStatus())
+      .then((statuses: services.RemoteHostStatus[]) => setRecentHosts(statuses || []))
       .catch(() => setRecentHosts([]));
   };
 
@@ -259,7 +261,28 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
       const degradedMsg =
         params.kind === "winrm" ? "WinRM: command/response only — not a live shell" : undefined;
       const displayName = params.name || `${params.username}@${params.host}`;
-      store.addTab(resolvedId, displayName, degraded, degradedMsg, params.kind, savedHostId);
+      store.addTab(
+        resolvedId,
+        displayName,
+        degraded,
+        degradedMsg,
+        params.kind,
+        savedHostId,
+        // Host/port drive the hover tooltip's second line; the remote block
+        // carries the non-secret metadata needed by the tab context menu's
+        // "Save Terminal" action. Credentials are never stored on the tab.
+        params.host,
+        params.port,
+        {
+          host: params.host,
+          port: params.port,
+          username: params.username,
+          authType: params.authType,
+          privateKeyPath: params.authType === "privatekey" ? params.privateKeyPath : "",
+          useTmux: params.kind === "ssh" ? params.useTmux : false,
+          tmuxSessionName: params.kind === "ssh" ? params.tmuxSessionName : "",
+        }
+      );
       store.setActiveTab(resolvedId);
 
       // Only auto-close on a clean save; if the save/touch step warned, leave
@@ -348,35 +371,51 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
     setStep("form");
   };
 
-  const renderHostRow = (h: config.RemoteHost) => (
-    <div
-      key={h.ID}
-      className="flex items-center justify-between px-3 py-2 rounded border border-surface-border hover:bg-surface-2"
-    >
-      <div className="text-sm text-surface-text truncate">
-        {h.Name || `${h.Username}@${h.Host}`}
-        <span className="text-xs text-surface-text-muted ml-2">{h.Kind}</span>
+  const renderHostRow = (st: services.RemoteHostStatus) => {
+    const h = st.host;
+    return (
+      <div
+        key={h.ID}
+        className="flex items-center justify-between px-3 py-2 rounded border border-surface-border hover:bg-surface-2"
+      >
+        <div className="text-sm text-surface-text truncate">
+          {h.Name || `${h.Username}@${h.Host}`}
+          <span className="text-xs text-surface-text-muted ml-2">{h.Kind}</span>
+          {!st.hasCredential && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger render={<span className="ml-2 inline-flex text-amber-500 align-middle" />}>
+                  <AlertTriangle size={13} />
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-xs">
+                  No stored credential — you&apos;ll be prompted to authenticate on connect
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            className="text-xs bg-surface-3 hover:bg-surface-3/80 text-surface-text px-2 py-1 rounded disabled:opacity-50"
+            disabled={connectStatus === "connecting"}
+            onClick={() => handleReconnect(h)}
+          >
+            Connect
+          </button>
+          <button
+            className="text-xs text-surface-text-muted hover:text-red-400 px-1.5 py-1"
+            aria-label={`Forget saved host ${h.Username}@${h.Host}`}
+            onClick={() => handleForget(h.ID)}
+          >
+            &times;
+          </button>
+        </div>
       </div>
-      <div className="flex items-center gap-1 shrink-0">
-        <button
-          className="text-xs bg-surface-3 hover:bg-surface-3/80 text-surface-text px-2 py-1 rounded disabled:opacity-50"
-          disabled={connectStatus === "connecting"}
-          onClick={() => handleReconnect(h)}
-        >
-          Connect
-        </button>
-        <button
-          className="text-xs text-surface-text-muted hover:text-red-400 px-1.5 py-1"
-          aria-label={`Forget saved host ${h.Username}@${h.Host}`}
-          onClick={() => handleForget(h.ID)}
-        >
-          &times;
-        </button>
-      </div>
-    </div>
-  );
+    );
+  };
 
-  const filteredRecentHosts = recentHosts.filter((h) => {
+  const filteredRecentHosts = recentHosts.filter((st) => {
+    const h = st.host;
     const q = recentSearch.trim().toLowerCase();
     if (!q) return true;
     const haystack = `${h.Name || ""} ${h.Username}@${h.Host} ${h.Kind}`.toLowerCase();

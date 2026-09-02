@@ -3,6 +3,16 @@ import { immer } from "zustand/middleware/immer";
 import { devtools } from "zustand/middleware";
 import type { Terminal } from "@xterm/xterm";
 
+export interface TerminalRemoteConnection {
+  host: string;
+  port: number;
+  username: string;
+  authType: "password" | "privatekey";
+  privateKeyPath: string;
+  useTmux: boolean;
+  tmuxSessionName: string;
+}
+
 export interface TerminalTab {
   id: string;
   name: string;
@@ -17,6 +27,14 @@ export interface TerminalTab {
    * so future reconnects use the friendly name instead of reverting to
    * "username@host". Absent for local tabs and unsaved remote connections. */
   savedHostId?: string;
+  /** Host and port of the remote endpoint this tab is connected to — used for the
+   * hover tooltip's second line ({host}:{port}). Absent for local tabs. */
+  host?: string;
+  port?: number;
+  /** Non-secret connection metadata needed to reconstruct a config.RemoteHost for
+   * the tab context menu's "Save Terminal" action (which persists metadata only,
+   * never credentials). Absent for local tabs. */
+  remote?: TerminalRemoteConnection;
 }
 
 interface TerminalState {
@@ -34,10 +52,18 @@ interface TerminalState {
     degraded?: boolean,
     degradedMsg?: string,
     kind?: "local" | "ssh" | "winrm",
-    savedHostId?: string
+    savedHostId?: string,
+    host?: string,
+    port?: number,
+    remote?: TerminalRemoteConnection
   ) => void;
   removeTab: (id: string) => void;
   renameTab: (id: string, name: string) => void;
+  /** Records the saved-host ID on an existing tab (e.g. the ID returned by a
+   * metadata-only "Save Terminal" issued from the tab's context menu), leaving
+   * every other field intact. Re-running is idempotent; unknown ids are a
+   * no-op (the tab may have been closed in the meantime). */
+  setSavedHostId: (id: string, savedHostId: string) => void;
   clearTabs: () => void;
   setTermRef: (tabId: string, term: Terminal | null) => void;
   getTermRef: (tabId: string) => Terminal | undefined;
@@ -67,10 +93,10 @@ export const useTerminalStore = create<TerminalState>()(
           state.activeTabId = tabId;
         });
       },
-      addTab: (id, name, degraded, degradedMsg, kind, savedHostId) => {
+      addTab: (id, name, degraded, degradedMsg, kind, savedHostId, host, port, remote) => {
         set((state) => {
           if (state.tabs.some((t) => t.id === id)) return; // duplicate guard
-          state.tabs.push({ id, name, degraded, degradedMsg, kind, savedHostId });
+          state.tabs.push({ id, name, degraded, degradedMsg, kind, savedHostId, host, port, remote });
           if (state.tabs.length === 1 && !degraded) {
             state.activeTabId = id; // first non-degraded tab becomes active
           }
@@ -89,6 +115,12 @@ export const useTerminalStore = create<TerminalState>()(
         set((state) => {
           const tab = state.tabs.find((t) => t.id === id);
           if (tab) tab.name = name;
+        });
+      },
+      setSavedHostId: (id, savedHostId) => {
+        set((state) => {
+          const tab = state.tabs.find((t) => t.id === id);
+          if (tab) tab.savedHostId = savedHostId;
         });
       },
       clearTabs: () => {

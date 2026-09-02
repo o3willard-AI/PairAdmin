@@ -9,7 +9,7 @@ import { useCommandStore } from "@/stores/commandStore";
 const openNewTerminal = vi.fn();
 const openRemoteTerminal = vi.fn();
 const checkHostKeyTrust = vi.fn();
-const listRemoteHosts = vi.fn();
+const listRemoteHostsWithStatus = vi.fn();
 const saveRemoteHost = vi.fn();
 const touchRemoteHost = vi.fn();
 const forgetRemoteHost = vi.fn();
@@ -22,7 +22,7 @@ vi.mock("../../../../wailsjs/go/services/PTYService", () => ({
 }));
 
 vi.mock("../../../../wailsjs/go/services/RemoteService", () => ({
-  ListRemoteHosts: (...args: unknown[]) => listRemoteHosts(...args),
+  ListRemoteHostsWithStatus: (...args: unknown[]) => listRemoteHostsWithStatus(...args),
   SaveRemoteHost: (...args: unknown[]) => saveRemoteHost(...args),
   TouchRemoteHost: (...args: unknown[]) => touchRemoteHost(...args),
   ForgetRemoteHost: (...args: unknown[]) => forgetRemoteHost(...args),
@@ -32,11 +32,19 @@ vi.mock("../../../../wailsjs/go/services/SettingsService", () => ({
   GetSettings: (...args: unknown[]) => getSettings(...args),
 }));
 
+// Helper to wrap a saved-host record as a `ListRemoteHostsWithStatus` result.
+// Matches the Wails wire shape: the status wrapper field is lowercase `host`
+// (from the Go json tag), while the nested config.RemoteHost stays PascalCase.
+const status = (host: Record<string, unknown>, hasCredential = true) => ({
+  host,
+  hasCredential,
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   useTerminalStore.setState({ tabs: [], activeTabId: "", nextTabNumber: 1 });
   useCommandStore.setState({ commands: [] });
-  listRemoteHosts.mockResolvedValue([]);
+  listRemoteHostsWithStatus.mockResolvedValue([]);
   getSettings.mockResolvedValue({ PromptNewHostKeys: false });
 });
 
@@ -241,8 +249,8 @@ describe("NewTerminalDialog", () => {
 
   it("reconnecting to a saved host restores its tmux settings", async () => {
     const user = userEvent.setup();
-    listRemoteHosts.mockResolvedValue([
-      {
+    listRemoteHostsWithStatus.mockResolvedValue([
+      status({
         ID: "abc-1",
         Kind: "ssh",
         Host: "10.0.1.5",
@@ -253,7 +261,7 @@ describe("NewTerminalDialog", () => {
         LastUsed: "2026-01-01T00:00:00Z",
         UseTmux: true,
         TmuxSessionName: "work",
-      },
+      }),
     ]);
     openRemoteTerminal.mockResolvedValue("ssh:reconnected");
     render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
@@ -267,8 +275,8 @@ describe("NewTerminalDialog", () => {
 
   it("lists recent hosts and one-click reconnects using the saved host ID", async () => {
     const user = userEvent.setup();
-    listRemoteHosts.mockResolvedValue([
-      { ID: "abc-1", Kind: "ssh", Host: "10.0.1.5", Port: 22, Username: "ubuntu", AuthType: "password", PrivateKeyPath: "", LastUsed: "2026-01-01T00:00:00Z" },
+    listRemoteHostsWithStatus.mockResolvedValue([
+      status({ ID: "abc-1", Kind: "ssh", Host: "10.0.1.5", Port: 22, Username: "ubuntu", AuthType: "password", PrivateKeyPath: "", LastUsed: "2026-01-01T00:00:00Z" }),
     ]);
     openRemoteTerminal.mockResolvedValue("ssh:reconnected");
     render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
@@ -285,8 +293,8 @@ describe("NewTerminalDialog", () => {
 
   it("shows the saved friendly Name instead of username@host when one is set, and uses it as the reconnected tab's name", async () => {
     const user = userEvent.setup();
-    listRemoteHosts.mockResolvedValue([
-      { ID: "abc-1", Kind: "ssh", Host: "10.0.1.5", Port: 22, Username: "ubuntu", AuthType: "password", PrivateKeyPath: "", LastUsed: "2026-01-01T00:00:00Z", Name: "Prod Web Server" },
+    listRemoteHostsWithStatus.mockResolvedValue([
+      status({ ID: "abc-1", Kind: "ssh", Host: "10.0.1.5", Port: 22, Username: "ubuntu", AuthType: "password", PrivateKeyPath: "", LastUsed: "2026-01-01T00:00:00Z", Name: "Prod Web Server" }),
     ]);
     openRemoteTerminal.mockResolvedValue("ssh:reconnected");
     render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
@@ -299,6 +307,35 @@ describe("NewTerminalDialog", () => {
     const tab = useTerminalStore.getState().tabs.find((t) => t.id === "ssh:reconnected");
     expect(tab?.name).toBe("Prod Web Server");
     expect(tab?.savedHostId).toBe("abc-1");
+  });
+
+  it("shows the amber 'no stored credential' indicator for a metadata-only saved host", async () => {
+    listRemoteHostsWithStatus.mockResolvedValue([
+      status(
+        { ID: "abc-1", Kind: "ssh", Host: "10.0.1.5", Port: 22, Username: "ubuntu", AuthType: "password", PrivateKeyPath: "", LastUsed: "2026-01-01T00:00:00Z" },
+        // hasCredential=false — saved via the tab menu, never got a secret stored.
+        false
+      ),
+    ]);
+    render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+    await screen.findByText(/ubuntu@10.0.1.5/);
+
+    const alert = document.body.querySelector(".lucide-triangle-alert");
+    expect(alert).not.toBeNull();
+  });
+
+  it("does NOT show the amber indicator for a saved host that has a stored credential", async () => {
+    listRemoteHostsWithStatus.mockResolvedValue([
+      status(
+        { ID: "abc-1", Kind: "ssh", Host: "10.0.1.5", Port: 22, Username: "ubuntu", AuthType: "password", PrivateKeyPath: "", LastUsed: "2026-01-01T00:00:00Z" },
+        // hasCredential=true — a password was stored at save time.
+        true
+      ),
+    ]);
+    render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+    await screen.findByText(/ubuntu@10.0.1.5/);
+
+    expect(document.body.querySelector(".lucide-triangle-alert")).toBeNull();
   });
 
   it("a fresh saved connection's tab carries the generated savedHostId for future renames", async () => {
@@ -370,9 +407,9 @@ describe("NewTerminalDialog", () => {
 
   it("forgetting a saved host calls ForgetRemoteHost and removes it from the list", async () => {
     const user = userEvent.setup();
-    listRemoteHosts
+    listRemoteHostsWithStatus
       .mockResolvedValueOnce([
-        { ID: "abc-1", Kind: "ssh", Host: "10.0.1.5", Port: 22, Username: "ubuntu", AuthType: "password", PrivateKeyPath: "", LastUsed: "2026-01-01T00:00:00Z" },
+        status({ ID: "abc-1", Kind: "ssh", Host: "10.0.1.5", Port: 22, Username: "ubuntu", AuthType: "password", PrivateKeyPath: "", LastUsed: "2026-01-01T00:00:00Z" }),
       ])
       .mockResolvedValueOnce([]);
     forgetRemoteHost.mockResolvedValue(undefined);
