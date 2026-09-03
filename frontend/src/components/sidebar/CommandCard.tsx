@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Copy, RotateCw, Pin, PinOff, Trash2, Pencil, History, Edit3 } from "lucide-react";
 import { useCommandStore, type Command } from "@/stores/commandStore";
+import { useQuickSelectStore } from "@/stores/quickSelectStore";
 import {
   Tooltip,
   TooltipContent,
@@ -64,6 +65,13 @@ export function CommandCard({
     setRenaming(false);
   };
 
+  // Quick-select signage: this card's own F-key while the chord is held.
+  // Subscribed per-card so only affected rows re-render on chord press/
+  // release. Signage only — see the badge's aria-hidden/pointer-events-none.
+  const fkey = useQuickSelectStore(
+    (s) => (s.visible ? s.commandFkeys[command.id] : undefined)
+  );
+
   return (
     <>
       <EditCommandDialog
@@ -92,7 +100,7 @@ export function CommandCard({
                 onDragStart={() => onDragStartId?.(command.id)}
                 onDragOver={(e) => draggable && e.preventDefault()}
                 onDrop={() => onDropOnId?.(command.id)}
-                className="group w-full text-left px-3 py-2 text-xs font-mono bg-surface-1 hover:bg-surface-2 rounded border border-surface-border hover:border-surface-border-strong transition-colors flex items-center gap-1"
+                className="group relative w-full text-left px-3 py-2 text-xs font-mono bg-surface-1 hover:bg-surface-2 rounded border border-surface-border hover:border-surface-border-strong transition-colors flex items-center gap-1"
               />
             }
           >
@@ -100,6 +108,14 @@ export function CommandCard({
               <Pin size={10} className="flex-none text-amber-500" />
             )}
             <span className="truncate flex-1">{displayText}</span>
+            {fkey && (
+              <span
+                aria-hidden="true"
+                className="absolute right-1 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold leading-none bg-surface-3/95 text-surface-text border border-surface-border-strong shadow-sm pointer-events-none"
+              >
+                {fkey}
+              </span>
+            )}
             <button
               type="button"
               onClick={(e) => {
