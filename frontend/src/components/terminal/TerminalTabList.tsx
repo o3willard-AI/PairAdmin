@@ -27,16 +27,16 @@ export function TerminalTabList() {
         onClick={() => setDialogOpen(true)}
         className="w-full px-3 py-1.5 text-xs text-surface-text-muted hover:text-surface-text transition-colors"
       >
-        + New
+        + Connect
       </button>
       <NewTerminalDialog
         open={dialogOpen}
         onClose={() => {
           setDialogOpen(false);
-          // base-ui's Dialog returns focus to its trigger ("+ New") on
+          // base-ui's Dialog returns focus to its trigger ("+ Connect") on
           // close — without this, the very next keystroke (e.g. the user
           // typing into their freshly-connected terminal) would re-trigger
-          // "+ New" instead, opening an unwanted duplicate dialog. Deferring
+          // "+ Connect" instead, opening an unwanted duplicate dialog. Deferring
           // to the next frame lets that built-in restoration finish first,
           // then wins the race back to the terminal (same pattern as
           // CommandCard.tsx/TerminalTab.tsx's rename-input focus race).
