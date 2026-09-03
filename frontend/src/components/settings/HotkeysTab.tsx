@@ -134,7 +134,7 @@ export function HotkeysTab() {
           onChange={setHotkeyNewTerminal}
         />
         <p className="text-xs text-surface-text-muted">
-          Opens the "+ New" terminal dialog without needing to click it.
+          Opens the "+ Connect" terminal dialog without needing to click it.
         </p>
       </div>
 

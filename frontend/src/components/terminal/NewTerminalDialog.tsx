@@ -86,6 +86,11 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
   const [connectStatus, setConnectStatus] = useState<"idle" | "connecting" | "error">("idle");
   const [connectError, setConnectError] = useState("");
   const [saveWarning, setSaveWarning] = useState("");
+  // When a no-credential saved host's "Connect" routes through the form (instead
+  // of dialing directly), we keep its full record here so the form's connect can
+  // upsert the entered credential onto that SAME record rather than creating a
+  // duplicate Recent entry. Null when connecting a fresh host or a credentialed one.
+  const [reconnectHost, setReconnectHost] = useState<config.RemoteHost | null>(null);
 
   const refreshRecentHosts = () => {
     import(/* @vite-ignore */ "../../../wailsjs/go/services/RemoteService")
@@ -112,6 +117,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
     setConnectStatus("idle");
     setConnectError("");
     setSaveWarning("");
+    setReconnectHost(null);
     setRecentSearch("");
     setRecentPage(0);
     setHostKeyConfirm(null);
@@ -162,6 +168,9 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
       handleConnectLocal();
       return;
     }
+    // Picking a type freshly (not the no-credential reconnect flow) always
+    // starts a brand-new connection — drop any carried-over saved-host target.
+    setReconnectHost(null);
     setKind(k);
     setPort(k === "ssh" ? 22 : 5985);
     setStep("form");
@@ -224,7 +233,34 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
       // a fresh SaveRemoteHost's generated ID so this tab's rename (below)
       // can persist even on its very first session, not just later ones.
       let savedHostId = params.savedHostId;
-      if (params.savedHostId) {
+      if (params.savedHostId && params.saveTerminal) {
+        // Re-saving a host that had no stored credential (the no-credential
+        // connect flow routed through the form): upsert the entered password
+        // onto the EXISTING record by ID so we don't create a duplicate Recent
+        // entry. SaveRemoteHost is an upsert-by-ID on the backend.
+        try {
+          const saved = await SaveRemoteHost(
+            {
+              ID: params.savedHostId,
+              Kind: params.kind,
+              Name: params.name || "",
+              Host: params.host,
+              Port: params.port,
+              Username: params.username,
+              AuthType: params.authType,
+              PrivateKeyPath: params.authType === "privatekey" ? params.privateKeyPath : "",
+              LastUsed: "",
+              UseTmux: params.kind === "ssh" ? params.useTmux : false,
+              TmuxSessionName: params.kind === "ssh" ? params.tmuxSessionName : "",
+            },
+            params.authType === "password" ? params.password : "",
+            params.authType === "privatekey" ? params.passphrase : ""
+          );
+          savedHostId = saved.ID;
+        } catch (err) {
+          warning = wailsErrorMessage(err, "Connected, but failed to save this connection for later");
+        }
+      } else if (params.savedHostId) {
         try {
           await TouchRemoteHost(params.savedHostId);
         } catch (err) {
@@ -340,6 +376,11 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
       saveTerminal,
       useTmux,
       tmuxSessionName,
+      // When this form was reached via a no-credential saved host's "Connect",
+      // carry that host's ID + friendly name through so the connect upserts the
+      // entered credential onto the same record (no duplicate).
+      savedHostId: reconnectHost?.ID || undefined,
+      name: reconnectHost?.Name || undefined,
     });
 
   const handleReconnect = (h: config.RemoteHost) => {
@@ -398,7 +439,22 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
           <button
             className="text-xs bg-surface-3 hover:bg-surface-3/80 text-surface-text px-2 py-1 rounded disabled:opacity-50"
             disabled={connectStatus === "connecting"}
-            onClick={() => handleReconnect(h)}
+            onClick={() => {
+              if (st.hasCredential) {
+                // A credential is stored — dial directly with the empty password
+                // the keychain fills in at connect time.
+                handleReconnect(h);
+              } else {
+                // Metadata-only host (amber "No stored credential" indicator):
+                // route through the form so the user can be prompted to enter a
+                // credential, pre-filling the connection and pre-checking
+                // "Save Terminal" so it persists to this same record.
+                applyHostToForm(h);
+                setSaveTerminal(true);
+                setReconnectHost(h);
+                setStep("form");
+              }
+            }}
           >
             Connect
           </button>

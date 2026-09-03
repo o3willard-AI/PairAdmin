@@ -338,6 +338,91 @@ describe("NewTerminalDialog", () => {
     expect(document.body.querySelector(".lucide-triangle-alert")).toBeNull();
   });
 
+  it("Connect on a no-credential saved host routes to the form (no direct connect), pre-filled and with Save Terminal checked", async () => {
+    const user = userEvent.setup();
+    listRemoteHostsWithStatus.mockResolvedValue([
+      status(
+        { ID: "abc-1", Kind: "ssh", Host: "10.0.1.5", Port: 2222, Username: "ubuntu", AuthType: "password", PrivateKeyPath: "", LastUsed: "2026-01-01T00:00:00Z" },
+        // hasCredential=false — nothing in the keychain, so we can't dial with
+        // an empty password; the user must be prompted to authenticate.
+        false
+      ),
+    ]);
+    openRemoteTerminal.mockResolvedValue("ssh:resolved");
+    render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+    await screen.findByText(/ubuntu@10.0.1.5/);
+    await user.click(screen.getByText("Connect"));
+
+    // We did NOT dial with empty credentials — we're on the form instead.
+    expect(openRemoteTerminal).not.toHaveBeenCalled();
+    // Host/port/username are pre-filled from the saved host.
+    expect(screen.getByPlaceholderText("10.0.1.5")).toHaveValue("10.0.1.5");
+    expect(screen.getByDisplayValue("2222")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("ubuntu")).toBeInTheDocument();
+    // "Save Terminal" is pre-checked — which is what reveals the SSH-only
+    // "Use tmux if available" section.
+    expect(screen.getByText("Use tmux if available")).toBeInTheDocument();
+  });
+
+  it("Connect on a credentialed saved host still connects directly (not routed to the form)", async () => {
+    const user = userEvent.setup();
+    listRemoteHostsWithStatus.mockResolvedValue([
+      status(
+        { ID: "abc-1", Kind: "ssh", Host: "10.0.1.5", Port: 22, Username: "ubuntu", AuthType: "password", PrivateKeyPath: "", LastUsed: "2026-01-01T00:00:00Z" },
+        // hasCredential=true — the keychain has a password, so dial directly.
+        true
+      ),
+    ]);
+    openRemoteTerminal.mockResolvedValue("ssh:reconnected");
+    render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+    await screen.findByText(/ubuntu@10.0.1.5/);
+    await user.click(screen.getByText("Connect"));
+
+    // Connected directly with the empty password the keychain fills in.
+    expect(openRemoteTerminal).toHaveBeenCalledTimes(1);
+    // The connect form was never shown.
+    expect(screen.queryByText("Authentication")).not.toBeInTheDocument();
+  });
+
+  it("re-saving a no-credential host upserts the password onto the SAME host record (one Recent entry, no duplicate)", async () => {
+    const user = userEvent.setup();
+    listRemoteHostsWithStatus.mockResolvedValue([
+      status(
+        { ID: "abc-1", Kind: "ssh", Host: "10.0.1.5", Port: 22, Username: "ubuntu", AuthType: "password", PrivateKeyPath: "", LastUsed: "2026-01-01T00:00:00Z" },
+        false
+      ),
+    ]);
+    openRemoteTerminal.mockResolvedValue("ssh:resolved");
+    saveRemoteHost.mockResolvedValue({ ID: "abc-1", Kind: "ssh", Host: "10.0.1.5", Username: "ubuntu" });
+    render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+    await screen.findByText(/ubuntu@10.0.1.5/);
+    await user.click(screen.getByText("Connect"));
+
+    // Fill in the credential we were just prompted for. (Scope to the LABEL —
+    // the Authentication <select> also has an <option> named "Password".)
+    const passwordInput = screen
+      .getByText("Password", { selector: "label" })
+      .parentElement?.querySelector("input") as HTMLInputElement;
+    await user.type(passwordInput, "s3cret");
+
+    await user.click(screen.getByText("Connect"));
+
+    // The connection reused the existing saved host ID...
+    const [, params] = openRemoteTerminal.mock.calls[0];
+    expect(params).toMatchObject({ savedHostId: "abc-1" });
+    // ...and the password was upserted onto that SAME record (ID preserved,
+    // not blank/generated) rather than creating a duplicate Recent entry.
+    expect(saveRemoteHost).toHaveBeenCalledTimes(1);
+    const [record, pwd] = saveRemoteHost.mock.calls[0];
+    expect(record.ID).toBe("abc-1");
+    expect(pwd).toBe("s3cret");
+    // Re-saving with a credential supersedes the plain TouchRemoteHost path.
+    expect(touchRemoteHost).not.toHaveBeenCalled();
+  });
+
   it("a fresh saved connection's tab carries the generated savedHostId for future renames", async () => {
     const user = userEvent.setup();
     openRemoteTerminal.mockResolvedValue("ssh:resolved-id");

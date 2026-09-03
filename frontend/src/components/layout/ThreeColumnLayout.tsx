@@ -32,7 +32,7 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
   useTerminalCapture(); // Subscribe to terminal events from Go service
   useDefaultTerminalFocus(); // Keep keyboard focus on the terminal by default
   useAddClipboardCommandHotkey(); // Ctrl+Shift+A (configurable): clipboard -> new sidebar command
-  useNewTerminalHotkey(); // Ctrl+Shift+N (configurable): opens the "+ New" terminal dialog
+  useNewTerminalHotkey(); // Ctrl+Shift+N (configurable): opens the "+ Connect" terminal dialog
   useAddCommandHotkey(); // Ctrl+Shift+P (configurable): opens the "Add Command" dialog
 
   const activeTabId = useTerminalStore((state) => state.activeTabId);

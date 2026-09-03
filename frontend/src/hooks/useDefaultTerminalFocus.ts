@@ -53,7 +53,7 @@ function refocusTerminal() {
  * The terminal is the app's primary surface — the user is almost always
  * about to type a command there. Left to the browser's default behavior,
  * keyboard focus stays wherever the last click landed (a Pin button, a tab
- * list item, "+ New"), so the next keystroke silently re-triggers that
+ * list item, "+ Connect"), so the next keystroke silently re-triggers that
  * element (toggling a checkbox, re-opening a dialog) instead of reaching the
  * terminal. This restores focus to the active terminal on a fresh session,
  * whenever the active tab changes, and after any click that isn't on a

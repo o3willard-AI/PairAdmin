@@ -41,7 +41,7 @@ interface TerminalState {
   tabs: TerminalTab[];
   activeTabId: string;
   nextTabNumber: number;
-  /** "+ New" terminal dialog open state — lifted out of TerminalTabList's own
+  /** "+ Connect" terminal dialog open state — lifted out of TerminalTabList's own
    * local state so useNewTerminalHotkey.ts can open it from anywhere. */
   newTerminalDialogOpen: boolean;
   setNewTerminalDialogOpen: (open: boolean) => void;
