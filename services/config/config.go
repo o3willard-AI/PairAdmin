@@ -69,18 +69,21 @@ type AppConfig struct {
 	HotkeyAddClipboardCommand string `mapstructure:"hotkey_add_clipboard_command" yaml:"hotkey_add_clipboard_command"`
 	// HotkeyNewTerminal opens the "+ New" terminal dialog without requiring a
 	// mouse trip to the bottom of the terminal list — see DefaultHotkeyNewTerminal.
-	HotkeyNewTerminal string       `mapstructure:"hotkey_new_terminal" yaml:"hotkey_new_terminal"`
+	HotkeyNewTerminal string `mapstructure:"hotkey_new_terminal" yaml:"hotkey_new_terminal"`
+	// HotkeyQuickSelect is the held modifier chord that arms quick-select
+	// (F1..F12 over pinned commands and terminals) — see DefaultHotkeyQuickSelect.
+	HotkeyQuickSelect string `mapstructure:"hotkey_quick_select" yaml:"hotkey_quick_select"`
 	// HotkeyAddCommand opens the "Add Command" dialog in the Commands sidebar
 	// — for a user who already knows the interface, saving a command shouldn't
 	// require a mouse trip to the bottom of the sidebar. See
 	// DefaultHotkeyAddCommand.
-	HotkeyAddCommand   string       `mapstructure:"hotkey_add_command" yaml:"hotkey_add_command"`
-	Theme             string       `mapstructure:"theme" yaml:"theme"`
-	FontSize          int          `mapstructure:"font_size" yaml:"font_size"`
-	ContextLines      int          `mapstructure:"context_lines" yaml:"context_lines"`
-	OllamaHost        string       `mapstructure:"ollama_host" yaml:"ollama_host"`
-	LMStudioHost      string       `mapstructure:"lmstudio_host" yaml:"lmstudio_host"`
-	RemoteHosts       []RemoteHost `mapstructure:"remote_hosts" yaml:"remote_hosts"`
+	HotkeyAddCommand string       `mapstructure:"hotkey_add_command" yaml:"hotkey_add_command"`
+	Theme            string       `mapstructure:"theme" yaml:"theme"`
+	FontSize         int          `mapstructure:"font_size" yaml:"font_size"`
+	ContextLines     int          `mapstructure:"context_lines" yaml:"context_lines"`
+	OllamaHost       string       `mapstructure:"ollama_host" yaml:"ollama_host"`
+	LMStudioHost     string       `mapstructure:"lmstudio_host" yaml:"lmstudio_host"`
+	RemoteHosts      []RemoteHost `mapstructure:"remote_hosts" yaml:"remote_hosts"`
 	// TerminalsSidebarWidthCh/CommandsSidebarWidthCh size the left (terminal
 	// list) and right (Quick Commands) sidebars, in CSS `ch` units (~1
 	// character's width in the active UI font) rather than a fixed pixel
@@ -124,6 +127,11 @@ const DefaultHotkeyAddClipboardCommand = "Ctrl+Shift+A"
 // are unclaimed here. Chosen over a Ctrl+Alt combo for the same AltGr
 // composition reason as DefaultHotkeyAddClipboardCommand.
 const DefaultHotkeyNewTerminal = "Ctrl+Shift+N"
+
+// DefaultHotkeyQuickSelect is the out-of-the-box binding for
+// HotkeyQuickSelect: the held chord that arms F1..F12 quick-select.
+// Modifier-only by design — a bare chord must not consume a letter key.
+const DefaultHotkeyQuickSelect = "Ctrl+Alt"
 
 // DefaultHotkeyAddCommand is the out-of-the-box binding for
 // HotkeyAddCommand. Opens the "Add Command" dialog in the Commands sidebar —
@@ -229,6 +237,7 @@ func LoadAppConfig() (*AppConfig, error) {
 	v.SetDefault("hotkey_add_clipboard_command", DefaultHotkeyAddClipboardCommand)
 	v.SetDefault("hotkey_new_terminal", DefaultHotkeyNewTerminal)
 	v.SetDefault("hotkey_add_command", DefaultHotkeyAddCommand)
+	v.SetDefault("hotkey_quick_select", DefaultHotkeyQuickSelect)
 	v.SetDefault("terminals_sidebar_width_ch", DefaultTerminalsSidebarWidthCh)
 	v.SetDefault("commands_sidebar_width_ch", DefaultCommandsSidebarWidthCh)
 	v.SetDefault("prompt_new_host_keys", false)
@@ -263,6 +272,7 @@ func SaveAppConfig(cfg *AppConfig) error {
 	v.Set("hotkey_add_clipboard_command", cfg.HotkeyAddClipboardCommand)
 	v.Set("hotkey_new_terminal", cfg.HotkeyNewTerminal)
 	v.Set("hotkey_add_command", cfg.HotkeyAddCommand)
+	v.Set("hotkey_quick_select", cfg.HotkeyQuickSelect)
 	v.Set("theme", cfg.Theme)
 	v.Set("font_size", cfg.FontSize)
 	v.Set("context_lines", cfg.ContextLines)

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useCommandStore } from "@/stores/commandStore";
 import { sendToTerminal } from "@/utils/sendToTerminal";
-import { isForeignTextEntry } from "@/utils/hotkey";
+import { isForeignTextEntry, type ParsedHotkey } from "@/utils/hotkey";
 import { setQuickSelectBadges, clearQuickSelectBadges } from "@/stores/quickSelectStore";
 
 export interface QuickSelectItem {
@@ -15,6 +15,47 @@ export interface QuickSelectItem {
 const FKEY_RE = /^F([1-9]|1[0-2])$/;
 
 const MAX_ITEMS = 12;
+
+// Mirrors DefaultHotkeyQuickSelect in services/config/config.go.
+export const DEFAULT_QUICK_SELECT_CHORD = "Ctrl+Alt";
+
+// The hold condition = the configured combo's modifier set. parseHotkey can't
+// be used as-is: it treats the LAST "+"-part as the key, so a modifier-only
+// combo like "Ctrl+Alt" parses as ctrl+key="alt" (alt:false). Parse the
+// modifier set directly instead — a chord must consist solely of modifier
+// names.
+const MODIFIER_NAMES = new Set(["ctrl", "shift", "alt", "meta"]);
+
+function chordFromCombo(combo: string): ParsedHotkey | null {
+  // Every "+"-separated part must be a modifier — a combo with a
+  // letter/digit/F-key part can't serve as a *held* chord.
+  const parts = combo
+    .split("+")
+    .map((p) => p.trim().toLowerCase())
+    .filter(Boolean);
+  if (parts.length === 0 || parts.some((p) => !MODIFIER_NAMES.has(p))) return null;
+  const chord: ParsedHotkey = {
+    ctrl: parts.includes("ctrl"),
+    shift: parts.includes("shift"),
+    alt: parts.includes("alt"),
+    meta: parts.includes("meta"),
+    key: "",
+  };
+  // Require Ctrl plus at least one other modifier — matches the previous
+  // hardcoded behavior of ctrl && (alt || meta) and keeps F-keys from ever
+  // firing on a bare Shift or an unmodified press.
+  if (!chord.ctrl || !(chord.alt || chord.meta || chord.shift)) return null;
+  return chord;
+}
+
+function chordHeld(event: KeyboardEvent, chord: ParsedHotkey): boolean {
+  return (
+    event.ctrlKey === chord.ctrl &&
+    event.altKey === chord.alt &&
+    event.metaKey === chord.meta &&
+    event.shiftKey === chord.shift
+  );
+}
 
 export function useQuickSelect(): { visible: boolean; items: QuickSelectItem[] } {
   const [visible, setVisible] = useState(false);
@@ -57,11 +98,30 @@ export function useQuickSelect(): { visible: boolean; items: QuickSelectItem[] }
   }, []);
 
   useEffect(() => {
+    // Configured chord (Settings → Hotkeys → Quick Select), loaded once on
+    // mount with fallback to the default — same pattern as
+    // useConfiguredHotkey. Changing the combo in Settings takes effect on
+    // next launch. Parsed into a modifier-set hold condition via parseHotkey;
+    // combos containing a non-modifier key (or missing Ctrl) are rejected so
+    // a bad config can't leave quick-select permanently un-armed.
+    const chordRef: { current: ParsedHotkey } = {
+      current: chordFromCombo(DEFAULT_QUICK_SELECT_CHORD)!,
+    };
+    import(/* @vite-ignore */ "../../wailsjs/go/services/SettingsService")
+      .then(({ GetSettings }) => GetSettings())
+      .then((cfg) => {
+        const configured = cfg?.HotkeyQuickSelect;
+        if (typeof configured === "string" && configured) {
+          const parsed = chordFromCombo(configured);
+          if (parsed) chordRef.current = parsed;
+        }
+      })
+      .catch(() => {}); // Wails runtime unavailable in test/dev environments
+
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Chord held = Ctrl + (Alt | Meta). Everything below only applies while
-      // it's down; outside the chord, F-keys keep their normal meanings.
-      const chordHeld = event.ctrlKey && (event.altKey || event.metaKey);
-      if (!chordHeld) return;
+      // Everything below only applies while the configured chord is held;
+      // outside the chord, F-keys keep their normal meanings.
+      if (!chordHeld(event, chordRef.current)) return;
 
       // Don't activate or route F-keys while the user is typing in a
       // non-terminal text entry (chat box, dialog inputs, settings fields) —
@@ -109,12 +169,12 @@ export function useQuickSelect(): { visible: boolean; items: QuickSelectItem[] }
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
-      // Chord broken when Ctrl goes up, or when the last of Alt/Meta goes up
-      // (the other of the two may still be physically held). Note: no
-      // preventDefault/stopPropagation on keyup — releasing a modifier has
-      // no default action worth suppressing, and blocking it system-wide
-      // could confuse other listeners (e.g. xterm's own key handling).
-      if (!event.ctrlKey || !(event.altKey || event.metaKey)) {
+      // Chord broken when the held modifier set is no longer fully down (any
+      // chord modifier released while others may still be physically held).
+      // Note: no preventDefault/stopPropagation on keyup — releasing a
+      // modifier has no default action worth suppressing, and blocking it
+      // system-wide could confuse other listeners (e.g. xterm's own handling).
+      if (!chordHeld(event, chordRef.current)) {
         setVisible(false);
         // Hide the per-row badges too (see activate()).
         clearQuickSelectBadges();

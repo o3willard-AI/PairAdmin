@@ -478,6 +478,44 @@ func TestSaveAndLoadAppConfig_HotkeyAddCommandRoundTrip(t *testing.T) {
 	}
 }
 
+// TestLoadAppConfig_DefaultsHotkeyQuickSelect verifies a fresh install ships
+// with a working default quick-select chord rather than an empty/unset one.
+func TestLoadAppConfig_DefaultsHotkeyQuickSelect(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	cfg, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
+	}
+	if cfg.HotkeyQuickSelect != DefaultHotkeyQuickSelect {
+		t.Errorf("HotkeyQuickSelect: expected default %q, got %q",
+			DefaultHotkeyQuickSelect, cfg.HotkeyQuickSelect)
+	}
+}
+
+// TestSaveAndLoadAppConfig_HotkeyQuickSelectRoundTrip verifies a
+// user-customized binding overrides the default and survives a save/load cycle.
+func TestSaveAndLoadAppConfig_HotkeyQuickSelectRoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	original := &AppConfig{HotkeyQuickSelect: "Ctrl+Meta"}
+	if err := SaveAppConfig(original); err != nil {
+		t.Fatalf("SaveAppConfig() unexpected error: %v", err)
+	}
+
+	loaded, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
+	}
+	if loaded.HotkeyQuickSelect != "Ctrl+Meta" {
+		t.Errorf("HotkeyQuickSelect: expected 'Ctrl+Meta', got %q", loaded.HotkeyQuickSelect)
+	}
+}
+
 // TestLoadAppConfig_DefaultsSidebarWidths verifies a fresh install ships
 // with the sidebar widths approximating the original hardcoded pixel values.
 func TestLoadAppConfig_DefaultsSidebarWidths(t *testing.T) {

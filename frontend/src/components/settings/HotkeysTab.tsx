@@ -3,6 +3,7 @@ import { mergeAndSaveSettings } from "@/utils/settingsSync";
 import { DEFAULT_ADD_CLIPBOARD_COMMAND_HOTKEY } from "@/hooks/useAddClipboardCommandHotkey";
 import { DEFAULT_NEW_TERMINAL_HOTKEY } from "@/hooks/useNewTerminalHotkey";
 import { DEFAULT_ADD_COMMAND_HOTKEY } from "@/hooks/useAddCommandHotkey";
+import { DEFAULT_QUICK_SELECT_CHORD } from "@/hooks/useQuickSelect";
 
 function buildKeyCombo(event: KeyboardEvent): string {
   const parts: string[] = [];
@@ -72,6 +73,7 @@ export function HotkeysTab() {
   );
   const [hotkeyNewTerminal, setHotkeyNewTerminal] = useState(DEFAULT_NEW_TERMINAL_HOTKEY);
   const [hotkeyAddCommand, setHotkeyAddCommand] = useState(DEFAULT_ADD_COMMAND_HOTKEY);
+  const [hotkeyQuickSelect, setHotkeyQuickSelect] = useState(DEFAULT_QUICK_SELECT_CHORD);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
@@ -83,6 +85,7 @@ export function HotkeysTab() {
         if (cfg.HotkeyAddClipboardCommand) setHotkeyAddClipboardCommand(cfg.HotkeyAddClipboardCommand);
         if (cfg.HotkeyNewTerminal) setHotkeyNewTerminal(cfg.HotkeyNewTerminal);
         if (cfg.HotkeyAddCommand) setHotkeyAddCommand(cfg.HotkeyAddCommand);
+        if (cfg.HotkeyQuickSelect) setHotkeyQuickSelect(cfg.HotkeyQuickSelect);
       })
       .catch(() => {});
   }, []);
@@ -96,6 +99,7 @@ export function HotkeysTab() {
         HotkeyAddClipboardCommand: hotkeyAddClipboardCommand,
         HotkeyNewTerminal: hotkeyNewTerminal,
         HotkeyAddCommand: hotkeyAddCommand,
+        HotkeyQuickSelect: hotkeyQuickSelect,
       });
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
@@ -154,6 +158,17 @@ export function HotkeysTab() {
         />
         <p className="text-xs text-surface-text-muted">
           Opens the "Add Command" dialog in the sidebar without needing to click the button.
+        </p>
+      </div>
+
+      <div className="space-y-1">
+        <HotkeyInput
+          label="Quick Select"
+          value={hotkeyQuickSelect}
+          onChange={setHotkeyQuickSelect}
+        />
+        <p className="text-xs text-surface-text-muted">
+          Hold this chord, then press F1–F12
         </p>
       </div>
 
