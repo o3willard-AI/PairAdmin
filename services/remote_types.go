@@ -6,6 +6,12 @@ type RemoteKind string
 const (
 	RemoteKindSSH   RemoteKind = "ssh"
 	RemoteKindWinRM RemoteKind = "winrm"
+	// RemoteKindLocal marks a tab backed by a PTY running the user's own
+	// $SHELL on the machine PairAdmin itself runs on. It exists so the
+	// "Rename and Save tmux session" flow can persist a local session the
+	// same way it persists SSH ones: a Kind:"local" RemoteHost record has no
+	// host coordinates or credentials, only Name + TmuxSessionName.
+	RemoteKindLocal RemoteKind = "local"
 )
 
 // RemoteAuthType identifies how the user authenticates to a remote host.

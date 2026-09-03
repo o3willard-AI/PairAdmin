@@ -36,6 +36,61 @@ func TestRemoteService_SaveRemoteHost_GeneratesIDAndStoresSecret(t *testing.T) {
 	}
 }
 
+// TestRemoteService_SaveRemoteHost_LocalKindRoundTrip verifies a Kind:"local"
+// record — the "Rename and Save tmux session" flow for LOCAL terminals —
+// round-trips through SaveRemoteHost with Name + TmuxSessionName persisted
+// and no host coordinates (local has no Host/Port/Username/AuthType), and
+// that no keychain secret is written for it.
+func TestRemoteService_SaveRemoteHost_LocalKindRoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	mem := newInMemoryKeyring()
+	kc := makeTestKeychainClient(mem)
+	svc := NewRemoteService(kc)
+
+	saved, err := svc.SaveRemoteHost(config.RemoteHost{
+		Kind:            "local",
+		Name:            "build session",
+		TmuxSessionName: "build-session",
+	}, "", "")
+	if err != nil {
+		t.Fatalf("SaveRemoteHost() unexpected error: %v", err)
+	}
+	if saved.ID == "" {
+		t.Fatal("expected generated ID, got empty string")
+	}
+
+	hosts, err := svc.ListRemoteHosts()
+	if err != nil {
+		t.Fatalf("ListRemoteHosts() unexpected error: %v", err)
+	}
+	if len(hosts) != 1 {
+		t.Fatalf("expected exactly 1 saved host, got %d", len(hosts))
+	}
+	got := hosts[0]
+	if got.Kind != "local" {
+		t.Errorf("Kind = %q, want %q", got.Kind, "local")
+	}
+	if got.Name != "build session" {
+		t.Errorf("Name = %q, want %q", got.Name, "build session")
+	}
+	if got.TmuxSessionName != "build-session" {
+		t.Errorf("TmuxSessionName = %q, want %q", got.TmuxSessionName, "build-session")
+	}
+	if got.Host != "" || got.Port != 0 || got.Username != "" || got.AuthType != "" {
+		t.Errorf("expected empty host coordinates for local kind, got Host=%q Port=%d Username=%q AuthType=%q",
+			got.Host, got.Port, got.Username, got.AuthType)
+	}
+
+	// keychainHasCredential must report false — a local record has no secret,
+	// so any UI showing a "saved credential" indicator treats it accordingly.
+	if keychainHasCredential(kc, got.ID) {
+		t.Error("expected keychainHasCredential to be false for a local record")
+	}
+}
+
 func TestRemoteService_SaveRemoteHost_NoSecretWhenPasswordEmpty(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)

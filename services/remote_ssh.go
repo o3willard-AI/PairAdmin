@@ -30,13 +30,16 @@ const defaultTmuxSessionName = "pairadmin"
 
 // tmuxSessionNamePattern whitelists characters safe to interpolate into a
 // shell command line unquoted. The session name is user-supplied and gets
-// written as literal keystrokes into a live remote shell, so anything outside
-// this set (spaces, quotes, semicolons, backticks, $, etc.) must be stripped
-// to prevent it from being used as a command-injection vector.
+// written as literal keystrokes into a live shell (local or remote), so
+// anything outside this set (spaces, quotes, semicolons, backticks, $, etc.)
+// must be stripped to prevent it from being used as a command-injection
+// vector.
 var tmuxSessionNamePattern = regexp.MustCompile(`[^A-Za-z0-9_.-]`)
 
 // sanitizeTmuxSessionName strips any character not in the safe whitelist and
-// falls back to defaultTmuxSessionName if nothing safe remains.
+// falls back to defaultTmuxSessionName if nothing safe remains. Shared by the
+// SSH path (openSSHTerminal) and the local path (openLocalTMTerminal) — the
+// whitelist is a shell-safety property, not a remote-specific one.
 func sanitizeTmuxSessionName(name string) string {
 	cleaned := tmuxSessionNamePattern.ReplaceAllString(name, "")
 	if cleaned == "" {

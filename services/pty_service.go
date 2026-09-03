@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"runtime"
 	"sync"
+	"time"
 
 	"pairadmin/services/capture"
 	"pairadmin/services/config"
@@ -131,6 +132,11 @@ func (s *PTYService) OpenRemoteTerminal(tabId string, params RemoteConnectParams
 		return s.openSSHTerminal(tabId, resolved)
 	case RemoteKindWinRM:
 		return s.openWinRMTerminal(tabId, resolved)
+	case RemoteKindLocal:
+		// Local shells ride the same "+ New" connection plumbing as SSH/WinRM
+		// so the "Rename and Save tmux session" flow works for them too.
+		// resolveRemoteCredentials is a no-op here (no SavedHostId/secret).
+		return s.openLocalTMTerminal(tabId, resolved.TmuxSessionName)
 	default:
 		return "", fmt.Errorf("unknown remote kind: %q", resolved.Kind)
 	}
@@ -200,6 +206,76 @@ func (s *PTYService) resolveRemoteCredentials(params RemoteConnectParams) (Remot
 		}
 	}
 	return params, nil
+}
+
+// openLocalTMTerminal spawns the user's own shell in a PTY — exactly like
+// OpenNewTerminal — and, like openSSHTerminal does over SSH, writes a tmux
+// create-or-attach command into it after tmuxAttachDelay. `-A` makes it
+// create-or-attach: the named session is created if it doesn't exist (first
+// connect, or it was killed from outside) and attached to if it does. There
+// is deliberately no force-detach or special handling: if tmux is missing or
+// the command fails for any reason, the error text is visible in the terminal
+// and the tab continues as a plain shell.
+//
+// The session name is user-supplied and interpolated unquoted into a shell
+// command line written as literal keystrokes, so it goes through the SAME
+// whitelist sanitizer as the SSH path (sanitizeTmuxSessionName).
+func (s *PTYService) openLocalTMTerminal(tabId, sessionName string) (string, error) {
+	if runtime.GOOS == "windows" {
+		return "", fmt.Errorf("local tmux sessions are not supported on Windows")
+	}
+
+	// Spawn $SHELL exactly like OpenNewTerminal.
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "bash"
+	}
+	cmd := exec.Command(shell)
+	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		return "", fmt.Errorf("failed to start terminal: %w", err)
+	}
+
+	s.mu.Lock()
+	s.sessions[tabId] = &ptySession{ptmx: ptmx, cmd: cmd}
+	s.mu.Unlock()
+
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := ptmx.Read(buf)
+			if n > 0 {
+				s.emitFn(s.ctx, "pty:output", PTYOutputEvent{
+					TabID: tabId,
+					Data:  string(buf[:n]),
+				})
+			}
+			if err != nil {
+				s.mu.Lock()
+				_, stillOpen := s.sessions[tabId]
+				delete(s.sessions, tabId)
+				s.mu.Unlock()
+				if stillOpen {
+					ptmx.Close()
+				}
+				s.emitFn(s.ctx, "pty:closed", map[string]string{"tabId": tabId})
+				return
+			}
+		}
+	}()
+
+	// Same create-or-attach timing as the SSH path: give the shell time to
+	// reach a prompt, then write the tmux command as keystrokes to the PTY
+	// master (the shell executes it like typed input).
+	cleanName := sanitizeTmuxSessionName(sessionName)
+	go func() {
+		time.Sleep(tmuxAttachDelay)
+		ptmx.Write([]byte(fmt.Sprintf("tmux new-session -A -s %s\r", cleanName)))
+	}()
+
+	return tabId, nil
 }
 
 func (s *PTYService) CloseTerminal(tabId string) error {
