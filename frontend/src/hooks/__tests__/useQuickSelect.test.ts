@@ -22,6 +22,22 @@ vi.mock("../../../wailsjs/go/services/PTYService", () => ({
   WriteInput: vi.fn(() => Promise.resolve()),
 }));
 
+const getSettings = vi.fn();
+// useQuickSelect reads the configured chord via GetSettings (same pattern as
+// useConfiguredHotkey), so the SettingsService binding must be mocked too.
+vi.mock("../../../wailsjs/go/services/SettingsService", () => ({
+  GetSettings: (...args: unknown[]) => getSettings(...args),
+}));
+
+// The hook's settings load chains dynamic import() -> GetSettings(). Vite's
+// dynamic import resolves via a macrotask in this environment (see
+// useAddClipboardCommandHotkey.test.ts), so a real setTimeout flush is needed.
+async function flushMicrotasks(times = 4) {
+  for (let i = 0; i < times; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
 function dispatchKey(
   type: "keydown" | "keyup",
   init: Partial<KeyboardEventInit> & { key: string }
@@ -65,6 +81,7 @@ function chordDown(extra?: { metaKey?: boolean; altKey?: boolean }) {
 describe("useQuickSelect", () => {
   beforeEach(() => {
     mockedSendToTerminal.mockClear();
+    getSettings.mockReset().mockResolvedValue({});
     // Remove any textareas a previous test left behind AND blur whatever
     // holds focus — isForeignTextEntry consults document.activeElement, so a
     // stray focused input from an earlier test would silently disable
@@ -99,7 +116,7 @@ describe("useQuickSelect", () => {
     expect(result.current.items).toEqual(expected);
   });
 
-  it("chord requires Ctrl+Alt or Ctrl+Meta — plain Ctrl does not activate", () => {
+  it("chord is exactly the configured modifier set: default Ctrl+Alt — plain Ctrl and Ctrl+Meta do not activate", () => {
     const { result } = renderHook(() => useQuickSelect());
 
     act(() => {
@@ -107,8 +124,15 @@ describe("useQuickSelect", () => {
     });
     expect(result.current.visible).toBe(false);
 
+    // With the configurable chord, the hold condition is an EXACT modifier-set
+    // match: the default is Ctrl+Alt, so Ctrl+Meta (no Alt) is not the chord.
     act(() => {
       dispatchKey("keydown", { key: "Control", ctrlKey: true, metaKey: true });
+    });
+    expect(result.current.visible).toBe(false);
+
+    act(() => {
+      dispatchKey("keydown", { key: "Control", ctrlKey: true, altKey: true });
     });
     expect(result.current.visible).toBe(true);
   });
@@ -234,39 +258,21 @@ describe("useQuickSelect", () => {
     expect(result.current.visible).toBe(false);
   });
 
-  it("releasing both Alt and Meta (Ctrl still held) ends quick-select", () => {
+  it("releasing the chord modifier (Alt) while other non-chord modifiers are held ends quick-select", () => {
     const { result } = renderHook(() => useQuickSelect());
 
-    // Activate with Ctrl+Meta chord
+    // Activate with the default Ctrl+Alt chord
     act(() => {
-      dispatchKey("keydown", { key: "Control", ctrlKey: true, metaKey: true });
+      chordDown();
     });
     expect(result.current.visible).toBe(true);
 
     act(() => {
-      dispatchKey("keyup", { key: "Meta", ctrlKey: true, metaKey: false });
+      dispatchKey("keyup", { key: "Alt", ctrlKey: true, altKey: false, metaKey: true });
     });
-    // Meta released, Alt was never held → chord broken
+    // Alt released → Ctrl+Alt chord broken (Meta being held is irrelevant —
+    // it's not part of the configured chord)
     expect(result.current.visible).toBe(false);
-  });
-
-  it("releasing only Alt while Meta is still held keeps quick-select active", () => {
-    const { result } = renderHook(() => useQuickSelect());
-
-    act(() => {
-      dispatchKey("keydown", {
-        key: "Control",
-        ctrlKey: true,
-        altKey: true,
-        metaKey: true,
-      });
-    });
-    expect(result.current.visible).toBe(true);
-
-    act(() => {
-      dispatchKey("keyup", { key: "Alt", ctrlKey: true, metaKey: true });
-    });
-    expect(result.current.visible).toBe(true);
   });
 
   it("skips activation while focus is in a non-terminal text input (isForeignTextEntry guard)", () => {
@@ -428,5 +434,91 @@ describe("useQuickSelect", () => {
       { label: "F1", kind: "command", id: "c9" },
       { label: "F2", kind: "terminal", id: "t7" },
     ]);
+  });
+
+  // --- Configurable chord (HotkeyQuickSelect) ---
+  //
+  // The chord combo is loaded via GetSettings (same pattern as
+  // useConfiguredHotkey) and parsed with parseHotkey. The tests mock the
+  // SettingsService binding and flush the dynamic-import chain like
+  // useAddClipboardCommandHotkey.test.ts does.
+
+  it("still activates with the DEFAULT chord (Ctrl+Alt) before settings load", async () => {
+    seedState({ commands: [{ id: "c1", command: "echo x", pinned: true }] });
+    const { result } = renderHook(() => useQuickSelect());
+    await flushMicrotasks();
+
+    act(() => {
+      chordDown();
+    });
+    expect(result.current.visible).toBe(true);
+  });
+
+  it("uses the configured chord from settings (Ctrl+Shift works, plain Ctrl+Alt does not)", async () => {
+    getSettings.mockResolvedValue({ HotkeyQuickSelect: "Ctrl+Shift" });
+    seedState({ commands: [{ id: "c1", command: "echo x", pinned: true }] });
+    const { result } = renderHook(() => useQuickSelect());
+    await flushMicrotasks();
+
+    // Old default chord must no longer activate
+    act(() => {
+      dispatchKey("keydown", { key: "Control", ctrlKey: true, altKey: true });
+    });
+    expect(result.current.visible).toBe(false);
+
+    // Configured chord activates
+    act(() => {
+      dispatchKey("keydown", { key: "Control", ctrlKey: true, shiftKey: true });
+    });
+    expect(result.current.visible).toBe(true);
+  });
+
+  it("routes F-key insertion through the configured chord (Ctrl+Meta)", async () => {
+    getSettings.mockResolvedValue({ HotkeyQuickSelect: "Ctrl+Meta" });
+    seedState({
+      commands: [{ id: "c1", command: "echo meta", pinned: true }],
+      tabs: [{ id: "t1", name: "main" }],
+      activeTabId: "t1",
+    });
+    renderHook(() => useQuickSelect());
+    await flushMicrotasks();
+
+    act(() => {
+      dispatchKey("keydown", { key: "Control", ctrlKey: true, metaKey: true });
+    });
+    act(() => {
+      dispatchKey("keydown", { key: "F1", ctrlKey: true, metaKey: true });
+    });
+
+    expect(mockedSendToTerminal).toHaveBeenCalledWith("t1", "echo meta", false);
+  });
+
+  it("release semantics follow the configured chord (Ctrl+Shift releases on Shift or Ctrl up)", async () => {
+    getSettings.mockResolvedValue({ HotkeyQuickSelect: "Ctrl+Shift" });
+    const { result } = renderHook(() => useQuickSelect());
+    await flushMicrotasks();
+
+    act(() => {
+      dispatchKey("keydown", { key: "Control", ctrlKey: true, shiftKey: true });
+    });
+    expect(result.current.visible).toBe(true);
+
+    // Shift up (Ctrl still held) breaks the Ctrl+Shift chord
+    act(() => {
+      dispatchKey("keyup", { key: "Shift", ctrlKey: true, shiftKey: false });
+    });
+    expect(result.current.visible).toBe(false);
+  });
+
+  it("ignores a configured combo that includes a non-modifier key (falls back to default)", async () => {
+    getSettings.mockResolvedValue({ HotkeyQuickSelect: "Ctrl+Alt+K" });
+    const { result } = renderHook(() => useQuickSelect());
+    await flushMicrotasks();
+
+    // Default Ctrl+Alt still works because the invalid combo was rejected
+    act(() => {
+      chordDown();
+    });
+    expect(result.current.visible).toBe(true);
   });
 });

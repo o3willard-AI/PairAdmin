@@ -98,4 +98,30 @@ describe("HotkeysTab", () => {
       expect.objectContaining({ HotkeyAddCommand: DEFAULT_ADD_COMMAND_HOTKEY })
     );
   });
+
+  it("shows the Quick Select default (Ctrl+Alt) when unset, with the F1-F12 hint", async () => {
+    render(<HotkeysTab />);
+
+    expect(await screen.findByDisplayValue("Ctrl+Alt")).toBeInTheDocument();
+    expect(screen.getByText("Hold this chord, then press F1–F12")).toBeInTheDocument();
+  });
+
+  it("loads a previously saved Quick Select combo instead of the default", async () => {
+    getSettings.mockResolvedValue({ HotkeyQuickSelect: "Ctrl+Meta" });
+    render(<HotkeysTab />);
+
+    expect(await screen.findByDisplayValue("Ctrl+Meta")).toBeInTheDocument();
+  });
+
+  it("saves the current Quick Select value via the Save button", async () => {
+    const user = userEvent.setup();
+    render(<HotkeysTab />);
+    await screen.findByDisplayValue("Ctrl+Alt");
+
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ HotkeyQuickSelect: "Ctrl+Alt" })
+    );
+  });
 });
