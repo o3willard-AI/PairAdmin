@@ -163,6 +163,57 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
     }
   };
 
+  // One-click reconnect into a SAVED local tmux session (a Kind:"local"
+  // Recent entry). This is deliberately a separate path from the plain
+  // "Local" button above: the plain button opens a fresh bare shell via
+  // OpenNewTerminal, while a saved local session re-attaches through
+  // OpenRemoteTerminal(kind:"local") so the backend's openLocalTMTerminal
+  // runs the same `tmux new-session -A` create-or-attach the SSH path uses.
+  // Local has no credentials and no host key, so it bypasses both the
+  // credential form and the host-key prompt entirely.
+  const handleConnectLocalSaved = async (h: config.RemoteHost) => {
+    setConnectStatus("connecting");
+    setConnectError("");
+    setSaveWarning("");
+    try {
+      const { OpenRemoteTerminal } = await import(
+        /* @vite-ignore */ "../../../wailsjs/go/services/PTYService"
+      );
+      const { TouchRemoteHost } = await import(
+        /* @vite-ignore */ "../../../wailsjs/go/services/RemoteService"
+      );
+
+      const tabId = `local:${crypto.randomUUID()}`;
+      const resolvedId = await OpenRemoteTerminal(tabId, {
+        kind: "local",
+        host: "",
+        port: 0,
+        username: "",
+        authType: "",
+        savePassword: false,
+        savedHostId: h.ID,
+        useTmux: false,
+        tmuxSessionName: h.TmuxSessionName || "",
+      });
+
+      // Best-effort last-used update — a failure must not undo the connection.
+      try {
+        await TouchRemoteHost(h.ID);
+      } catch (err) {
+        setSaveWarning(wailsErrorMessage(err, "Failed to update last-used time for this saved host"));
+      }
+
+      const store = useTerminalStore.getState();
+      store.addTab(resolvedId, h.Name || h.TmuxSessionName || "Local session", false, undefined, "local", h.ID);
+      store.setActiveTab(resolvedId);
+
+      if (!saveWarning) onClose();
+    } catch (err) {
+      setConnectStatus("error");
+      setConnectError(wailsErrorMessage(err, "Connection failed"));
+    }
+  };
+
   const selectKind = (k: TerminalKind) => {
     if (k === "local") {
       handleConnectLocal();
@@ -414,15 +465,24 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
 
   const renderHostRow = (st: services.RemoteHostStatus) => {
     const h = st.host;
+    const isLocal = h.Kind === "local";
     return (
       <div
         key={h.ID}
         className="flex items-center justify-between px-3 py-2 rounded border border-surface-border hover:bg-surface-2"
       >
         <div className="text-sm text-surface-text truncate">
-          {h.Name || `${h.Username}@${h.Host}`}
+          {/* A local entry has no Username@Host form — display Name (falling
+              back to the tmux session name). Remote entries keep the
+              username@host fallback. */}
+          {isLocal
+            ? h.Name || h.TmuxSessionName || "Local session"
+            : h.Name || `${h.Username}@${h.Host}`}
           <span className="text-xs text-surface-text-muted ml-2">{h.Kind}</span>
-          {!st.hasCredential && (
+          {/* The amber "no stored credential" warning only applies to remote
+              kinds: local has no credential BY DESIGN, so its absence is not
+              a problem worth warning about. */}
+          {!isLocal && !st.hasCredential && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger render={<span className="ml-2 inline-flex text-amber-500 align-middle" />}>
@@ -440,7 +500,12 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
             className="text-xs bg-surface-3 hover:bg-surface-3/80 text-surface-text px-2 py-1 rounded disabled:opacity-50"
             disabled={connectStatus === "connecting"}
             onClick={() => {
-              if (st.hasCredential) {
+              if (isLocal) {
+                // Saved local tmux session: re-attach via
+                // OpenRemoteTerminal(kind:"local") — no credentials, no
+                // host-key prompt, no form.
+                handleConnectLocalSaved(h);
+              } else if (st.hasCredential) {
                 // A credential is stored — dial directly with the empty password
                 // the keychain fills in at connect time.
                 handleReconnect(h);
@@ -460,7 +525,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
           </button>
           <button
             className="text-xs text-surface-text-muted hover:text-red-400 px-1.5 py-1"
-            aria-label={`Forget saved host ${h.Username}@${h.Host}`}
+            aria-label={isLocal ? `Forget saved session ${h.Name || h.TmuxSessionName || "local"}` : `Forget saved host ${h.Username}@${h.Host}`}
             onClick={() => handleForget(h.ID)}
           >
             &times;

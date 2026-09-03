@@ -7,10 +7,16 @@ import { useTerminalStore } from "@/stores/terminalStore";
 
 const renameRemoteHost = vi.fn();
 const saveRemoteHost = vi.fn();
+const writeInput = vi.fn();
 
 vi.mock("../../../../wailsjs/go/services/RemoteService", () => ({
   RenameRemoteHost: (...args: unknown[]) => renameRemoteHost(...args),
   SaveRemoteHost: (...args: unknown[]) => saveRemoteHost(...args),
+}));
+
+vi.mock("../../../../wailsjs/go/services/PTYService", () => ({
+  WriteInput: (...args: unknown[]) => writeInput(...args),
+  CloseTerminal: vi.fn(() => Promise.resolve()),
 }));
 
 describe("TerminalTab", () => {
@@ -73,6 +79,94 @@ describe("TerminalTab", () => {
     expect(screen.getByText("Rename")).toBeInTheDocument();
     expect(screen.queryByText("Save Terminal")).not.toBeInTheDocument();
     expect(screen.queryByText("Saved")).not.toBeInTheDocument();
+  });
+
+  it("local tab context menu also offers 'Rename and Save tmux session'; remote tabs do not get it", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <TerminalTab
+        tab={{ id: "tmux:%0", name: "main:0.0", kind: "local" as const }}
+        isActive={false}
+        onClick={vi.fn()}
+      />
+    );
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("main:0.0") });
+    expect(screen.getByText("Rename and Save tmux session")).toBeInTheDocument();
+    unmount();
+
+    // A remote tab (has a host) must NOT offer the local-tmux action.
+    render(
+      <TerminalTab
+        tab={{
+          id: "ssh:abc",
+          name: "ubuntu@10.0.1.5",
+          kind: "ssh" as const,
+          host: "10.0.1.5",
+          port: 22,
+        }}
+        isActive={false}
+        onClick={vi.fn()}
+      />
+    );
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("ubuntu@10.0.1.5") });
+    expect(screen.getByText("Rename")).toBeInTheDocument();
+    expect(screen.queryByText("Rename and Save tmux session")).not.toBeInTheDocument();
+  });
+
+  it("rename-and-save flow: renames the tab, writes the tmux create-or-attach to the active local terminal, and saves Kind:'local'", async () => {
+    useTerminalStore.getState().addTab("local:abc", "Terminal 1", false, undefined, "local");
+    useTerminalStore.setState({ activeTabId: "local:abc" });
+    const tab = { id: "local:abc", name: "Terminal 1", kind: "local" as const };
+    const user = userEvent.setup();
+    saveRemoteHost.mockResolvedValue({ ID: "host-123", Kind: "local" });
+    render(<TerminalTab tab={tab} isActive={true} onClick={vi.fn()} />);
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("Terminal 1") });
+    await user.click(screen.getByText("Rename and Save tmux session"));
+    const input = screen.getByRole("textbox");
+    await user.clear(input);
+    await user.type(input, "build-session{Enter}");
+
+    // (a) tab renamed
+    expect(useTerminalStore.getState().tabs[0].name).toBe("build-session");
+    // (b) tmux create-or-attach written to the ACTIVE local terminal via WriteInput
+    await vi.waitFor(() => expect(writeInput).toHaveBeenCalledTimes(1));
+    expect(writeInput).toHaveBeenCalledWith("local:abc", "tmux new-session -A -s build-session\r");
+    // (c) SaveRemoteHost called with the local shape: Kind/Name/TmuxSessionName set,
+    //     host coordinates empty (local has no credentials).
+    await vi.waitFor(() => expect(saveRemoteHost).toHaveBeenCalledTimes(1));
+    const [record, password, passphrase] = saveRemoteHost.mock.calls[0];
+    expect(record).toMatchObject({
+      Kind: "local",
+      Name: "build-session",
+      TmuxSessionName: "build-session",
+    });
+    expect(record.Host).toBe("");
+    expect(record.Port).toBe(0);
+    expect(record.Username).toBe("");
+    expect(record.AuthType).toBe("");
+    expect(password).toBe("");
+    expect(passphrase).toBe("");
+  });
+
+  it("rename-and-save with an empty name does not write the tmux command or save", async () => {
+    useTerminalStore.getState().addTab("local:abc", "Terminal 1", false, undefined, "local");
+    const tab = { id: "local:abc", name: "Terminal 1", kind: "local" as const };
+    const user = userEvent.setup();
+    render(<TerminalTab tab={tab} isActive={true} onClick={vi.fn()} />);
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("Terminal 1") });
+    await user.click(screen.getByText("Rename and Save tmux session"));
+    const input = screen.getByRole("textbox");
+    // The input opens pre-filled with the current name — clear it to commit empty.
+    await user.clear(input);
+    await user.keyboard("{Enter}");
+
+    expect(writeInput).not.toHaveBeenCalled();
+    expect(saveRemoteHost).not.toHaveBeenCalled();
+    // The tab keeps its original name.
+    expect(useTerminalStore.getState().tabs[0].name).toBe("Terminal 1");
   });
 
   it("unsaved remote tab offers Rename and Save Terminal", async () => {

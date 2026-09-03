@@ -23,7 +23,9 @@ interface TerminalTabProps {
 }
 
 export function TerminalTab({ tab, isActive, onClick }: TerminalTabProps) {
-  const [renaming, setRenaming] = useState(false);
+  // Which rename flow is active, if any: a plain rename, or the local-tmux
+  // "rename and save session" flow (rename + create-or-attach + persist).
+  const [renaming, setRenaming] = useState<"rename" | "saveTmux" | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
 
@@ -43,31 +45,84 @@ export function TerminalTab({ tab, isActive, onClick }: TerminalTabProps) {
 
   const startRename = () => {
     setRenameValue(tab.name);
-    setRenaming(true);
+    setRenaming("rename");
+  };
+
+  // Local-only flow: rename the tab, then start/attach the named tmux session
+  // in that very terminal, and persist it as a Kind:"local" saved host so the
+  // "+ Connect" dialog's Recent list can one-click back into it.
+  const startRenameAndSaveTmux = () => {
+    setRenameValue(tab.name);
+    setRenaming("saveTmux");
   };
 
   const commitRename = () => {
+    const mode = renaming;
+    setRenaming(null);
     const trimmed = renameValue.trim();
-    if (trimmed) {
-      useTerminalStore.getState().renameTab(tab.id, trimmed);
-      // Persist onto the saved host record (if this tab came from one) so a
-      // future reconnect shows the friendly name instead of reverting to
-      // "username@host". Best-effort: the local rename above already applies
-      // regardless, and a failure here just means next reconnect falls back
-      // to the computed name — not worth blocking or erroring the rename UI
-      // over, but still logged so it's not entirely invisible when debugging.
-      if (tab.savedHostId) {
-        import(/* @vite-ignore */ "../../../wailsjs/go/services/RemoteService")
-          .then(({ RenameRemoteHost }) => RenameRemoteHost(tab.savedHostId!, trimmed))
-          .catch((err) => {
-            console.error("Failed to persist renamed saved host:", err);
-          });
-      }
+    if (!trimmed) return;
+    useTerminalStore.getState().renameTab(tab.id, trimmed);
+
+    if (mode === "saveTmux") {
+      // (b) create-or-attach the named tmux session in this terminal. Any
+      // tmux-side failure (missing tmux, session already attached) is visible
+      // in the terminal output itself — no blocking UI here.
+      import(/* @vite-ignore */ "../../../wailsjs/go/services/PTYService")
+        .then(({ WriteInput }) =>
+          WriteInput(tab.id, `tmux new-session -A -s ${trimmed}\r`)
+        )
+        .catch((err) => {
+          console.error("Failed to send tmux create-or-attach command:", err);
+        });
+      // (c) persist as a Kind:"local" saved host (no host coordinates, no
+      // credentials — local has none). Upsert by the tab's existing ID when
+      // it was saved before. Best-effort: a failure here doesn't undo the
+      // rename or the tmux attach.
+      import(/* @vite-ignore */ "../../../wailsjs/go/services/RemoteService")
+        .then(({ SaveRemoteHost }) =>
+          SaveRemoteHost(
+            {
+              ID: tab.savedHostId || "",
+              Kind: "local",
+              Name: trimmed,
+              Host: "",
+              Port: 0,
+              Username: "",
+              AuthType: "",
+              PrivateKeyPath: "",
+              LastUsed: "",
+              UseTmux: false,
+              TmuxSessionName: trimmed,
+            },
+            "",
+            ""
+          )
+        )
+        .then((saved) => {
+          useTerminalStore.getState().setSavedHostId(tab.id, saved.ID);
+        })
+        .catch((err) => {
+          console.error("Failed to save local tmux session:", err);
+        });
+      return;
     }
-    setRenaming(false);
+
+    // Plain rename: persist onto the saved host record (if this tab came from
+    // one) so a future reconnect shows the friendly name instead of reverting
+    // to "username@host". Best-effort: the local rename above already applies
+    // regardless, and a failure here just means next reconnect falls back
+    // to the computed name — not worth blocking or erroring the rename UI
+    // over, but still logged so it's not entirely invisible when debugging.
+    if (tab.savedHostId) {
+      import(/* @vite-ignore */ "../../../wailsjs/go/services/RemoteService")
+        .then(({ RenameRemoteHost }) => RenameRemoteHost(tab.savedHostId!, trimmed))
+        .catch((err) => {
+          console.error("Failed to persist renamed saved host:", err);
+        });
+    }
   };
 
-  const cancelRename = () => setRenaming(false);
+  const cancelRename = () => setRenaming(null);
 
   // Builds a config.RemoteHost from this tab's non-secret connection metadata
   // and persists it (metadata only — password and passphrase are passed empty,
@@ -210,6 +265,15 @@ export function TerminalTab({ tab, isActive, onClick }: TerminalTabProps) {
           <Pencil size={12} />
           Rename
         </ContextMenuItem>
+        {/* Local-only: rename + start/attach the named tmux session in this
+            terminal + persist it for the Recent list. Remote tabs attach tmux
+            at connect time instead, so this flow doesn't apply to them. */}
+        {tab.kind === "local" && !tab.host && (
+          <ContextMenuItem onClick={startRenameAndSaveTmux}>
+            <Save size={12} />
+            Rename and Save tmux session
+          </ContextMenuItem>
+        )}
         {tab.savedHostId ? (
           <ContextMenuItem disabled>
             <Check size={12} />
