@@ -3,6 +3,7 @@ import { useTerminalStore } from "@/stores/terminalStore";
 import { useCommandStore } from "@/stores/commandStore";
 import { sendToTerminal } from "@/utils/sendToTerminal";
 import { isForeignTextEntry } from "@/utils/hotkey";
+import { setQuickSelectBadges, clearQuickSelectBadges } from "@/stores/quickSelectStore";
 
 export interface QuickSelectItem {
   label: string; // "F1" .. "F12"
@@ -43,6 +44,16 @@ export function useQuickSelect(): { visible: boolean; items: QuickSelectItem[] }
     itemsRef.current = next;
     setItems(next);
     setVisible(true);
+    // Publish per-id F-key labels so each CommandCard / TerminalTab can render
+    // its OWN badge inline on its row (signage lives on the card, not in a
+    // detached corner column).
+    const commandFkeys: Record<string, string> = {};
+    const terminalFkeys: Record<string, string> = {};
+    for (const item of next) {
+      if (item.kind === "command") commandFkeys[item.id] = item.label;
+      else terminalFkeys[item.id] = item.label;
+    }
+    setQuickSelectBadges(true, commandFkeys, terminalFkeys);
   }, []);
 
   useEffect(() => {
@@ -105,6 +116,8 @@ export function useQuickSelect(): { visible: boolean; items: QuickSelectItem[] }
       // could confuse other listeners (e.g. xterm's own key handling).
       if (!event.ctrlKey || !(event.altKey || event.metaKey)) {
         setVisible(false);
+        // Hide the per-row badges too (see activate()).
+        clearQuickSelectBadges();
       }
     };
 

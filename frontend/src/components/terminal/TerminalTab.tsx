@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTerminalStore } from "@/stores/terminalStore";
 import type { TerminalTab } from "@/stores/terminalStore";
+import { useQuickSelectStore } from "@/stores/quickSelectStore";
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -112,6 +113,14 @@ export function TerminalTab({ tab, isActive, onClick }: TerminalTabProps) {
     return () => cancelAnimationFrame(id);
   }, [renaming]);
 
+  // Quick-select signage: this tab's own F-key while the chord is held.
+  // Subscribed per-tab so only affected rows re-render on chord press/
+  // release. Not shown in rename mode — the rename input replaces the whole
+  // row and the badge would sit on top of the text field.
+  const fkey = useQuickSelectStore(
+    (s) => (s.visible ? s.terminalFkeys[tab.id] : undefined)
+  );
+
   if (renaming) {
     return (
       <div className="w-full px-3 py-2 bg-surface-1 border-l-2 border-blue-500">
@@ -137,8 +146,8 @@ export function TerminalTab({ tab, isActive, onClick }: TerminalTabProps) {
           <div
             className={
               isActive
-                ? "group flex items-center w-full px-3 py-2 text-left text-sm bg-surface-2 text-surface-text border-l-2 border-blue-500 cursor-pointer"
-                : "group flex items-center w-full px-3 py-2 text-left text-sm text-surface-text-muted hover:bg-surface-1 hover:text-surface-text border-l-2 border-transparent transition-colors cursor-pointer"
+                ? "group relative flex items-center w-full px-3 py-2 text-left text-sm bg-surface-2 text-surface-text border-l-2 border-blue-500 cursor-pointer"
+                : "group relative flex items-center w-full px-3 py-2 text-left text-sm text-surface-text-muted hover:bg-surface-1 hover:text-surface-text border-l-2 border-transparent transition-colors cursor-pointer"
             }
             onClick={onClick}
           />
@@ -153,6 +162,14 @@ export function TerminalTab({ tab, isActive, onClick }: TerminalTabProps) {
                 : "bg-surface-text-muted"
           }`}
         />
+        {fkey && (
+          <span
+            aria-hidden="true"
+            className="absolute right-1 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold leading-none bg-surface-2/95 text-surface-text border border-surface-border shadow-sm pointer-events-none"
+          >
+            {fkey}
+          </span>
+        )}
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger render={<span className="truncate flex-1" />}>
