@@ -649,4 +649,65 @@ describe("NewTerminalDialog", () => {
       expect(screen.queryByText("Verify new host key")).not.toBeInTheDocument();
     });
   });
+
+  describe("local tmux sessions (Kind:\"local\" Recent entries)", () => {
+    const localHost = {
+      ID: "local-1",
+      Kind: "local",
+      Name: "build session",
+      TmuxSessionName: "build-session",
+      LastUsed: "2026-01-01T00:00:00Z",
+    };
+
+    it("shows a saved local-tmux entry by Name with NO amber credential icon", async () => {
+      listRemoteHostsWithStatus.mockResolvedValue([status(localHost, false)]);
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      expect(await screen.findByText("build session")).toBeInTheDocument();
+      // The amber triangle means "no stored credential — you'll be prompted";
+      // local has no credential by design, so the indicator must not appear.
+      expect(document.body.querySelector(".lucide-triangle-alert")).toBeNull();
+    });
+
+    it("Connect on a local entry routes through OpenRemoteTerminal with kind 'local' (NOT OpenNewTerminal), touches the host, and adds a local tab", async () => {
+      const user = userEvent.setup();
+      listRemoteHostsWithStatus.mockResolvedValue([status(localHost, false)]);
+      openRemoteTerminal.mockResolvedValue("local:resolved-id");
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await screen.findByText("build session");
+      await user.click(screen.getByText("Connect"));
+
+      await vi.waitFor(() => expect(openRemoteTerminal).toHaveBeenCalledTimes(1));
+      const [tabId, params] = openRemoteTerminal.mock.calls[0];
+      expect(tabId).toMatch(/^local:/);
+      expect(params).toMatchObject({
+        kind: "local",
+        tmuxSessionName: "build-session",
+        savedHostId: "local-1",
+      });
+      expect(openNewTerminal).not.toHaveBeenCalled();
+      expect(touchRemoteHost).toHaveBeenCalledWith("local-1");
+
+      const tab = useTerminalStore.getState().tabs.find((t) => t.id === "local:resolved-id");
+      expect(tab?.kind).toBe("local");
+      expect(tab?.name).toBe("build session");
+      expect(tab?.savedHostId).toBe("local-1");
+    });
+
+    it("does NOT route a local entry through the SSH host-key prompt or the credential form", async () => {
+      const user = userEvent.setup();
+      getSettings.mockResolvedValue({ PromptNewHostKeys: true });
+      listRemoteHostsWithStatus.mockResolvedValue([status(localHost, false)]);
+      openRemoteTerminal.mockResolvedValue("local:resolved-id");
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await screen.findByText("build session");
+      await user.click(screen.getByText("Connect"));
+
+      await vi.waitFor(() => expect(openRemoteTerminal).toHaveBeenCalledTimes(1));
+      expect(checkHostKeyTrust).not.toHaveBeenCalled();
+      expect(screen.queryByText("Host")).not.toBeInTheDocument();
+    });
+  });
 });
