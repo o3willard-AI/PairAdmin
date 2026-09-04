@@ -54,8 +54,17 @@ patterns to redact matches or drop whole lines. API keys are held in encrypted,
 mlock'd memory (memguard) rather than plain variables. Every prompt and response
 is written to a local rotating JSONL audit log, so you can answer "what did we
 send them?" with a file instead of a shrug. Prefer nothing leave the box at all?
-Point it at Ollama or LM Studio — and the Ollama path is enforced localhost-only,
-so a typo in a host field can't quietly ship your terminal to someone else's GPU.
+Point it at Ollama or LM Studio on this machine — both default to loopback
+(Ollama to `http://localhost:11434`), so a typo in a host field can't quietly
+ship your terminal elsewhere.
+
+**Ollama on a remote host?** Also supported — point the Server URL at a team
+GPU box or any other instance you control. Two things to know: terminal output
+*will* leave your machine, so only point at a host you trust, and if the remote
+requires authentication, set `OLLAMA_API_KEY` (or paste a key into the Ollama
+API key field in Settings → LLM Config; it's stored in the OS keychain and sent
+as `Authorization: Bearer`). PairAdmin shows a warning in Settings whenever a
+non-loopback Ollama host is configured.
 
 **Bring your own model.** OpenAI, Anthropic, Ollama, LM Studio, and OpenRouter,
 switchable mid-session with `/model`. Each terminal tab keeps its own separate

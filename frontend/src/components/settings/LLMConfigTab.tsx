@@ -19,6 +19,33 @@ const PROVIDER_LABELS: Record<Provider, string> = {
 
 const NO_KEY_PROVIDERS: Provider[] = ["ollama", "lmstudio"];
 
+// isLoopbackHost reports whether an Ollama/LM Studio server URL points at
+// this machine: localhost, a 127.x.y.z address, or [::1] / ::1. Used to
+// decide whether the "terminal output leaves the machine" warning shows for
+// remote Ollama hosts.
+export function isLoopbackHost(host: string): boolean {
+  const trimmed = host.trim().toLowerCase();
+  if (trimmed === "") return true; // empty = default localhost:11434
+  let hostname: string;
+  try {
+    const u = new URL(trimmed);
+    hostname = u.hostname;
+  } catch {
+    // Not a parseable URL — maybe a bare "localhost:11434". Try prefixing a
+    // scheme so URL parsing still yields a hostname.
+    try {
+      hostname = new URL("http://" + trimmed).hostname;
+    } catch {
+      // Unparseable — fail closed toward "remote" (caller shows the warning).
+      return false;
+    }
+  }
+  if (hostname === "localhost") return true;
+  if (hostname === "::1" || hostname === "[::1]") return true;
+  if (hostname.startsWith("127.")) return true;
+  return false;
+}
+
 interface LLMConfigTabProps {
   onClose: () => void;
 }
@@ -153,6 +180,19 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
   // "Disable Pair LLM" is model-less: no Model, no Server URL, no API Key,
   // nothing to test — only the Provider dropdown and Save remain.
   const isDisabledProvider = provider === "disabled";
+  // Remote-Ollama privacy warning: terminal output leaves the machine when
+  // the host isn't loopback. Localhost, 127.* and ::1 are the loopback forms;
+  // anything else (team GPU box, LAN IP, a public hostname) triggers the
+  // amber warning. Non-empty is treated as remote by design — an unparseable
+  // or bare-host value should fail closed toward the warning, not hide it.
+  const isRemoteOllama =
+    provider === "ollama" && ollamaHost.trim() !== "" && !isLoopbackHost(ollamaHost);
+
+  // Local Ollama needs no key, but a REMOTE Ollama commonly requires one
+  // (Authorization: Bearer). The field shows only for ollama; empty = no
+  // key persisted (SaveAPIKey with an empty key removes the entry, so we
+  // only call it when the user actually typed something).
+  const showOllamaKeyField = provider === "ollama";
 
   return (
     <div className="space-y-4 p-6">
@@ -188,19 +228,34 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
 
       {!isDisabledProvider && (provider === "ollama") ? (
         <div className="space-y-1">
-          <label className="text-xs text-surface-text-muted">Server URL</label>
+          <label className="text-xs text-surface-text-muted" htmlFor="ollama-server-url">
+            Server URL
+          </label>
           <input
+            id="ollama-server-url"
             type="text"
             value={ollamaHost}
             onChange={(e) => setOllamaHost(e.target.value)}
             placeholder="http://localhost:11434"
             className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
           />
+          {isRemoteOllama && (
+            <p
+              role="alert"
+              className="text-xs text-amber-500 mt-1"
+            >
+              ⚠ Terminal output will be sent to a remote Ollama server — only
+              use a host you control.
+            </p>
+          )}
         </div>
       ) : (provider === "lmstudio") ? (
         <div className="space-y-1">
-          <label className="text-xs text-surface-text-muted">Server URL</label>
+          <label className="text-xs text-surface-text-muted" htmlFor="lmstudio-server-url">
+            Server URL
+          </label>
           <input
+            id="lmstudio-server-url"
             type="text"
             value={lmstudioHost}
             onChange={(e) => setLmstudioHost(e.target.value)}
@@ -225,6 +280,24 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
             placeholder={keyPlaceholder || "Enter API key"}
             className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
           />
+        </div>
+      ) : showOllamaKeyField ? (
+        <div className="space-y-1">
+          <label className="text-xs text-surface-text-muted" htmlFor="ollama-api-key">
+            Ollama API key
+          </label>
+          <input
+            id="ollama-api-key"
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={keyPlaceholder || "Optional — only for authenticated remote servers"}
+            className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
+          />
+          <p className="text-xs text-surface-text-muted">
+            Leave empty for a local Ollama. Required by some remote servers —
+            sent as an Authorization: Bearer header.
+          </p>
         </div>
       ) : !isDisabledProvider ? (
         <div className="space-y-1">
