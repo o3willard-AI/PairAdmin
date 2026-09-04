@@ -1,79 +1,111 @@
 package llm
 
 import (
+	"bufio"
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
-
-	ollamaapi "github.com/ollama/ollama/api"
+	"strings"
 )
 
-// OllamaProvider implements the Provider interface for Ollama deployments.
-// OLLAMA_HOST can be any URL; empty defaults to http://localhost:11434.
-type OllamaProvider struct {
-	client *ollamaapi.Client
-	model  string
+// ollamaProvider implements the Provider interface for Ollama deployments,
+// speaking Ollama's stable HTTP API directly over net/http (POST /api/chat
+// NDJSON streaming, GET /api/tags for reachability). No Ollama SDK: the HTTP
+// surface is the contract, and owning the client keeps the dependency tree
+// (and its server-side advisories) out of the app.
+type ollamaProvider struct {
+	host  string // base URL, always non-empty after NewOllamaProvider
+	model string
+	http  *http.Client
 }
 
+// defaultOllamaHost is Ollama's out-of-the-box listen address.
+const defaultOllamaHost = "http://localhost:11434"
+
 // validateOllamaHost validates the host URL format. An empty host is accepted
-// (Ollama defaults to localhost:11434).
+// (Ollama defaults to http://localhost:11434); non-empty hosts must parse as
+// a URL with an http or https scheme. Remote hosts are allowed — pointing at
+// an Ollama instance on another machine is a legitimate setup.
 func validateOllamaHost(host string) error {
 	if host == "" {
 		return nil
 	}
-	_, err := url.Parse(host)
+	u, err := url.Parse(host)
 	if err != nil {
 		return fmt.Errorf("invalid OLLAMA_HOST URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("invalid OLLAMA_HOST scheme %q (want http or https)", u.Scheme)
 	}
 	return nil
 }
 
-// NewOllamaProvider creates a new Ollama provider.
-// Returns an error if host is non-empty and not a localhost address.
-func NewOllamaProvider(host, model string) (*OllamaProvider, error) {
+// NewOllamaProvider creates a new Ollama provider for the given host and
+// model. An empty host defaults to http://localhost:11434.
+func NewOllamaProvider(host, model string) (*ollamaProvider, error) {
 	if err := validateOllamaHost(host); err != nil {
 		return nil, err
 	}
-
-	var clientURL *url.URL
-	if host != "" {
-		var err error
-		clientURL, err = url.Parse(host)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse OLLAMA_HOST: %w", err)
-		}
-	} else {
-		// Default Ollama URL
-		clientURL = &url.URL{
-			Scheme: "http",
-			Host:   "localhost:11434",
-		}
+	if host == "" {
+		host = defaultOllamaHost
 	}
-
-	// ollamaapi.NewClient stores whatever *http.Client it's given as-is,
-	// with no nil check or default — passing nil here meant every request
-	// dereferenced a nil http.Client and panicked the whole process the
-	// first time anyone actually sent a chat message through Ollama.
-	client := ollamaapi.NewClient(clientURL, &http.Client{})
-	return &OllamaProvider{
-		client: client,
-		model:  model,
+	return &ollamaProvider{
+		host:  strings.TrimRight(host, "/"),
+		model: model,
+		http:  &http.Client{},
 	}, nil
 }
 
 // Name returns the provider identifier.
-func (p *OllamaProvider) Name() string {
+func (p *ollamaProvider) Name() string {
 	return "ollama"
 }
 
+// chatRequest / chatMessage mirror Ollama's /api/chat request body.
+type chatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type chatRequest struct {
+	Model    string        `json:"model"`
+	Messages []chatMessage `json:"messages"`
+	Stream   bool          `json:"stream"`
+}
+
+// chatResponse is one NDJSON line of Ollama's streaming /api/chat response:
+// a message (with incremental content), a done flag on the final line, or an
+// error field when something failed server-side.
+type chatResponse struct {
+	Message chatMessage `json:"message"`
+	Done    bool        `json:"done"`
+	Error   string      `json:"error,omitempty"`
+}
+
 // Stream initiates a streaming chat request and returns a channel of chunks.
-// The Ollama SDK uses a callback-based API; this method wraps it into a channel.
-func (p *OllamaProvider) Stream(ctx context.Context, messages []Message) (<-chan StreamChunk, error) {
+// The HTTP read runs in a goroutine: POST {host}/api/chat, parse the NDJSON
+// response line by line, emit one Text chunk per non-empty message.content
+// and exactly one Done chunk on the final line. Any failure (non-2xx status,
+// an in-stream "error" field, malformed lines, context cancellation, a panic)
+// surfaces as an Error chunk instead of crashing the app.
+func (p *ollamaProvider) Stream(ctx context.Context, messages []Message) (<-chan StreamChunk, error) {
 	ch := make(chan StreamChunk, 32)
 
-	req := buildOllamaRequest(p.model, messages)
+	ollamaMsgs := make([]chatMessage, len(messages))
+	for i, m := range messages {
+		ollamaMsgs[i] = chatMessage{Role: string(m.Role), Content: m.Content}
+	}
+	body, err := json.Marshal(chatRequest{
+		Model:    p.model,
+		Messages: ollamaMsgs,
+		Stream:   true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode ollama chat request: %w", err)
+	}
 
 	go func() {
 		defer close(ch)
@@ -88,54 +120,103 @@ func (p *OllamaProvider) Stream(ctx context.Context, messages []Message) (<-chan
 			}
 		}()
 
-		err := p.client.Chat(ctx, req, func(resp ollamaapi.ChatResponse) error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.host+"/api/chat", strings.NewReader(string(body)))
+		if err != nil {
+			ch <- StreamChunk{Error: fmt.Errorf("build ollama chat request: %w", err)}
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := p.http.Do(req)
+		if err != nil {
+			// Context cancellation is the user navigating away — not an error
+			// worth surfacing in the chat pane.
 			if ctx.Err() != nil {
-				return ctx.Err()
+				return
 			}
-			if resp.Done {
+			ch <- StreamChunk{Error: fmt.Errorf("ollama chat request failed: %w", err)}
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode > 299 {
+			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			detail := strings.TrimSpace(string(respBody))
+			if detail == "" {
+				detail = resp.Status
+			}
+			ch <- StreamChunk{Error: fmt.Errorf("ollama chat failed: HTTP %d: %s", resp.StatusCode, detail)}
+			return
+		}
+
+		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // NDJSON lines can exceed the 64KiB default
+		for scanner.Scan() {
+			if ctx.Err() != nil {
+				return
+			}
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+			var cr chatResponse
+			if err := json.Unmarshal([]byte(line), &cr); err != nil {
+				ch <- StreamChunk{Error: fmt.Errorf("malformed ollama stream line: %w", err)}
+				return
+			}
+			if cr.Error != "" {
+				ch <- StreamChunk{Error: fmt.Errorf("ollama: %s", cr.Error)}
+				return
+			}
+			// The FINAL line carries both the last token AND done=true — emit
+			// its content first (dropping it truncates the response), then
+			// terminate with Done. Empty content on a non-done line is
+			// skipped; emitting it would render a blank chunk.
+			if cr.Message.Content != "" {
+				select {
+				case ch <- StreamChunk{Text: cr.Message.Content}:
+				case <-ctx.Done():
+					return
+				}
+			}
+			if cr.Done {
 				ch <- StreamChunk{Done: true}
-				return nil
-			}
-			select {
-			case ch <- StreamChunk{Text: resp.Message.Content}:
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-			return nil
-		})
-		if err != nil && !errors.Is(err, context.Canceled) {
-			select {
-			case ch <- StreamChunk{Error: err}:
-			default:
+				return
 			}
 		}
+		if err := scanner.Err(); err != nil && ctx.Err() == nil {
+			ch <- StreamChunk{Error: fmt.Errorf("read ollama stream: %w", err)}
+			return
+		}
+		// Stream ended without a done line. Two very different causes:
+		//   - the user cancelled (ctx done) → end silently, no Done — the
+		//     consumer already knows the request was abandoned;
+		//   - the server died mid-response → emit Done so the consumer's
+		//     finalize path still runs; the alternative is a chat pane stuck
+		//     on a blinking cursor forever.
+		if ctx.Err() != nil {
+			return
+		}
+		ch <- StreamChunk{Done: true}
 	}()
 
 	return ch, nil
 }
 
-// TestConnection verifies the Ollama server is reachable by listing local models.
-func (p *OllamaProvider) TestConnection(ctx context.Context) error {
-	_, err := p.client.List(ctx)
+// TestConnection verifies the Ollama server is reachable: GET {host}/api/tags
+// (the models list). Any 2xx response counts as reachable.
+func (p *ollamaProvider) TestConnection(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.host+"/api/tags", nil)
+	if err != nil {
+		return fmt.Errorf("build ollama tags request: %w", err)
+	}
+	resp, err := p.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("ollama connection test failed: %w", err)
 	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("ollama connection test failed: HTTP %s", resp.Status)
+	}
 	return nil
-}
-
-// buildOllamaRequest converts provider-agnostic messages to an Ollama ChatRequest.
-func buildOllamaRequest(model string, messages []Message) *ollamaapi.ChatRequest {
-	var ollamaMsgs []ollamaapi.Message
-	for _, m := range messages {
-		ollamaMsgs = append(ollamaMsgs, ollamaapi.Message{
-			Role:    string(m.Role),
-			Content: m.Content,
-		})
-	}
-	stream := true
-	return &ollamaapi.ChatRequest{
-		Model:    model,
-		Messages: ollamaMsgs,
-		Stream:   &stream,
-	}
 }
