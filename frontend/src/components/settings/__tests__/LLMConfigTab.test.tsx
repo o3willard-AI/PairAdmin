@@ -94,3 +94,126 @@ describe("LLMConfigTab — Disable Pair LLM", () => {
     expect(useSettingsStore.getState().connectionStatus).toBe("disconnected");
   });
 });
+
+describe("LLMConfigTab — Ollama API key (remote servers)", () => {
+  beforeEach(() => {
+    getSettings.mockReset().mockResolvedValue({});
+    saveSettings.mockReset().mockResolvedValue(undefined);
+    saveAPIKey.mockReset().mockResolvedValue(undefined);
+    setModel.mockReset().mockResolvedValue("Model set to ollama:llama3");
+    useSettingsStore.setState({
+      activeModel: "",
+      settingsOpen: false,
+      connectionStatus: "connected",
+    });
+  });
+
+  it("shows an 'Ollama API key' field when the ollama provider is selected", async () => {
+    const user = userEvent.setup();
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await user.selectOptions(screen.getByRole("combobox"), "ollama");
+
+    expect(await screen.findByText("Ollama API key")).toBeInTheDocument();
+  });
+
+  it("persists the Ollama key to the keychain on save", async () => {
+    const user = userEvent.setup();
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await user.selectOptions(screen.getByRole("combobox"), "ollama");
+    await user.type(
+      screen.getByLabelText("Ollama API key"),
+      "sk-remote-ollama-key"
+    );
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(saveAPIKey).toHaveBeenCalledWith("ollama", "sk-remote-ollama-key");
+  });
+
+  it("does not call SaveAPIKey when the Ollama key field is left empty (local instance)", async () => {
+    const user = userEvent.setup();
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await user.selectOptions(screen.getByRole("combobox"), "ollama");
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(saveAPIKey).not.toHaveBeenCalled();
+  });
+});
+
+describe("LLMConfigTab — remote Ollama privacy warning", () => {
+  beforeEach(() => {
+    getSettings.mockReset().mockResolvedValue({});
+    saveSettings.mockReset().mockResolvedValue(undefined);
+    saveAPIKey.mockReset().mockResolvedValue(undefined);
+    setModel.mockReset().mockResolvedValue("Model set to ollama:llama3");
+    useSettingsStore.setState({
+      activeModel: "",
+      settingsOpen: false,
+      connectionStatus: "connected",
+    });
+  });
+
+  it("warns when the Ollama host is remote (terminal output leaves the machine)", async () => {
+    const user = userEvent.setup();
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await user.selectOptions(screen.getByRole("combobox"), "ollama");
+    await user.type(
+      screen.getByLabelText("Server URL"),
+      "http://team-gpu-box.lan:11434"
+    );
+
+    expect(
+      screen.getByText(/terminal output will be sent to a remote ollama server/i)
+    ).toBeInTheDocument();
+  });
+
+  it("does NOT warn for localhost or 127.0.0.1 hosts", async () => {
+    const user = userEvent.setup();
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await user.selectOptions(screen.getByRole("combobox"), "ollama");
+    // Placeholder default (localhost) — leave the field untouched.
+    expect(
+      screen.queryByText(/terminal output will be sent to a remote ollama server/i)
+    ).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Server URL"), "http://127.0.0.1:11434");
+    expect(
+      screen.queryByText(/terminal output will be sent to a remote ollama server/i)
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not warn for ::1 loopback", async () => {
+    const user = userEvent.setup();
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await user.selectOptions(screen.getByRole("combobox"), "ollama");
+    // userEvent.type chokes on ':' key-descriptor parsing, so set ::1 via a
+    // paste-style change instead of typing it character by character.
+    const input = screen.getByLabelText("Server URL");
+    await user.click(input);
+    await user.paste("http://[::1]:11434");
+
+    expect(
+      screen.queryByText(/terminal output will be sent to a remote ollama server/i)
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not warn for other providers (lmstudio)", async () => {
+    const user = userEvent.setup();
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await user.selectOptions(screen.getByRole("combobox"), "lmstudio");
+    await user.type(
+      screen.getByLabelText("Server URL"),
+      "http://some-lmstudio-box:1234/v1"
+    );
+
+    expect(
+      screen.queryByText(/terminal output will be sent to a remote ollama server/i)
+    ).not.toBeInTheDocument();
+  });
+});
