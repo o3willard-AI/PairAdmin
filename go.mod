@@ -1,6 +1,6 @@
 module pairadmin
 
-go 1.24.11
+go 1.26.0
 
 require (
 	github.com/99designs/keyring v1.2.2
