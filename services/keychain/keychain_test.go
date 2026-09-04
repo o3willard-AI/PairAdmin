@@ -208,3 +208,119 @@ func TestNew_DefaultOpenFunction(t *testing.T) {
 		t.Error("New() Client.open field is nil")
 	}
 }
+
+// countingKeyringOpen wraps an open function and counts how many times the
+// keyring was actually opened (i.e. how many open+probe cycles ran).
+type countingKeyringOpen struct {
+	inner func(keyring.Config) (keyring.Keyring, error)
+	calls int
+}
+
+func (w *countingKeyringOpen) openFn(cfg keyring.Config) (keyring.Keyring, error) {
+	w.calls++
+	return w.inner(cfg)
+}
+
+// newCountingClient returns a Client whose open function is wrapped by the
+// given counter, plus a getter for the current count.
+func newCountingClient(counter *countingKeyringOpen) *Client {
+	return NewWithOpenFunc(counter.openFn)
+}
+
+// TestClient_RingCachedAcrossOperations verifies the opened keyring (and its
+// canary probe) runs ONCE: N sequential Get/Set/Remove operations must
+// trigger exactly one keyring.Open, not one per operation.
+func TestClient_RingCachedAcrossOperations(t *testing.T) {
+	counter := &countingKeyringOpen{inner: func(cfg keyring.Config) (keyring.Keyring, error) {
+		return newFakeKeyring(), nil
+	}}
+	c := newCountingClient(counter)
+
+	if err := c.Set("openai", "sk-1"); err != nil {
+		t.Fatalf("Set() unexpected error: %v", err)
+	}
+	if _, err := c.Get("openai"); err != nil {
+		t.Fatalf("Get() unexpected error: %v", err)
+	}
+	if err := c.Remove("openai"); err != nil {
+		t.Fatalf("Remove() unexpected error: %v", err)
+	}
+	if _, err := c.Get("openai"); err != nil {
+		t.Fatalf("Get() after Remove() unexpected error: %v", err)
+	}
+
+	if counter.calls != 1 {
+		t.Errorf("expected keyring open to be called exactly once across 4 operations, got %d", counter.calls)
+	}
+}
+
+// TestClient_RingInvalidatedOnMasterPasswordChange verifies the cache is
+// reset whenever the in-memory master password changes — REQUIRED because
+// the file backend captures the FilePasswordFunc's password at first unlock,
+// so a stale cached ring would keep decrypting with the OLD master password.
+// After each of SetMasterPassword / VerifyMasterPassword / ChangeMasterPassword,
+// the next operation must re-open (open count increments).
+func TestClient_RingInvalidatedOnMasterPasswordChange(t *testing.T) {
+	isolateHome(t)
+
+	// File-backend-only client backed by the REAL keyring.Open, so the
+	// master-password methods actually exercise the encrypted file backend.
+	var counter countingKeyringOpen
+	counter.inner = func(cfg keyring.Config) (keyring.Keyring, error) {
+		if configIncludesFileBackend(cfg) {
+			return keyring.Open(cfg)
+		}
+		return nil, keyring.ErrNoAvailImpl
+	}
+	c := newCountingClient(&counter)
+
+	// First operation: opens the ring once. On a file-backend client one
+	// ring() costs TWO c.open calls (OS stage fails with ErrNoAvailImpl, then
+	// the file stage) — the cache memoizes the whole ring() result, so the
+	// second open only happens again after invalidation.
+	if _, err := c.Get("openai"); err != nil && err != ErrNoMasterPassword {
+		t.Fatalf("Get() unexpected error: %v", err)
+	}
+	if counter.calls != 2 {
+		t.Fatalf("expected 2 opens (OS stage + file stage) before master password setup, got %d", counter.calls)
+	}
+
+	// SetMasterPassword invalidates: the next Get re-opens (2 more).
+	if err := c.SetMasterPassword("first-master"); err != nil {
+		t.Fatalf("SetMasterPassword() unexpected error: %v", err)
+	}
+	if err := c.Set("openai", "sk-1"); err != nil {
+		t.Fatalf("Set() after SetMasterPassword() unexpected error: %v", err)
+	}
+	if counter.calls != 4 {
+		t.Errorf("expected re-open after SetMasterPassword, got %d opens total", counter.calls)
+	}
+
+	// VerifyMasterPassword (success) invalidates: the next Get re-opens.
+	ok, err := c.VerifyMasterPassword("first-master")
+	if err != nil || !ok {
+		t.Fatalf("VerifyMasterPassword() = (%v, %v), want (true, nil)", ok, err)
+	}
+	if _, err := c.Get("openai"); err != nil {
+		t.Fatalf("Get() after VerifyMasterPassword() unexpected error: %v", err)
+	}
+	if counter.calls != 6 {
+		t.Errorf("expected re-open after VerifyMasterPassword, got %d opens total", counter.calls)
+	}
+
+	// ChangeMasterPassword invalidates: the next Get re-opens (2 more) AND
+	// decrypts through the fresh ring under the NEW password.
+	if err := c.ChangeMasterPassword("first-master", "second-master"); err != nil {
+		t.Fatalf("ChangeMasterPassword() unexpected error: %v", err)
+	}
+	val, err := c.Get("openai")
+	if err != nil {
+		t.Fatalf("Get() after ChangeMasterPassword() unexpected error: %v", err)
+	}
+	if val != "sk-1" {
+		t.Errorf("Get() after ChangeMasterPassword() expected 'sk-1' (decrypted under the NEW password), got %q", val)
+	}
+	if counter.calls != 8 {
+		t.Errorf("expected re-open after ChangeMasterPassword, got %d opens total", counter.calls)
+	}
+}
