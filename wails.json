@@ -13,7 +13,7 @@
   "info": {
     "companyName": "o3willard-AI",
     "productName": "PairAdmin",
-    "productVersion": "2.2.0",
+    "productVersion": "2.3.0",
     "copyright": "Copyright © 2026 o3willard-AI",
     "comments": "AI pair programming assistant for terminal workflows"
   }
