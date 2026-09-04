@@ -5,8 +5,10 @@ on:
     tags:
       - "v*"
 
-permissions:
-  contents: write
+# Cancel a superseded release run if a newer tag is pushed while one is mid-flight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   # Marks every release-pipeline binary as a "release build" (see
@@ -19,16 +21,37 @@ env:
   RELEASE_LDFLAGS: "-X pairadmin/services/config.releaseBuild=true"
 
 jobs:
-  build-linux:
+  # Gate every build on the pushed tag matching wails.json's productVersion, so
+  # a release can't silently ship a binary that reports a different version.
+  verify-version:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # tag: v4
+      - name: Check tag matches wails.json productVersion
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          declared="$(node -p "require('./wails.json').productVersion")"
+          echo "pushed tag: ${GITHUB_REF_NAME} | wails.json productVersion: ${declared}"
+          if [ "$tag" != "$declared" ]; then
+            echo "::error::Release tag '${GITHUB_REF_NAME}' does not match wails.json productVersion '${declared}'. Bump wails.json to match the tag before releasing." >&2
+            exit 1
+          fi
 
-      - uses: actions/setup-go@v5
+  build-linux:
+    needs: verify-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # build job only reads source and uploads an artifact (no repo writes)
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # tag: v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # tag: v5
         with:
           go-version: "1.24"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # tag: v4
         with:
           node-version: "20"
 
@@ -56,7 +79,8 @@ jobs:
       - name: Package .deb and .rpm (nfpm)
         run: |
           export PATH="$PATH:$(go env GOPATH)/bin"
-          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          # Pin nfpm to a specific release (never a floating tag) so packaging output is reproducible.
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
           export VERSION="${GITHUB_REF_NAME#v}"
           nfpm package --packager deb
           nfpm package --packager rpm
@@ -67,22 +91,25 @@ jobs:
           mv *.deb *.rpm dist/
           ls -la dist/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # tag: v4.6.2
         with:
           name: linux
           path: dist/
           if-no-files-found: error
 
   build-windows:
+    needs: verify-version
     runs-on: windows-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # tag: v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # tag: v5
         with:
           go-version: "1.24"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # tag: v4
         with:
           node-version: "20"
 
@@ -103,22 +130,25 @@ jobs:
           $env:PATH = "$(go env GOPATH)\bin;$env:PATH"
           wails build -platform windows/amd64 --nsis -ldflags "$env:RELEASE_LDFLAGS"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # tag: v4.6.2
         with:
           name: windows
           path: build/bin/*-installer.exe
           if-no-files-found: error
 
   build-macos:
+    needs: verify-version
     runs-on: macos-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # tag: v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # tag: v5
         with:
           go-version: "1.24"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # tag: v4
         with:
           node-version: "20"
 
@@ -145,17 +175,19 @@ jobs:
           echo "Packaging $APP"
           hdiutil create -volname "PairAdmin" -srcfolder "$APP" -ov -format UDZO "PairAdmin-${GITHUB_REF_NAME}.dmg"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # tag: v4.6.2
         with:
           name: macos
           path: build/bin/*.dmg
           if-no-files-found: error
 
   release:
-    needs: [build-linux, build-windows, build-macos]
+    needs: [verify-version, build-linux, build-windows, build-macos]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # the ONLY job that writes: it creates the GitHub Release
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # tag: v4.3.0
         with:
           path: dist
           merge-multiple: true
@@ -167,7 +199,7 @@ jobs:
           cat SHA256SUMS
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # tag: v2.6.2
         with:
           files: dist/*
           generate_release_notes: true
