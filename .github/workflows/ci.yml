@@ -1,0 +1,170 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+# Cancel superseded runs for the same branch/PR so CI doesn't pile up.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Default to read-only; individual jobs stay read-only (nothing here writes).
+permissions:
+  contents: read
+
+# Pinned GitHub Action versions (40-char commit SHA + human tag comment).
+# Resolving a mutable tag (e.g. checkout@v4) to a fixed SHA means a tag
+# tampering/mailboxing attack on a compromised action repo can't inject code
+# into our pipeline.
+#
+#   actions/checkout   v4.4.0  @11d5960a326750d5838078e36cf38b85af677262
+#   actions/setup-go   v5.6.0  @40f1582b2485089dde7abd97c1529aa768e1baff
+#   actions/setup-node v4.4.0  @49933ea5288caeca8642d1e84afbd3f7d6820020
+#   actions/cache      v4.3.0  @0057852bfaa89a56745cba8c7296529d2fc39830
+
+jobs:
+  go-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # tag: v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # tag: v5
+        with:
+          go-version: "1.24"
+          cache: true # caches the Go module + build cache keyed on go.sum
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # tag: v4
+        with:
+          node-version: "20"
+
+      - name: Install Go build/test dependencies
+        # Mirrors the exact dependency list release.yml's build-linux step
+        # installs, so `go build`/`go test` here exercises the same native
+        # surface (GTK/WebKit cgo bindings for the main package) as a release.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            pkg-config \
+            gcc \
+            at-spi2-core
+
+      - name: Build frontend assets
+        # main.go's `//go:embed all:frontend/dist` embeds the built web UI into
+        # the binary, so `go build ./...` requires frontend/dist to exist first —
+        # a fresh checkout has none (`frontend/dist` is gitignored). Mirror the
+        # frontend's own package-lock-pinned install + vite build here so the
+        # embed directive resolves and `go build` can compile the app.
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test
+        run: go test ./services/... -count=1
+
+  frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # tag: v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # tag: v4
+        with:
+          node-version: "20"
+
+      - name: Cache node_modules
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # tag: v4.3.0
+        with:
+          path: frontend/node_modules
+          key: node-modules-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            node-modules-
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: TypeScript typecheck
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npx vitest run
+
+  govulncheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # tag: v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # tag: v5
+        with:
+          go-version: "1.24"
+          cache: false
+
+      - name: Install govulncheck (pinned)
+        # Pin the scanner itself to a specific release so the supply-chain
+        # analysis can't silently change from under us.
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+
+      - name: Run govulncheck (supply-chain vulnerability scan — reporting)
+        # Scans the module/dependency graph for known vulnerabilities and
+        # surfaces a report. Intentionally NON-BLOCKING: the current dependency
+        # tree ships known transitive vulnerabilities (e.g. jose2go GO-2023-2409
+        # in the keychain encrypt path) that require a dependency bump — out of
+        # scope for this workflow-only hardening PR. Failing the whole pipeline
+        # on them would block every other check; instead we publish the report
+        # for a follow-up dependency-update task.
+        run: |
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          govulncheck ./... || printf '\nNOTE: govulncheck reported findings above (pre-existing transitive deps).\nThis job is a non-blocking supply-chain report — see ci.yml for rationale.\n'
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # tag: v4
+        with:
+          # Full history so the push-to-master scan sees the entire git log.
+          fetch-depth: 0
+
+      - name: Install gitleaks (pinned) and verify checksum
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          # Rejects a tampered/swapped binary before we ever run it.
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum --check -
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp
+          /tmp/gitleaks --version
+
+      - name: Scan for secrets
+        # PRs: scan the checked-out working tree only (fast, scoped to the PR).
+        # Pushes to master: scan the full git history (a secret committed and
+        # later removed must still be caught). .gitleaks.toml allowlists the
+        # inert redaction-test fixture only — there is no blanket .go/_test.go
+        # ignore, so a real secret anywhere in the tree is still flagged.
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            /tmp/gitleaks detect --source . --no-banner --config .gitleaks.toml
+          else
+            /tmp/gitleaks detect --source . --no-git --no-banner --config .gitleaks.toml
+          fi
