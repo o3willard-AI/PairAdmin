@@ -1,0 +1,32 @@
+# PairAdmin gitleaks configuration
+#
+# We want the highest-fidelity secret scan: the full default rule set, with a
+# narrow, justified allowlist below. Config deliberately does NOT blanket-
+# ignore any file path or extension (no .go or *_test.go wildcards) — a real
+# secret accidentally committed anywhere in the tree should still be caught.
+
+title = "PairAdmin gitleaks"
+
+# Keep the entire default secret-rule set active on top of this config.
+[extend]
+useDefault = true
+
+[allowlist]
+    # JUSTIFICATION: Inert, deliberately-public test fixture. The token below is
+    # NOT a real credential — it is a fixed placeholder string used by
+    # services/llm/filter/filter_test.go to verify that PairAdmin's own
+    # credential redaction (services/llm/filter/credential.go) strips GitHub
+    # Personal Access Tokens (ghp_...) from LLM payloads. The same literal
+    # appears twice in that file: once as the raw input given to the filter
+    # under test (line 93) and once in the assertion that the redacted output
+    # no longer contains it (line 98). gitleaks also surfaces a 36-char
+    # substring of it as a separate finding; both are the same fixture.
+    regexes = [
+        # Full fixture as written in filter_test.go (input + assertion).
+        '''ghp_1234567890abcdefghij1234567890abcdef12''',
+        # The 36-char GitHub token prefix gitleaks' github-pat rule matches on
+        # the SAME fixture value (ghp_ + 36 chars) — allowlisted for the same
+        # justification above; it is the identical inert placeholder, not a
+        # real token. Both allowlist entries point at that one test only.
+        '''ghp_1234567890abcdefghij1234567890abcdef''',
+    ]
