@@ -132,7 +132,7 @@ func (s *SettingsService) SaveAPIKey(provider, key string) error {
 
 // apiKeysProviders lists the LLM providers whose API keys are loaded from the
 // keychain by LoadAPIKeys (mirrors the previous startup loop in main.go).
-var apiKeysProviders = []string{"openai", "anthropic", "openrouter"}
+var apiKeysProviders = []string{"openai", "anthropic", "openrouter", "ollama"}
 
 // LoadAPIKeys reads every provider's API key from the keychain, seals each
 // into a memguard Enclave on LLMService, and rebuilds the provider.
@@ -229,6 +229,7 @@ func (s *SettingsService) TestConnection(provider, model, hostURL string) (strin
 		OpenAIKey:     envCfg.OpenAIKey,
 		AnthropicKey:  envCfg.AnthropicKey,
 		OpenRouterKey: envCfg.OpenRouterKey,
+		OllamaKey:     envCfg.OllamaKey,
 		OllamaHost:    ollamaHost,
 		LMStudioHost:  lmstudioHost,
 	}
@@ -256,6 +257,12 @@ func (s *SettingsService) TestConnection(provider, model, hostURL string) (strin
 	case "openrouter":
 		if apiKey != "" {
 			cfg.OpenRouterKey = apiKey
+		}
+	case "ollama":
+		// Authenticated remote Ollama servers carry a bearer key like the
+		// hosted providers do.
+		if apiKey != "" {
+			cfg.OllamaKey = apiKey
 		}
 	}
 
@@ -460,6 +467,7 @@ func LoadConfigWithViper() Config {
 		OpenAIKey:     envCfg.OpenAIKey,
 		AnthropicKey:  envCfg.AnthropicKey,
 		OpenRouterKey: envCfg.OpenRouterKey,
+		OllamaKey:     envCfg.OllamaKey,
 		OllamaHost:    ollamaHost,
 		LMStudioHost:  lmstudioHost,
 	}

@@ -19,6 +19,9 @@ import (
 type ollamaProvider struct {
 	host  string // base URL, always non-empty after NewOllamaProvider
 	model string
+	// token is the optional bearer token for authenticated remote Ollama
+	// servers. Empty = no Authorization header (local instances don't need one).
+	token string
 	http  *http.Client
 }
 
@@ -44,8 +47,11 @@ func validateOllamaHost(host string) error {
 }
 
 // NewOllamaProvider creates a new Ollama provider for the given host and
-// model. An empty host defaults to http://localhost:11434.
-func NewOllamaProvider(host, model string) (*ollamaProvider, error) {
+// model. key is an optional bearer token for authenticated remote Ollama
+// servers (empty = none). An empty host defaults to http://localhost:11434.
+// The (key, host, model) order mirrors NewOpenAIProvider(key, baseURL, model)
+// and NewAnthropicProvider(key, model).
+func NewOllamaProvider(key, host, model string) (*ollamaProvider, error) {
 	if err := validateOllamaHost(host); err != nil {
 		return nil, err
 	}
@@ -55,6 +61,7 @@ func NewOllamaProvider(host, model string) (*ollamaProvider, error) {
 	return &ollamaProvider{
 		host:  strings.TrimRight(host, "/"),
 		model: model,
+		token: key,
 		http:  &http.Client{},
 	}, nil
 }
@@ -126,6 +133,9 @@ func (p *ollamaProvider) Stream(ctx context.Context, messages []Message) (<-chan
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
+		if p.token != "" {
+			req.Header.Set("Authorization", "Bearer "+p.token)
+		}
 
 		resp, err := p.http.Do(req)
 		if err != nil {
@@ -209,6 +219,9 @@ func (p *ollamaProvider) TestConnection(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.host+"/api/tags", nil)
 	if err != nil {
 		return fmt.Errorf("build ollama tags request: %w", err)
+	}
+	if p.token != "" {
+		req.Header.Set("Authorization", "Bearer "+p.token)
 	}
 	resp, err := p.http.Do(req)
 	if err != nil {
