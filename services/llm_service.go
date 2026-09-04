@@ -190,12 +190,18 @@ func (s *LLMService) SendMessage(tabId, userInput, terminalContext string) error
 	messages := llm.BuildMessages(llm.SystemPrompt, filteredContext, userInput)
 
 	// Write user_message audit entry before goroutine launch (user text only, NOT terminalContext).
+	// The prompt goes through the SAME filter pipeline as the terminal
+	// context and AI responses: a user pasting a credential into a prompt
+	// must not leave it in plaintext in the audit log. Only the logged copy
+	// is redacted — `messages` above still carries the raw userInput, so
+	// what is SENT to the model is unchanged.
 	if s.auditLogger != nil {
+		filteredPrompt, _ := pipeline.Apply(userInput)
 		s.auditLogger.Write(audit.AuditEntry{
 			Event:      "user_message",
 			SessionID:  s.sessionID,
 			TerminalID: tabId,
-			Content:    userInput,
+			Content:    filteredPrompt,
 		})
 	}
 
