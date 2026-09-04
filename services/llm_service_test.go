@@ -171,6 +171,49 @@ func TestSendMessageAuditUserMessage(t *testing.T) {
 	}
 }
 
+// TestSendMessageAuditUserPromptRedacted is a regression test for the
+// plaintext-credential audit gap: SendMessage used to write the user_message
+// audit entry with userInput RAW, while terminalContext and AI responses were
+// both redacted — so a user pasting an API key into a prompt left it in
+// plaintext in the audit log. The prompt must go through the SAME filter
+// pipeline before logging. (What is SENT to the model is unchanged — this
+// only governs the audit entry.)
+func TestSendMessageAuditUserPromptRedacted(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger, err := audit.NewAuditLogger(tmpDir)
+	if err != nil {
+		t.Fatalf("NewAuditLogger: %v", err)
+	}
+	t.Cleanup(func() { logger.Close() })
+
+	svc := &LLMService{
+		cfg:            Config{Provider: "mock"},
+		activeProvider: &streamingMockProvider{text: "hello"},
+		emitFn:         func(_ context.Context, _ string, _ ...interface{}) {},
+	}
+	svc.ctx = context.Background()
+	svc.SetAuditLogger(logger, "test-session")
+
+	prompt := "here is my key AKIAIOSFODNN7EXAMPLE please check it"
+	if err := svc.SendMessage("tmux:%3", prompt, "irrelevant terminal context"); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	// Wait for goroutine to complete.
+	time.Sleep(300 * time.Millisecond)
+
+	contents := readAuditLog(t, tmpDir)
+	if !strings.Contains(contents, `"user_message"`) {
+		t.Fatalf("expected user_message event in audit log, got:\\n%s", contents)
+	}
+	if strings.Contains(contents, "AKIAIOSFODNN7EXAMPLE") {
+		t.Errorf("audit log contains the RAW AWS key from the user prompt:\\n%s", contents)
+	}
+	if !strings.Contains(contents, "[REDACTED:") {
+		t.Errorf("expected a [REDACTED:...] marker in the user_message audit entry, got:\\n%s", contents)
+	}
+}
+
 // TestSendMessageAuditAIResponse verifies that SendMessage writes an ai_response audit entry
 // with credential-filtered content after the stream completes.
 func TestSendMessageAuditAIResponse(t *testing.T) {
