@@ -148,7 +148,7 @@ func (s *PTYService) OpenRemoteTerminal(tabId string, params RemoteConnectParams
 // (config.AppConfig.PromptNewHostKeys) to decide whether to show the user an
 // accept/reject prompt before connecting.
 type HostKeyStatus struct {
-	Known   bool `json:"known"`
+	Known bool `json:"known"`
 	// Changed is true when this host:port has a PREVIOUSLY pinned key that
 	// no longer matches what it just presented — the real MITM-suspect case,
 	// as opposed to Known=false on a host:port PairAdmin has simply never
@@ -185,9 +185,15 @@ func (s *PTYService) CheckHostKeyTrust(host string, port int) (*HostKeyStatus, e
 	}, nil
 }
 
-// resolveRemoteCredentials fills in a missing password/passphrase from the keychain
-// when SavedHostId is set and the frontend didn't supply one inline (a one-click
-// reconnect to a remembered host rather than a fresh connection form submission).
+// resolveRemoteCredentials fills in missing per-host details when SavedHostId
+// is set and the frontend didn't supply them inline (a one-click reconnect to
+// a remembered host rather than a fresh connection form submission):
+//   - password/passphrase from the keychain, as before;
+//   - WinRM transport settings (UseTLS/InsecureSkipVerify) and port from the
+//     persisted RemoteHost record, so a saved host's TLS choice is honored on
+//     reconnect. The frontend params win when explicitly set (fresh form
+//     submissions carry UI values); an unset Port (0) always follows the
+//     saved record so the 5986/5985 default lands correctly for TLS hosts.
 func (s *PTYService) resolveRemoteCredentials(params RemoteConnectParams) (RemoteConnectParams, error) {
 	if params.SavedHostId == "" || s.keychainClient == nil {
 		return params, nil
@@ -203,6 +209,25 @@ func (s *PTYService) resolveRemoteCredentials(params RemoteConnectParams) (Remot
 		// Passphrase may legitimately be empty (unencrypted key) — ignore lookup errors.
 		if pp, err := s.keychainClient.Get(remoteKeychainKey(params.SavedHostId, "passphrase")); err == nil {
 			params.Passphrase = pp
+		}
+	}
+	// Saved-host metadata threading (best-effort: the connection can proceed
+	// with the frontend-provided values if the record can't be read).
+	if appCfg, err := config.LoadAppConfig(); err == nil {
+		for _, h := range appCfg.RemoteHosts {
+			if h.ID != params.SavedHostId {
+				continue
+			}
+			if params.Kind == RemoteKindWinRM && !params.UseTLS && !params.InsecureSkipVerify {
+				// Frontend left the transport flags unset — take the saved
+				// host's choice (legacy plaintext hosts carry false/false).
+				params.UseTLS = h.UseTLS
+				params.InsecureSkipVerify = h.InsecureSkipVerify
+			}
+			if params.Port == 0 && h.Port != 0 {
+				params.Port = h.Port
+			}
+			break
 		}
 	}
 	return params, nil

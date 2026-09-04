@@ -49,6 +49,12 @@ type RemoteHost struct {
 	// services.RemoteConnectParams for the create-or-attach behavior.
 	UseTmux         bool   `mapstructure:"use_tmux" yaml:"use_tmux"`
 	TmuxSessionName string `mapstructure:"tmux_session_name" yaml:"tmux_session_name"`
+	// UseTLS/InsecureSkipVerify apply only to Kind == "winrm". The zero-value
+	// false = plaintext, so existing saved WinRM hosts are unaffected (no
+	// migration); new hosts get TLS from the UI default. See
+	// services.RemoteConnectParams for the transport behavior.
+	UseTLS             bool `mapstructure:"use_tls" yaml:"use_tls"`
+	InsecureSkipVerify bool `mapstructure:"insecure_skip_verify" yaml:"insecure_skip_verify"`
 }
 
 // AppConfig holds persistent application configuration (separate from the LLM env-var config).

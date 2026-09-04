@@ -46,6 +46,13 @@ type RemoteConnectParams struct {
 	// previously-used session was destroyed by someone else in the meantime).
 	UseTmux         bool   `json:"useTmux"`
 	TmuxSessionName string `json:"tmuxSessionName,omitempty"`
+	// UseTLS / InsecureSkipVerify apply only when Kind == RemoteKindWinRM.
+	// UseTLS selects HTTPS (WinRM's default on new UI connections); the Go
+	// zero-value false = plaintext, so existing saved WinRM hosts round-trip
+	// as plaintext with no migration. InsecureSkipVerify skips TLS certificate
+	// verification (for self-signed certs) and only takes effect with TLS on.
+	UseTLS             bool `json:"useTls"`
+	InsecureSkipVerify bool `json:"insecureSkipVerify"`
 	// TrustNewHostKey applies only when Kind == RemoteKindSSH and the user has
 	// enabled config.AppConfig.PromptNewHostKeys. It is set true only on the
 	// retry connection attempt issued right after the user explicitly accepted

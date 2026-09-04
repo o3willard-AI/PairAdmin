@@ -50,9 +50,13 @@ func (w *winrmSession) Close() error {
 }
 
 // openWinRMTerminal connects to a remote Windows host over WinRM (NTLM auth
-// only; v1 accepted gap: plain HTTP, no TLS — see remote_ssh.go's equivalent
-// doc comment for the analogous SSH host-key gap) and starts a persistent
-// cmd.exe process. Its stdin/stdout/stderr are wired into the same
+// only) and starts a persistent cmd.exe process. Transport: TLS when
+// params.UseTLS is true (HTTPS, the default on new UI connections), plaintext
+// WinRM when false — an explicit opt-in for legacy hosts, and the Go
+// zero-value false keeps every existing saved host connecting exactly as
+// before. With TLS on, params.InsecureSkipVerify selects whether the server
+// certificate is verified (off) or not (opt-in for self-signed certs).
+// Stdin/stdout/stderr are wired into the same
 // "pty:output"/"pty:closed" events used by every other terminal kind, so the
 // frontend needs no new event-handling code. Because WinRM has no true PTY,
 // output only appears after a full line is submitted (see feedWinRMInput),
@@ -63,7 +67,21 @@ func (s *PTYService) openWinRMTerminal(tabId string, params RemoteConnectParams)
 		return "", fmt.Errorf("WinRM only supports password authentication in this version")
 	}
 
-	endpoint := winrm.NewEndpoint(params.Host, params.Port, false, false, nil, nil, nil, 0)
+	// Port default: 5986 with TLS, 5985 plaintext. An explicitly set port
+	// always wins — never force 5985 onto a TLS connection.
+	port := params.Port
+	if port == 0 {
+		if params.UseTLS {
+			port = 5986
+		} else {
+			port = 5985
+		}
+	}
+
+	// winrm.NewEndpoint signature: (host, port, https, insecure, CA, cert,
+	// key, timeout) — the 3rd arg selects TLS, the 4th skips cert
+	// verification. Note the ordering is the REVERSE of the params above.
+	endpoint := winrm.NewEndpoint(params.Host, port, params.UseTLS, params.InsecureSkipVerify, nil, nil, nil, 0)
 	client, err := winrmClientFactory(endpoint, params.Username, params.Password)
 	if err != nil {
 		return "", fmt.Errorf("failed to create WinRM client: %w", err)
