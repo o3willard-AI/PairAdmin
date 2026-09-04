@@ -125,9 +125,10 @@ func probeBackend(kr keyring.Keyring) bool {
 // unlock()) — so an OS backend in use never triggers it.
 func (c *Client) ring() (keyring.Keyring, error) {
 	if kr, err := c.open(keyring.Config{
-		ServiceName:     ServiceName,
-		AllowedBackends: []keyring.BackendType{keyring.KeychainBackend, keyring.WinCredBackend, keyring.SecretServiceBackend},
-		FileDir:         filepath.Join(config.ConfigDir(), "keyring"),
+		ServiceName:              ServiceName,
+		AllowedBackends:          []keyring.BackendType{keyring.KeychainBackend, keyring.WinCredBackend, keyring.SecretServiceBackend},
+		KeychainTrustApplication: true, // trust the calling app so macOS doesn't re-prompt on every keychain access
+		FileDir:                  filepath.Join(config.ConfigDir(), "keyring"),
 	}); err == nil && probeBackend(kr) {
 		return kr, nil
 	}
@@ -150,9 +151,10 @@ func (c *Client) ring() (keyring.Keyring, error) {
 // be used, which requires a master password. No prompting occurs.
 func (c *Client) NeedsMasterPassword() (bool, error) {
 	kr, err := c.open(keyring.Config{
-		ServiceName:     ServiceName,
-		AllowedBackends: []keyring.BackendType{keyring.KeychainBackend, keyring.WinCredBackend, keyring.SecretServiceBackend},
-		FileDir:         filepath.Join(config.ConfigDir(), "keyring"),
+		ServiceName:              ServiceName,
+		AllowedBackends:          []keyring.BackendType{keyring.KeychainBackend, keyring.WinCredBackend, keyring.SecretServiceBackend},
+		KeychainTrustApplication: true, // trust the calling app so macOS doesn't re-prompt on every keychain access
+		FileDir:                  filepath.Join(config.ConfigDir(), "keyring"),
 	})
 	if err == keyring.ErrNoAvailImpl {
 		return true, nil
