@@ -3,7 +3,7 @@ import { useChatStore } from "@/stores/chatStore";
 
 describe("chatStore", () => {
   beforeEach(() => {
-    useChatStore.setState({ messagesByTab: {} });
+    useChatStore.setState({ messagesByTab: {}, llmRequest: null });
   });
 
   it("addUserMessage adds a user message to the specified tab", () => {
@@ -125,6 +125,42 @@ describe("chatStore", () => {
       expect(msg.isStreaming).toBe(false);
       expect(msg.content).toContain("partial response");
       expect(msg.content).toContain("(stream interrupted)");
+    });
+  });
+
+  describe("llmRequest (global LLM activity flag)", () => {
+    it("is null initially", () => {
+      expect(useChatStore.getState().llmRequest).toBeNull();
+    });
+
+    it("startLLMRequest sets a non-null object with a numeric startedAt", () => {
+      useChatStore.getState().startLLMRequest();
+      const req = useChatStore.getState().llmRequest;
+      expect(req).not.toBeNull();
+      expect(typeof req!.startedAt).toBe("number");
+      expect(req!.startedAt).toBeGreaterThan(0);
+    });
+
+    it("endLLMRequest clears back to null", () => {
+      useChatStore.getState().startLLMRequest();
+      expect(useChatStore.getState().llmRequest).not.toBeNull();
+      useChatStore.getState().endLLMRequest();
+      expect(useChatStore.getState().llmRequest).toBeNull();
+    });
+
+    it("is a single global flag, not per-tab (survives tab switches mid-stream)", () => {
+      // Streaming events carry no tabId (ChatTokenEvent has none), so the
+      // flag is deliberately global — switching terminal tabs mid-stream
+      // must not strand it.
+      useChatStore.getState().startLLMRequest();
+      expect(useChatStore.getState().llmRequest).not.toBeNull();
+      // There is no per-tab shape: llmRequest is the same object regardless
+      // of any tab context.
+      expect(useChatStore.getState().llmRequest).toEqual(
+        useChatStore.getState().llmRequest
+      );
+      useChatStore.getState().endLLMRequest();
+      expect(useChatStore.getState().llmRequest).toBeNull();
     });
   });
 });

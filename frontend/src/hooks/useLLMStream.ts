@@ -43,6 +43,8 @@ export function useLLMStream(tabId: string) {
       msgIdRef.current = null;
       nextSeqRef.current = 0;
       pendingRef.current.clear();
+      // The response finished — clear the LLM activity indicator.
+      useChatStore.getState().endLLMRequest();
       // A successful response confirms the provider is actually reachable,
       // independent of whatever the startup connectivity check found.
       // "disabled" always wins, though: it's an explicit user opt-out (Settings
@@ -60,6 +62,8 @@ export function useLLMStream(tabId: string) {
       msgIdRef.current = null;
       nextSeqRef.current = 0;
       pendingRef.current.clear();
+      // The stream terminated with an error — clear the activity indicator.
+      useChatStore.getState().endLLMRequest();
       // See handleDone: "disabled" is a user choice, not a stream outcome.
       const { connectionStatus, setConnectionStatus } =
         useSettingsStore.getState();

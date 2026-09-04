@@ -191,11 +191,24 @@ export function ChatPane() {
     const terminalContext = readTerminalLines(term, contextLinesRef.current);
     lastSentRef.current = { text, terminalContext };
 
+    // Arm the LLM activity indicator BEFORE dispatch so it flips on for the
+    // whole time-to-first-token window (SendMessage returns immediately; the
+    // response streams in via events). Cleared by useLLMStream's done/error
+    // handlers, or synchronously below if SendMessage itself fails. Never
+    // set for slash commands (they never reach the backend LLM).
+    useChatStore.getState().startLLMRequest();
+
     import(/* @vite-ignore */ "../../../wailsjs/go/services/LLMService").then(({ SendMessage }) => {
       SendMessage(activeTabId, text, terminalContext).catch((err: Error) => {
+        // Synchronous error: Go rejected the call directly and llm:error is
+        // NOT emitted, so clear the indicator here alongside the error.
+        useChatStore.getState().endLLMRequest();
         useChatStore.getState().setStreamError(activeTabId, null, err?.message ?? "Failed to send message");
       });
     }).catch(() => {
+      // The import itself failed (dev mode, no Wails runtime) — nothing was
+      // dispatched, so no indicator should be showing.
+      useChatStore.getState().endLLMRequest();
       useChatStore.getState().addAssistantMessage(activeTabId, "[Dev mode: Wails runtime unavailable]");
     });
   };
