@@ -120,17 +120,14 @@ jobs:
         # analysis can't silently change from under us.
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
 
-      - name: Run govulncheck (supply-chain vulnerability scan — reporting)
-        # Scans the module/dependency graph for known vulnerabilities and
-        # surfaces a report. Intentionally NON-BLOCKING: the current dependency
-        # tree ships known transitive vulnerabilities (e.g. jose2go GO-2023-2409
-        # in the keychain encrypt path) that require a dependency bump — out of
-        # scope for this workflow-only hardening PR. Failing the whole pipeline
-        # on them would block every other check; instead we publish the report
-        # for a follow-up dependency-update task.
+      - name: Run govulncheck (supply-chain vulnerability scan — HARD GATE)
+        # Scans the module/dependency graph for known vulnerabilities. This is a
+        # HARD gate: any reachable vulnerability fails the build. The tree is at
+        # 0 reachable since the Ollama-SDK removal (#23), so a non-zero result
+        # now means a real regression, not a pre-existing advisory.
         run: |
           export PATH="$PATH:$(go env GOPATH)/bin"
-          govulncheck ./... || printf '\nNOTE: govulncheck reported findings above (pre-existing transitive deps).\nThis job is a non-blocking supply-chain report — see ci.yml for rationale.\n'
+          govulncheck ./...
 
   gitleaks:
     runs-on: ubuntu-latest
