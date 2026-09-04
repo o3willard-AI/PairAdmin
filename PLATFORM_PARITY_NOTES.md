@@ -299,9 +299,8 @@ of it has run on Linux or macOS yet.
   engines. This is exactly the kind of thing that looks correct in code
   review and needs to actually be clicked through — see the new checklist
   items below.
-- **tmux mouse-mode helper commands** (`tmux set -g mouse on|off`, auto-pinned
-  to the Commands sidebar when connecting with tmux enabled) are plain text
-  sent over the SSH channel — no client-OS dependency at all. If tmux itself
+- **the tmux create-or-attach command** (`tmux new-session -A -s <name>`) is
+  plain text sent over the SSH channel — no client-OS dependency at all. If tmux itself
   isn't installed on the *remote* target, the command just errors visibly in
   the terminal (bash: tmux: command not found) and the session continues as
   a plain shell; nothing to fix, just don't be surprised by it in testing.
@@ -313,9 +312,7 @@ of it has run on Linux or macOS yet.
 - [ ] Connect with private-key auth using a `~/.ssh/...`-style path exactly as
       the placeholder suggests — should just work now.
 - [ ] Check "Use tmux if available", connect — lands in a tmux session named
-      `pairadmin` (or your custom name); the two mouse-mode toggle commands
-      appear pinned in the Commands sidebar; clicking "Execute" on
-      `tmux set -g mouse on` actually enables wheel-scroll inside tmux.
+      `pairadmin` (or your custom name).
 - [ ] Check "Save Terminal", reconnect from the "Recent" list — password
       resolves from the keychain without being asked again; on macOS,
       confirm whether it actually landed in Keychain Access or in

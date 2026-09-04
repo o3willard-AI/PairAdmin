@@ -33,9 +33,7 @@ most-tested platform in this release.
   cramped single-line field. A new "+ Add Command" button lets you type or
   paste a command directly, and a configurable hotkey (`Ctrl+Shift+A` by
   default) turns whatever's on your clipboard into a saved command in one
-  keystroke — no dialog, no AI round-trip required. Connecting with tmux
-  enabled auto-pins one-click `mouse on`/`mouse off` toggles, since that's the
-  single most common tmux papercut.
+  keystroke — no dialog, no AI round-trip required.
 - **Per-tab chat isolation.** Each terminal tab now keeps its own separate AI
   conversation — previously deferred, now shipped.
 - **Light and Dark themes that actually work.** Toggling theme now changes

@@ -28,10 +28,7 @@ you've got a clean, capable terminal with a persistent command palette.
 outlive your connection, and a rough experience the moment you try to use it
 casually. PairAdmin does the create-or-attach dance for you (`tmux new-session
 -A`) so reconnecting to a named session is a checkbox, not a memorized
-incantation. It auto-discovers panes from tmux sessions you started outside the
-app. And because the single most common tmux complaint is that the scroll wheel
-stops working, connecting with tmux enabled auto-pins one-click `mouse on` /
-`mouse off` toggles to the sidebar. Sessions survive disconnects; you don't have
+incantation. Sessions survive disconnects; you don't have
 to think about it.
 
 **Quick Commands — a runbook that builds itself.** Every command the AI suggests

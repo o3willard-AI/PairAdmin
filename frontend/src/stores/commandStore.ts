@@ -30,11 +30,10 @@ interface CommandState {
   setAddCommandDialogOpen: (open: boolean) => void;
   addCommand: (tabId: string, cmd: { command: string; originalQuestion: string; name?: string }) => void;
   /**
-   * Adds a command already pinned — used for auto-added helper commands
-   * (e.g. tmux mouse-mode toggles) rather than AI-suggested ones. A no-op if
-   * a pinned command with the same text already exists, so calling this
-   * repeatedly (e.g. on every reconnect to the same tmux host) doesn't stack
-   * duplicate cards.
+   * Adds a command already pinned — used when restoring the user's saved
+   * pinned commands on startup (see ThreeColumnLayout). A no-op if a pinned
+   * command with the same text already exists, so calling this repeatedly
+   * doesn't stack duplicate cards.
    */
   addPinnedCommand: (tabId: string, cmd: { command: string; originalQuestion: string; name?: string }) => void;
   clearAll: () => void;
