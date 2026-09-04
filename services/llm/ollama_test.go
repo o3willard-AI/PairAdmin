@@ -52,9 +52,9 @@ func TestValidateOllamaHost_Rejects(t *testing.T) {
 
 func TestNewOllamaProvider_EmptyLocalhostRemoteSucceed(t *testing.T) {
 	for _, host := range []string{"", "http://localhost:11434", "http://ollama.lan:11434"} {
-		p, err := NewOllamaProvider(host, "llama3")
+		p, err := NewOllamaProvider("", host, "llama3")
 		if err != nil {
-			t.Fatalf("NewOllamaProvider(%q): unexpected error: %v", host, err)
+			t.Fatalf("NewOllamaProvider(host=%q): unexpected error: %v", host, err)
 		}
 		if p == nil {
 			t.Fatalf("NewOllamaProvider(%q): expected non-nil provider", host)
@@ -66,7 +66,7 @@ func TestNewOllamaProvider_EmptyLocalhostRemoteSucceed(t *testing.T) {
 }
 
 func TestNewOllamaProvider_RejectsInvalidScheme(t *testing.T) {
-	if _, err := NewOllamaProvider("ftp://x", "llama3"); err == nil {
+	if _, err := NewOllamaProvider("", "ftp://x", "llama3"); err == nil {
 		t.Error("expected ftp:// host to be rejected")
 	}
 }
@@ -110,7 +110,7 @@ func TestOllamaStream_EmitsTextChunksInOrderAndExactlyOneDone(t *testing.T) {
 	}, http.StatusOK, &captured)
 	defer srv.Close()
 
-	p, err := NewOllamaProvider(srv.URL, "llama3")
+	p, err := NewOllamaProvider("", srv.URL, "llama3")
 	if err != nil {
 		t.Fatalf("NewOllamaProvider: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestOllamaStream_HTTP500SurfacesErrorChunk(t *testing.T) {
 	srv := ndjsonChatServer(t, []string{`{"error":"model 'llama3' not found"}`}, http.StatusInternalServerError, nil)
 	defer srv.Close()
 
-	p, err := NewOllamaProvider(srv.URL, "llama3")
+	p, err := NewOllamaProvider("", srv.URL, "llama3")
 	if err != nil {
 		t.Fatalf("NewOllamaProvider: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestOllamaStream_ErrorLineSurfacesErrorChunk(t *testing.T) {
 	}, http.StatusOK, nil)
 	defer srv.Close()
 
-	p, err := NewOllamaProvider(srv.URL, "llama3")
+	p, err := NewOllamaProvider("", srv.URL, "llama3")
 	if err != nil {
 		t.Fatalf("NewOllamaProvider: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestOllamaStream_ContextCancelStopsWithoutDone(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p, err := NewOllamaProvider(srv.URL, "llama3")
+	p, err := NewOllamaProvider("", srv.URL, "llama3")
 	if err != nil {
 		t.Fatalf("NewOllamaProvider: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestOllamaTestConnection_200OK(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p, err := NewOllamaProvider(srv.URL, "llama3")
+	p, err := NewOllamaProvider("", srv.URL, "llama3")
 	if err != nil {
 		t.Fatalf("NewOllamaProvider: %v", err)
 	}
@@ -324,11 +324,98 @@ func TestOllamaTestConnection_500Errors(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p, err := NewOllamaProvider(srv.URL, "llama3")
+	p, err := NewOllamaProvider("", srv.URL, "llama3")
 	if err != nil {
 		t.Fatalf("NewOllamaProvider: %v", err)
 	}
 	if err := p.TestConnection(context.Background()); err == nil {
 		t.Error("TestConnection against a 500-ing server: expected an error, got nil")
+	}
+}
+
+// --- Authorization: Bearer for authenticated remote Ollama instances ---
+
+// captureAuthServer records the Authorization header seen on every request
+// along with the path it was sent to.
+func captureAuthServer(t *testing.T, seen *map[string]string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		(*seen)[r.URL.Path] = r.Header.Get("Authorization")
+		if r.URL.Path == "/api/chat" {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":"ok"},"done":true}` + "\n"))
+			return
+		}
+		_, _ = w.Write([]byte(`{"models":[]}`))
+	}))
+}
+
+func TestOllamaStream_SendsBearerHeaderWhenKeySet(t *testing.T) {
+	seen := map[string]string{}
+	srv := captureAuthServer(t, &seen)
+	defer srv.Close()
+
+	p, err := NewOllamaProvider("sk-ollama-secret", srv.URL, "llama3")
+	if err != nil {
+		t.Fatalf("NewOllamaProvider: %v", err)
+	}
+
+	ch, err := p.Stream(context.Background(), []Message{{Role: RoleUser, Content: "hi"}})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	for range ch {
+	}
+
+	if got := seen["/api/chat"]; got != "Bearer sk-ollama-secret" {
+		t.Errorf("expected 'Authorization: Bearer sk-ollama-secret' on /api/chat, got %q", got)
+	}
+}
+
+func TestOllamaTestConnection_SendsBearerHeaderWhenKeySet(t *testing.T) {
+	seen := map[string]string{}
+	srv := captureAuthServer(t, &seen)
+	defer srv.Close()
+
+	p, err := NewOllamaProvider("sk-ollama-secret", srv.URL, "llama3")
+	if err != nil {
+		t.Fatalf("NewOllamaProvider: %v", err)
+	}
+	if err := p.TestConnection(context.Background()); err != nil {
+		t.Fatalf("TestConnection: %v", err)
+	}
+
+	if got := seen["/api/tags"]; got != "Bearer sk-ollama-secret" {
+		t.Errorf("expected 'Authorization: Bearer sk-ollama-secret' on /api/tags, got %q", got)
+	}
+}
+
+func TestOllamaNoKey_NoAuthorizationHeader(t *testing.T) {
+	seen := map[string]string{}
+	srv := captureAuthServer(t, &seen)
+	defer srv.Close()
+
+	p, err := NewOllamaProvider("", srv.URL, "llama3")
+	if err != nil {
+		t.Fatalf("NewOllamaProvider: %v", err)
+	}
+
+	// Stream path.
+	ch, err := p.Stream(context.Background(), []Message{{Role: RoleUser, Content: "hi"}})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	for range ch {
+	}
+	// TestConnection path.
+	if err := p.TestConnection(context.Background()); err != nil {
+		t.Fatalf("TestConnection: %v", err)
+	}
+
+	if got := seen["/api/chat"]; got != "" {
+		t.Errorf("expected NO Authorization header on /api/chat without a key, got %q", got)
+	}
+	if got := seen["/api/tags"]; got != "" {
+		t.Errorf("expected NO Authorization header on /api/tags without a key, got %q", got)
 	}
 }

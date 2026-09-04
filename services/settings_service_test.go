@@ -365,6 +365,38 @@ func TestSettingsService_TestConnection_Success(t *testing.T) {
 	}
 }
 
+// TestSettingsService_TestConnection_InjectsOllamaKeyFromKeychain verifies
+// that TestConnection resolves the "ollama" keychain entry into cfg.OllamaKey
+// (mirroring the openai/anthropic cases) so buildProvider receives it for
+// authenticated remote Ollama servers.
+func TestSettingsService_TestConnection_InjectsOllamaKeyFromKeychain(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.ctx = context.Background()
+
+	// The UI stores the Ollama key under the plain "ollama" keychain entry.
+	if err := mem.Set(keyring.Item{Key: "ollama", Data: []byte("sk-remote-ollama")}); err != nil {
+		t.Fatalf("keyring Set(ollama): %v", err)
+	}
+
+	orig := buildProviderFn
+	defer func() { buildProviderFn = orig }()
+	buildProviderFn = func(cfg Config, _ func(string) string) llm.Provider {
+		if cfg.OllamaKey != "sk-remote-ollama" {
+			t.Errorf("expected cfg.OllamaKey injected from the keychain, got %q", cfg.OllamaKey)
+		}
+		return &mockProvider{name: "ollama", connErr: nil}
+	}
+
+	if _, err := svc.TestConnection("ollama", "llama3", ""); err != nil {
+		t.Fatalf("TestConnection() unexpected error: %v", err)
+	}
+}
+
 // TestSettingsService_TestConnection_Failure returns error for failing provider.
 func TestSettingsService_TestConnection_Failure(t *testing.T) {
 	homeDir := t.TempDir()

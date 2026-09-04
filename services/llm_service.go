@@ -25,6 +25,7 @@ type Config struct {
 	AnthropicKey  string // ANTHROPIC_API_KEY
 	OpenRouterKey string // OPENROUTER_API_KEY (alternative key for OpenRouter)
 	OllamaHost    string // OLLAMA_HOST: optional, defaults to localhost
+	OllamaKey     string // OLLAMA_API_KEY: optional bearer token for authenticated remote Ollama servers
 	LMStudioHost  string // LMSTUDIO_HOST: optional, defaults to http://localhost:1234/v1
 }
 
@@ -37,6 +38,7 @@ func LoadConfig() Config {
 		AnthropicKey:  os.Getenv("ANTHROPIC_API_KEY"),
 		OpenRouterKey: os.Getenv("OPENROUTER_API_KEY"),
 		OllamaHost:    os.Getenv("OLLAMA_HOST"),
+		OllamaKey:     os.Getenv("OLLAMA_API_KEY"),
 		LMStudioHost:  os.Getenv("LMSTUDIO_HOST"),
 	}
 }
@@ -425,7 +427,17 @@ func buildProvider(cfg Config, keyFn func(string) string) llm.Provider {
 		}
 		return llm.NewAnthropicProvider(key, cfg.Model)
 	case "ollama":
-		p, err := llm.NewOllamaProvider(cfg.OllamaHost, cfg.Model)
+		// Same key-resolution order as openai/anthropic: keychain Enclave
+		// first, then the env-var fallback. The key is optional — local
+		// Ollama instances don't require one.
+		key := ""
+		if keyFn != nil {
+			key = keyFn("ollama")
+		}
+		if key == "" {
+			key = cfg.OllamaKey
+		}
+		p, err := llm.NewOllamaProvider(key, cfg.OllamaHost, cfg.Model)
 		if err != nil {
 			// Log as runtime issue; return nil so SendMessage returns descriptive error
 			return nil
