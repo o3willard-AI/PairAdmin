@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/masterzen/winrm"
@@ -19,9 +20,13 @@ func withEndpointCapturingFactory(t *testing.T) {
 	t.Cleanup(func() { winrmClientFactory = orig })
 	winrmClientFactory = func(endpoint *winrm.Endpoint, user, password string) (*winrm.Client, error) {
 		capturedEndpoint = endpoint
-		// Succeed the factory but let shell creation fail naturally against
-		// an unreachable host — the endpoint is already captured by then.
-		return orig(endpoint, user, password)
+		// The endpoint is captured before the factory returns, so the client
+		// never needs to exist — returning an error makes openWinRMTerminal
+		// bail out immediately ("failed to create WinRM client", which the
+		// tests ignore via _, _ =). Calling the real factory here made every
+		// test dial the unreachable 192.0.2.1 and burn a ~30s connect
+		// timeout; the assertions only need the endpoint.
+		return nil, errors.New("test: endpoint captured")
 	}
 }
 
