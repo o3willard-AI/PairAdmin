@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync"
 
 	"github.com/99designs/keyring"
 	"pairadmin/services/config"
@@ -53,6 +54,18 @@ type Client struct {
 	// keyring's file backend. Empty when no master password has been set or
 	// verified in this process.
 	masterPW string
+
+	// mu guards the lazily-populated ring cache below (Get/Set/Remove arrive
+	// on concurrent Wails goroutines, so the check-and-set must be atomic).
+	mu sync.Mutex
+	// cachedRing/cachedRingErr memoize the opened keyring. Both nil = not
+	// yet cached; otherwise the last ring() result (including its error) is
+	// reused and the open+canary-probe cost is paid once per process.
+	// Invalidated whenever masterPW changes — the file backend captures the
+	// password at first unlock, so a stale cached ring would keep decrypting
+	// with the OLD master password after a change.
+	cachedRing    keyring.Keyring
+	cachedRingErr error
 }
 
 // New creates a new Client using the default keyring.Open function.
@@ -107,7 +120,13 @@ func probeBackend(kr keyring.Keyring) bool {
 	return true
 }
 
-// ring opens the keyring using the configured open function, in two stages:
+// ring returns the opened keyring using the configured open function, opening
+// it at most once and caching the result — the two-stage open plus canary
+// probe is expensive (one logical operation would otherwise cost open + 3
+// probe ops + 1 real op on every call), so it is paid lazily on first use and
+// every later operation reuses the cached ring.
+//
+// The two-stage open:
 //
 //  1. Try the OS backends only. If one opens AND passes the functionality
 //     probe, use it — genuine macOS Keychain / Windows Credential Manager /
@@ -123,16 +142,30 @@ func probeBackend(kr keyring.Keyring) bool {
 // FilePasswordFunc is still invoked lazily — only by the file backend
 // itself, and only when it is about to encrypt or decrypt an item (file.go
 // unlock()) — so an OS backend in use never triggers it.
+//
+// The cache is invalidated whenever masterPW changes (see
+// invalidateRingCache) — the file backend captures the password at first
+// unlock, so a stale cached ring would keep decrypting with the OLD master
+// password after a change. mu guards the check-and-set: Get/Set/Remove
+// arrive on concurrent Wails goroutines.
 func (c *Client) ring() (keyring.Keyring, error) {
-	if kr, err := c.open(keyring.Config{
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.cachedRing != nil || c.cachedRingErr != nil {
+		return c.cachedRing, c.cachedRingErr
+	}
+
+	kr, err := c.open(keyring.Config{
 		ServiceName:              ServiceName,
 		AllowedBackends:          []keyring.BackendType{keyring.KeychainBackend, keyring.WinCredBackend, keyring.SecretServiceBackend},
 		KeychainTrustApplication: true, // trust the calling app so macOS doesn't re-prompt on every keychain access
 		FileDir:                  filepath.Join(config.ConfigDir(), "keyring"),
-	}); err == nil && probeBackend(kr) {
+	})
+	if err == nil && probeBackend(kr) {
+		c.cachedRing, c.cachedRingErr = kr, nil
 		return kr, nil
 	}
-	return c.open(keyring.Config{
+	ring, ringErr := c.open(keyring.Config{
 		ServiceName:     ServiceName,
 		AllowedBackends: []keyring.BackendType{keyring.FileBackend},
 		FileDir:         filepath.Join(config.ConfigDir(), "keyring"),
@@ -143,6 +176,18 @@ func (c *Client) ring() (keyring.Keyring, error) {
 			return c.masterPW, nil
 		},
 	})
+	c.cachedRing, c.cachedRingErr = ring, ringErr
+	return ring, ringErr
+}
+
+// invalidateRingCache drops the memoized keyring so the next operation
+// re-opens it (picking up the new in-memory master password). Callers invoke
+// this after masterPW changes; it is a no-op when nothing is cached.
+func (c *Client) invalidateRingCache() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cachedRing = nil
+	c.cachedRingErr = nil
 }
 
 // NeedsMasterPassword probes ONLY the OS backends (macOS Keychain, Windows
@@ -236,6 +281,9 @@ func (c *Client) SetMasterPassword(pw string) error {
 		return err
 	}
 	c.masterPW = pw
+	// The file backend captured the old (empty) password state at first
+	// unlock — drop the cached ring so the next operation opens fresh.
+	c.invalidateRingCache()
 	return nil
 }
 
@@ -253,6 +301,10 @@ func (c *Client) VerifyMasterPassword(pw string) (bool, error) {
 	}
 	if ok {
 		c.masterPW = pw
+		// On success the in-memory password changed — drop the cached ring so
+		// the next operation opens unlocked under the newly verified password
+		// (a failed verification deliberately leaves the cache untouched).
+		c.invalidateRingCache()
 	}
 	return ok, nil
 }
@@ -287,6 +339,9 @@ func (c *Client) ChangeMasterPassword(oldPW, newPW string) error {
 		return err
 	}
 	c.masterPW = newPW
+	// Items were re-encrypted under newPW — the cached ring still holds the
+	// OLD password state, so drop it before the next operation.
+	c.invalidateRingCache()
 	return nil
 }
 
