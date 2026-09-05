@@ -8,6 +8,7 @@ build/bin/
 *.debug.log
 frontend/node_modules/
 frontend/dist/
+frontend/coverage/
 frontend/wailsjs/
 node_modules/
 .claude/

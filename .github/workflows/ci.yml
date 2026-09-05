@@ -104,6 +104,26 @@ jobs:
         working-directory: frontend
         run: npx vitest run
 
+      - name: Frontend diff-coverage gate (changed lines >= 80%)
+        # R-18: hard-fail a PR whose CHANGED feature lines fall below 80%
+        # coverage. This is intentionally NOT a total-coverage metric — it
+        # intersects `git diff <base> HEAD` line ranges with the v8 coverage
+        # report's statement lines, so it measures what the PR actually
+        # touched. Runs only on PRs (push-to-master has no diff base); the
+        # private key here is `pull_request.base.sha`, which the git diff
+        # below uses as the exclusion base.
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          # Ensure the base commit is present locally so `git diff` has a
+          # target beyond the (shallow) PR merge head. Fetch a shallow base.
+          git fetch --depth=1 origin "$BASE_SHA" || echo "base fetch failed (non-fatal)"
+          npx vitest run --coverage
+          node scripts/check-diff-coverage.mjs "$BASE_SHA"
+
   govulncheck:
     runs-on: ubuntu-latest
     permissions:

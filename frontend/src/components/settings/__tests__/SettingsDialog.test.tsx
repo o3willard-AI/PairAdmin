@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import userEvent from "@testing-library/user-event";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
@@ -74,5 +74,18 @@ describe("SettingsDialog", () => {
 
     expect(screen.getByText("Dark")).toBeInTheDocument();
     expect(screen.getByText("Light")).toBeInTheDocument();
+  });
+
+  it("calls onClose when the dialog is dismissed via Escape", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(<SettingsDialog open={true} onClose={onClose} />);
+    expect(screen.getByText("Settings")).toBeInTheDocument();
+
+    // Esc closes the Base UI dialog, firing onOpenChange(false), which the
+    // component routes to onClose().
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 });

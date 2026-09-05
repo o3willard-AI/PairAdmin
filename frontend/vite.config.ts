@@ -12,5 +12,18 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: ["json", "text"],
+      // Emit coverage for source only (not config/test/build artifacts), so the
+      // diff-coverage gate intersects git diff ranges with real statements.
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/test/**",
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/__tests__/**",
+      ],
+    },
   },
 });
