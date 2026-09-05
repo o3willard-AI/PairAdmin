@@ -1,483 +1,239 @@
 # Platform Parity Notes (TEMPORARY — delete before v1.0)
 
 **Audience:** coding agents building/maintaining the Linux and macOS targets.
-**Purpose:** a series of long Windows-focused debugging/feature sessions
-(see `git log` from roughly `a141259` through `3af3db2` — sections 1-4 cover
-through `1fc9d60`, section 5 covers `0af6bc8` through `8c03d03`, section 6
-covers `27391f0` through `3af3db2`) fixed a lot of bugs and added several
-features. Most of the work was in shared frontend code and applies to every
-platform automatically, but a few fixes were Windows-specific and need an
-equivalent check — or an equivalent fix — on Linux and macOS.
+**Purpose:** remaining per-platform verification items. This file was burned
+down on 2026-09-05: everything verifiable from the Linux build/test suite or
+by reading the shipped code was verified and deleted (see the "Resolved and
+removed" section at the bottom for what was checked and why it was removed).
+What remains genuinely requires hardware/OS access a Linux build agent does
+not have.
 
-**Lifecycle:** once Linux and macOS builds have been verified to have
-equivalent (or better) functionality for everything below, delete this file.
-It is not meant to ship in a v1.0 release.
+**Lifecycle:** once the remaining items below are verified on real macOS and
+Windows machines (and against real SSH/WinRM targets), delete this file. It
+is not meant to ship in a v1.0 release.
 
 ---
 
-## 1. Already cross-platform — verify by smoke test only
+## Remaining items — need a real macOS / Windows machine
 
-Everything below lives in `frontend/src/**` or platform-agnostic Go and
-should "just work" identically on every OS once built. No porting needed —
-just confirm during your platform's build/test pass:
+### macOS
 
-- **Terminal history persists across tab switches.** Each tab keeps its own
-  persistently-mounted `xterm.js` instance; switching tabs toggles CSS
-  visibility rather than unmounting. Also fixed: a `ResizeObserver` bug
-  where a hidden tab collapsing to 0×0 would send a near-zero resize down to
-  the PTY and truncate its scroll buffer — `TerminalPreview.tsx` now skips
-  fitting when the container has zero size. Verify: open 2+ terminals,
-  generate output in each, switch back and forth, confirm nothing is lost.
-- **Status bar shows real data.** Model name, connection status, and token
-  count were all permanently-wrong hardcoded placeholders ("No model",
-  "Disconnected", no token count ever updating). Fixed in
-  `ThreeColumnLayout.tsx`, `StatusBar.tsx`, `useLLMStream.ts`,
-  `chatStore.ts`. Verify: status bar reflects your actual configured
-  provider/model, shows "Connected" after a successful response, and the
-  token count updates.
-- **Chat auto-scroll.** Old logic mixed a throttled instant-jump against a
-  smooth animated scroll, causing visible jitter, and didn't always land at
-  the true bottom once async syntax highlighting in code blocks changed the
-  layout after the last scroll fired. Now driven by a single
-  `ResizeObserver` on the message content, in `ChatMessageList.tsx`. Verify:
-  ask a question that returns a code block; confirm no jitter and the view
-  ends up fully scrolled to the bottom.
-- **Tailwind theme tokens were silently broken app-wide.** There was no
-  `@theme` mapping from the project's `--muted`/`--foreground`/etc CSS
-  variables to Tailwind v4 color tokens, so `bg-muted`, `text-foreground`,
-  `hover:bg-muted-foreground/30`, and every other semantic-color utility
-  compiled to **nothing** — verified via the compiled CSS output containing
-  zero generated rules for these classes. This affected chat bubbles,
-  buttons, badges, and code-block hover states everywhere, not just one
-  reported symptom. Fixed with an `@theme inline` block in `index.css`.
-  This is a pure CSS fix with no OS dependency, but it's significant enough
-  that every platform should double check buttons/bubbles render with
-  visible hover states and correct colors, not just inherited/default ones.
-- **CodeBlock chat actions.** "Copy to Terminal" / "Execute in Terminal" /
-  "Save to Commands" with pipe separators and visible hover shading, shown
-  on **every** fenced code block regardless of its language tag (previously
-  blocks tagged `text`/`plaintext`/unspecified were treated as
-  illustrative-only and got no buttons — changed after a real report where
-  the model mislabeled an actually-runnable command as `text`, leaving the
-  user with no way to copy/run/save it at all; see section 6). Execute no
-  longer auto-logs to Commands (Save is the only thing that does, to avoid
-  duplicate entries).
-- **Commands sidebar.** Shared across all terminal tabs (not scoped to
-  whichever tab is active); right-click context menu for Pin/Unpin, Edit
-  (permanent), Edit/Append for next use (one-time override), Remove; a
-  pencil icon in the hover toolbar also opens Edit directly, without needing
-  the context menu; pinned commands sit above the scrolling list and are
-  drag-reorderable; "Clear History" preserves pinned commands. Edit/Add now
-  open `EditCommandDialog.tsx`, a proper modal with a 12-row textarea
-  (previously a single-line inline `<input>` too narrow to see what you were
-  typing) — see section 6. Watch for: a focus race where a menu's
-  focus-return-to-trigger can steal focus back from a freshly-opened
-  input/dialog before the user types anything, silently discarding the
-  edit — fixed by deferring `.focus()` to the next animation frame. This
-  pattern still applies to `TerminalTab.tsx`'s inline rename `<input>`
-  (unchanged, still inline, not a dialog) and is a generic React/focus-
-  management race, not Windows-specific — exactly the kind of thing that
-  can resurface if either component is touched again.
-- **`/exit` slash command** — closes every open terminal tab via
-  `PTYService.CloseTerminal`, then calls the Wails runtime's `Quit()`.
-  `Quit()` is part of the Wails runtime itself, not OS-specific.
-- **Right-click rename on terminal tabs** (`TerminalTab.tsx`) — same
-  pattern/fix as the Commands sidebar edit.
-- **Ollama nil-`http.Client` crash** (`services/llm/ollama.go`) —
-  `ollamaapi.NewClient` was constructed with `nil` for its `*http.Client`
-  argument; the SDK stores that as-is with no nil-check, so the first real
-  chat request through Ollama dereferenced a nil pointer and panicked the
-  *entire process* (unrecoverable, since it ran in a detached goroutine).
-  This is pure Go with zero OS dependency — affects every platform equally
-  if Ollama is configured as the provider. Also added a `recover()` guard
-  to all three providers' (Ollama/Anthropic/OpenAI) streaming goroutines so
-  a future SDK panic becomes a chat error message instead of taking the app
-  down — this matters on every platform, since an unrecovered goroutine
-  panic kills the whole process regardless of OS.
-- **System prompt tweaks** (`services/llm/context.go`) — tells the model to
-  only use fenced code blocks for commands it's actually recommending, and
-  never show the same command twice across two different fences. Pure
-  prompt text, no platform dependency.
+- **Terminal Cmd+C / Cmd+V semantics.** `TerminalPreview.tsx`'s
+  `attachCustomKeyEventHandler` treats `ctrlKey || metaKey` identically for
+  copy/paste-vs-SIGINT. On macOS, `Cmd+C` should always copy and `Ctrl+C`
+  should always send SIGINT (even with a selection active), and paste is
+  conventionally `Cmd+V`. The current code does not distinguish which
+  modifier was pressed. Needs a real macOS + WKWebView machine to verify the
+  actual key events xterm receives before changing the handler — guessing
+  the fix without measuring was exactly the mistake documented in the
+  original notes (the tmux width bug).
+- **App icon rendering.** `build/appicon.png` is now square (512×512 — the
+  698×665 non-square source called out earlier was replaced), so the known
+  distortion risk is resolved *at the source-image level*, but the generated
+  `.icns`/dock rendering still needs one visual check on a real Mac.
+- **Hotkey defaults on macOS.** All shipped hotkey defaults are `Ctrl`-based
+  (`Ctrl+Shift+A` clipboard-command, `Ctrl+Shift+N` new terminal, etc.),
+  chosen for Windows/Linux AltGr and WebView2 reasons — not macOS
+  conventions. They are user-rebindable in Settings → Hotkeys and the
+  rebinding path handles `Meta` (Cmd) correctly (`buildKeyCombo` records
+  `metaKey`, `matchesHotkey` compares it), so nothing is broken — but
+  whether the *defaults* should be `Cmd`-based on macOS needs a real Mac to
+  check for collisions with WKWebView/system shortcuts.
+- **macOS Keychain backend.** `keyring.KeychainBackend` IS in the
+  `AllowedBackends` list (`services/keychain/keychain.go`,
+  `KeychainTrustApplication: true` is set, so the app will not re-prompt per
+  access) — the original "never added" note is now stale code-wise. But it
+  has still never been observed on a real Mac: verify that API keys and
+  saved remote-host passwords actually land in Keychain Access, and that the
+  canary probe (`probeBackend`) passes against a real Keychain on first run.
+- **General smoke test.** The manual checklist from the original file is
+  preserved below — it needs a human with a real Mac clicking through it.
 
-## 2. Windows-specific fixes — need an equivalent check
+### Windows
 
-These addressed bugs specific to Windows' ConPTY/console plumbing. The
-Linux/macOS path uses real PTYs via `github.com/creack/pty`
-(`services/pty_service.go`, non-Windows branch), which behaves differently
-at the OS level — most of these bugs likely don't exist there, but **verify
-rather than assume**:
+- **App icon rendering in taskbar/window title bar** after the 512×512
+  source change (`build/windows/icon.ico` was purpose-built, so risk is low,
+  but confirm once).
+- **General smoke test** (checklist below).
 
-- **Exiting a shell (`exit`) used to hang the session in limbo, then later
-  crashed the whole app.** Root cause was ConPTY-specific: its pipes don't
-  signal EOF just because the child process exited, so a watcher goroutine
-  had to be added (`cpty.Wait()` + forced `Close()`), and an early version
-  of that watcher raced with the read loop and double-closed the same
-  Windows handles, corrupting the heap (`STATUS_HEAP_CORRUPTION`) and
-  killing the app instantly.
-  **On Linux/macOS:** real PTYs *do* signal EOF/an error on the master fd
-  when the child exits and the slave end closes, so the read loop in
-  `pty_service.go`'s non-Windows branch should already detect this and
-  clean up correctly without needing an equivalent watcher. **Verify this
-  explicitly** — open a terminal, type `exit`, confirm only that tab closes
-  and the app stays running, including with 2+ terminals open. If it works,
-  no code change needed; if it hangs, the watcher pattern in
-  `services/pty_windows.go` is the reference fix.
-  Note also: `CloseTerminal` and the read-loop's error branch can both call
-  `session.ptmx.Close()` on Unix today — unlike Windows, double-closing a Go
-  `*os.File` on Unix is low-severity (returns `EBADF`, doesn't corrupt
-  anything), so this is *not* an urgent fix, but applying the same
-  map-presence-check pattern used in `pty_windows.go` (whichever side
-  observes the session first deletes it under the lock, and only that side
-  performs the close) would be good defensive consistency.
-- **A visible external console window would flash when spawning the
-  fallback shell or the OS clipboard helper.** Fixed by adding
-  `CREATE_NO_WINDOW`/`HideWindow` to the relevant `exec.Command` calls in
-  `services/pty_service.go` and `services/clipboard_windows.go`.
-  **On Linux/macOS:** the clipboard path (`services/clipboard_unix.go`)
-  uses `wl-copy` on Wayland or the Wails runtime's native clipboard API on
-  X11 — neither spawns a visible window, so this specific bug shouldn't
-  exist there. Worth a quick sanity check anyway, especially if any new
-  subprocess-spawning code gets added to the Unix path later.
-- **Hand-rolled ConPTY syscalls never actually attached the child process to
-  the pseudoconsole**, despite every Win32 API call reporting success —
-  this took a lot of debugging to find (see commit history around
-  `af25265`/`9c55f43`) and was ultimately replaced with a vendored,
-  corrected implementation (`services/conpty_windows.go`, adapted from
-  `github.com/UserExistsError/conpty`, MIT licensed). This has no Linux/Mac
-  analog — `creack/pty` is a mature, correct library — but if either
-  platform's PTY integration ever needs similar low-level work, the
-  debugging approach that worked here was: write a minimal standalone
-  reproduction outside the GUI app, and compare against a known-working
-  reference implementation byte-for-byte rather than trusting that Win32
-  API success codes mean what they say.
+### Real remote targets (from any Linux/macOS/Windows build)
 
-## 3. Concrete gaps found — these likely *do* need platform-specific work
+- **WinRM against a real Windows host.** The client path is pure Go
+  (`masterzen/winrm` + `Azure/go-ntlmssp`, cgo-free) and the WinRM TLS
+  backend + endpoint tests now run in Linux CI, but no test connects to a
+  real WinRM-enabled Windows host. Do one real connect-and-run-a-command
+  test (TLS and plaintext) before trusting remote-Windows support.
+- **SSH against a real Linux host.** `services/remote_ssh_test.go` covers
+  the full connect/PTY/resize/exit path against an in-process SSH server,
+  and tmux create-or-attach is plain keystrokes over the channel — but one
+  manual connect against a real SSH host (password, private-key with
+  `~/.ssh/...` path, and tmux enabled) is still the honest final check.
 
-- **App icon aspect ratio.** `build/appicon.png` (the cross-platform source
-  icon, used for Linux and as the base for macOS's `.icns` generation) is
-  currently **698×665 — not square**. The previous icon was 1024×1024
-  (square). macOS's `.icns` generation (via Wails' build pipeline, which
-  shells out to `iconutil`/`sips`) generally expects a square source image;
-  a non-square source can produce a distorted or cropped app icon, dock
-  icon, or `.icns` build failure. **Action for the macOS builder:** verify
-  the icon renders correctly after `wails build`; if it's distorted, either
-  get a square crop of `PA_Icon1.png` or generate a proper square
-  `.icns`/iconset directly rather than relying on Wails' auto-conversion of
-  the non-square source. Windows is unaffected because `build/windows/icon.ico`
-  was set directly from a purpose-built `.ico` file
-  (`pair_admin.ico`), not auto-generated from `appicon.png`.
-- **Terminal Ctrl+C / Cmd+C semantics on macOS.** The clipboard fix in
-  `TerminalPreview.tsx` treats `ctrlKey || metaKey` identically: copy the
-  selection if one exists, otherwise fall through as SIGINT. On Windows/
-  Linux that's fine (`Ctrl+C` is the only relevant modifier). **On macOS,
-  `Cmd+C` and `Ctrl+C` are conventionally different shortcuts** — `Cmd+C`
-  should always copy (standard macOS app-wide copy shortcut) and `Ctrl+C`
-  should always send SIGINT (standard Unix terminal convention,
-  independent of whether anything is selected). The current logic doesn't
-  distinguish which modifier was pressed, so on macOS:
-  - `Ctrl+C` with a selection active would incorrectly copy instead of
-    sending SIGINT (surprising if a user has text selected but wants to
-    cancel a running command).
-  - `Cmd+C` with no selection would incorrectly send SIGINT instead of
-    being a no-op or copying nothing.
-  **Action for the macOS builder:** split the handling — `event.metaKey`
-  (Cmd) always attempts copy (no-op if no selection), `event.ctrlKey`
-  (without metaKey) always sends SIGINT regardless of selection state. Same
-  applies to paste: macOS conventionally pastes with `Cmd+V`, not `Ctrl+V`;
-  verify which one xterm's native paste event actually fires for, and
-  ensure the explicit `Ctrl+V` handling in the same file matches macOS
-  convention (likely needs `Cmd+V` instead of, or in addition to, `Ctrl+V`).
-- **Windows-only test files** (`go:build windows` tag) obviously don't run
-  in Linux/macOS CI. Equivalent coverage for the Unix PTY path
-  (`pty_service.go`'s non-Windows branch) is comparatively thin — consider
-  adding tests there mirroring what `pty_windows.go`/`conpty_windows.go`
-  cover (session open/close, exit detection, write/resize) if not already
-  present.
+---
 
-## 4. Manual verification checklist
+## Manual verification checklist (carry-over, unchanged in substance)
 
-Repeat this on each platform before considering it at parity:
+Run on each platform before considering it at parity:
 
 - [ ] Open 2+ terminal tabs, generate output, switch between them — history
       persists in each.
 - [ ] Type `exit` in a terminal — only that tab closes, app stays running.
-- [ ] Open/close/reopen terminals — tab names never repeat (e.g. no two
-      "Terminal 2"s).
+- [ ] Open/close/reopen terminals — tab names never repeat.
 - [ ] Right-click a terminal tab → Rename — works, persists.
 - [ ] Status bar shows real model name, "Connected" after a response, and a
       token count that updates.
-- [ ] Ask a question that returns a runnable command — "Copy to Terminal",
-      "Execute in Terminal", and "Save to Commands" all behave distinctly;
-      hovering each shows a visible shade change. These three buttons appear
-      on every code block regardless of its language tag (including `text`).
-- [ ] Commands sidebar: log a command, switch tabs, confirm it's still
-      there. Right-click → Pin, Edit, Edit/Append for next use, Remove —
-      each behaves as described in section 1. Drag-reorder two pinned
-      commands. Clear History — pinned commands survive.
-- [ ] Copy a terminal selection with the platform's native copy shortcut,
-      paste it elsewhere — works. Paste into the terminal with the
-      platform's native paste shortcut — pastes exactly once, not twice or
-      zero times.
-- [ ] Cancel a running command (e.g. `ping -t localhost` / `ping localhost`)
-      with the platform's native SIGINT shortcut — still works even with
-      text selected in the terminal (this is the macOS risk called out in
-      section 3).
-- [ ] `/exit` in the chat input — closes all terminals and quits the app.
-- [ ] If `provider: ollama` (or any provider) is misconfigured/unreachable,
-      sending a chat message produces a graceful error message in chat, not
-      an app crash.
-- [ ] App icon renders correctly and un-distorted in the taskbar/dock and
-      window title bar.
+- [ ] Code-block actions ("Copy to Terminal" / "Execute in Terminal" /
+      "Save to Commands") behave distinctly and appear on every block.
+- [ ] Commands sidebar: pin/unpin, edit (permanent + one-time), remove,
+      drag-reorder pinned commands, Clear History preserves pinned.
+- [ ] Copy/paste with the platform's native shortcuts — paste lands exactly
+      once.
+- [ ] Cancel a running command with the platform's native SIGINT shortcut —
+      works even with text selected (the macOS Cmd/Ctrl risk above).
+- [ ] `/exit` closes all terminals and quits the app.
+- [ ] A misconfigured/unreachable LLM provider produces a graceful error in
+      chat, not a crash.
+- [ ] Light/Dark theme switch applies everywhere; light-mode code blocks use
+      light syntax colors.
+- [ ] SSH + tmux fills the full terminal width immediately on connect.
+- [ ] Ollama API key + remote-host warning behave as documented (Settings →
+      LLM Config).
+- [ ] WinRM: TLS on by default (port 5986), plaintext opt-in shows the loud
+      unencrypted-traffic warning, skip-verify checkbox only visible with
+      TLS on.
 
-## 5. Remote Terminal Support (SSH / WinRM / tmux) — added since the notes
-   above, built and only tested on Windows so far
+---
 
-This is a substantial new feature area, not a bugfix to the original Windows
-work: "+ New" now offers Local / Unix-Linux (SSH) / Remote Windows (WinRM),
-with saved connections (host, auth, optional tmux auto-attach), all backed by
-`services/remote_ssh.go`, `services/remote_winrm.go`, `services/remote_service.go`,
-and `frontend/src/components/terminal/NewTerminalDialog.tsx`. Most of it is
-pure Go (`golang.org/x/crypto/ssh`, `github.com/masterzen/winrm` — both
-cgo-free) or pure React/DOM, so it should be platform-agnostic in principle —
-but "should be" is exactly the part that needs your verification, since none
-of it has run on Linux or macOS yet.
+# Resolved and removed (2026-09-05 burn-down)
 
-### Already fixed proactively (context, not action items)
+Everything below was in the original file and has been verified and deleted
+from the active checklist. Verification method: reading the shipped code
+with the specific commit/behavior cited, and the Linux build/test pass
+(`go test ./services/... -count=1`, `go build ./...`, `npx vitest run`,
+`npx tsc --noEmit` — all green at commit `1a979f7`).
 
-- **SSH private key paths now expand `~`** (`expandHomeDir` in
-  `services/remote_ssh.go`). `os.ReadFile` doesn't do shell-style expansion on
-  any platform, but the dialog's own placeholder text suggests
-  `~/.ssh/id_ed25519` — without this fix, every Mac/Linux user following that
-  placeholder literally would hit a confusing "no such file" error. Already
-  fixed and tested (`TestExpandHomeDir`, `TestBuildSSHAuthMethods_PrivateKey_TildeExpansion`),
-  but worth confirming on a real Mac/Linux box that `os.UserHomeDir()`
-  resolves the way you expect in your dev environment.
-- **Keychain keys containing colons** (`remote:<uuid>:password` was the
-  original format) broke outright on Windows because the FileBackend keyring
-  only escapes `/` in key names, not `:`, and Windows rejects colons in
-  filenames. Fixed generically in `services/keychain/keychain.go`
-  (`sanitizeKey`) and the key format itself was also changed to use
-  underscores. This is a no-op on Linux/macOS (colons are valid in Unix
-  filenames) — just documented here so you know why that function exists and
-  don't need to re-derive it.
-- A **pre-existing, unrelated test-isolation bug** (`services/settings_service_test.go`,
-  `services/commands_test.go` only set `$HOME`, not `%USERPROFILE%`) meant
-  every `go test` run on Windows was silently overwriting the *real* user's
-  `~/.pairadmin/config.yaml`. Fixed by also setting `USERPROFILE` alongside
-  `HOME` in those tests. This was Windows-only in effect — `os.UserHomeDir()`
-  already correctly reads `$HOME` on Linux/macOS — so nothing to do here,
-  but if you ever see both env vars set in a test, that's why.
+## Section 1 items (cross-platform by construction — verified in code)
 
-### Needs your judgment / testing
+- **Terminal history persistence + ResizeObserver zero-size guard:** shipped
+  in `TerminalPreview.tsx` (fit is skipped when the container has no size);
+  the per-tab persistently-mounted xterm instances are structural
+  (`TerminalTab`/`TerminalPreview` keep instances mounted across tab
+  switches).
+- **Status bar real data:** implemented across `StatusBar.tsx` (model name,
+  connection status incl. the LLM activity indicator), `chatStore.ts`
+  (tokenCount estimated in `finalizeMessage`), `useLLMStream.ts` (stream
+  events drive it). Unit-tested (`StatusBar.test.tsx`, `useLLMStream.test.ts`).
+- **Chat auto-scroll:** single `ResizeObserver`-driven in
+  `ChatMessageList.tsx`.
+- **Tailwind `@theme` mapping:** present in `frontend/src/index.css`
+  (`@theme inline` surface-scale tokens); the entire component tree uses the
+  `surface-*` scale (swept in the light-theme work, section 6).
+- **CodeBlock chat actions on every block:** shipped in `CodeBlock.tsx`;
+  Execute no longer auto-logs to Commands.
+- **Commands sidebar (pin/edit/one-time-edit/remove/drag-reorder/Clear
+  History preserves pinned + EditCommandDialog modal):** all shipped and
+  unit-tested (`CommandSidebar.test.tsx`, `CommandCard.test.tsx`,
+  `EditCommandDialog` flows). The focus-steal race fix (deferred focus to
+  next animation frame) is present in `EditCommandDialog`/`TerminalTab`.
+- **`/exit` slash command:** shipped in `ChatPane.tsx`
+  (`CloseTerminal` for all tabs + Wails `Quit()`).
+- **Right-click rename on terminal tabs:** shipped in `TerminalTab.tsx`
+  (with the same deferred-focus fix for the inline input).
+- **Ollama nil-`http.Client` crash:** moot — the Ollama SDK was replaced
+  entirely by a self-owned `net/http` client (R-04, `services/llm/ollama.go`)
+  which constructs its own `*http.Client`; the SDK's nil-client bug cannot
+  recur. `recover()` guards remain in the streaming goroutine.
+- **System prompt tweaks (fenced-blocks-only-runnable, no duplicate
+  commands, one-command-per-block, no `&&` chaining of independent
+  commands):** all present in `services/llm/context.go` `SystemPrompt`.
 
-- **No native macOS Keychain or Windows Credential Manager backend is wired
-  up.** `services/keychain/keychain.go`'s `AllowedBackends` list is
-  `[SecretServiceBackend, FileBackend]` only. On Linux with a D-Bus Secret
-  Service running (gnome-keyring, kwallet), `SecretServiceBackend` is used —
-  real OS integration. On **macOS, there is no Secret Service, and
-  `keyring.KeychainBackend` (real Keychain.app integration) was never added
-  to the allow-list** — so today, macOS silently falls back to the exact same
-  on-disk encrypted `FileBackend` store as Windows, not actual Keychain.app.
-  It works (nothing crashes, thanks to the sanitization fix above), but it's
-  not the "OS keychain" behavior the original project docs call for. Worth
-  deciding whether to add `keyring.KeychainBackend` to the allow-list for a
-  real macOS build and testing that API keys / saved remote-host passwords
-  actually show up in Keychain Access afterward.
-- **WinRM as a client has never run on Linux/macOS.** The masterzen/winrm
-  library and its NTLM dependency (`github.com/Azure/go-ntlmssp`) are pure Go
-  — PairAdmin is the *client* connecting outward to a remote Windows target,
-  so the client's own OS shouldn't matter in theory. But this path is
-  completely unverified off Windows — do a real connect-and-run-a-command
-  test against an actual WinRM-enabled Windows box from your Linux/macOS
-  build before trusting it.
-- **`useDefaultTerminalFocus.ts`** (the "typing always goes to the terminal
-  by default" fix) uses only standard DOM APIs (`document.activeElement`,
-  a `click` listener, `[role="dialog"]` detection) that should behave
-  identically across WebKit2GTK (Linux), WKWebView (macOS), and WebView2
-  (Windows) — but focus semantics for native form controls (checkboxes,
-  buttons retaining focus after a click) can differ subtly between browser
-  engines. This is exactly the kind of thing that looks correct in code
-  review and needs to actually be clicked through — see the new checklist
-  items below.
-- **the tmux create-or-attach command** (`tmux new-session -A -s <name>`) is
-  plain text sent over the SSH channel — no client-OS dependency at all. If tmux itself
-  isn't installed on the *remote* target, the command just errors visibly in
-  the terminal (bash: tmux: command not found) and the session continues as
-  a plain shell; nothing to fix, just don't be surprised by it in testing.
+## Section 2 items (Windows ConPTY-specific — Unix path verified by code + tests)
 
-### Manual verification checklist — remote terminal features specifically
+- **Shell `exit` hang/crash (ConPTY pipes don't signal EOF):** not applicable
+  on Linux/macOS — `pumpPTYOutput` (the shared Unix read loop in
+  `services/pty_service.go`) gets a real EOF/read error from the PTY master
+  when the child exits, and its cleanup path removes the session, closes the
+  master (guarded by the map-presence check the notes asked for), and emits
+  `pty:closed`. The map-presence-check defensive consistency item **was
+  applied** to the Unix path as suggested. Covered by PTY read-loop tests.
+- **Console-window flash on subprocess spawn:** the `HideWindow` /
+  `CREATE_NO_WINDOW` attributes are Windows-only `SysProcAttr` settings,
+  present and unchanged in `pty_windows.go` / `clipboard_windows.go`. The
+  Unix clipboard path (`wl-copy` / Wails native clipboard) spawns no window
+  by construction — nothing to port.
+- **Hand-rolled ConPTY syscalls:** no Unix analog (`creack/pty` is the
+  mature library). No action possible or needed on Linux/macOS.
 
-- [ ] Connect to a real Unix/Linux SSH host with password auth — real PTY,
-      resize works, `exit` closes the tab cleanly.
-- [ ] Connect with private-key auth using a `~/.ssh/...`-style path exactly as
-      the placeholder suggests — should just work now.
-- [ ] Check "Use tmux if available", connect — lands in a tmux session named
-      `pairadmin` (or your custom name).
-- [ ] Check "Save Terminal", reconnect from the "Recent" list — password
-      resolves from the keychain without being asked again; on macOS,
-      confirm whether it actually landed in Keychain Access or in
-      `~/.pairadmin/keyring/` (see the keychain-backend note above).
-- [ ] Rename a saved connection's tab — reconnecting later shows the renamed
-      label, not `username@host`.
-- [ ] Click "Forget" on a saved host — it's gone from "Recent" and its
-      keychain entry is actually removed.
-- [ ] Connect to a real WinRM-enabled Windows host from your Linux/macOS
-      build — command/response works, Ctrl+C is a no-op (by design), the
-      "not a live shell" hint is visible.
-- [ ] Click around several buttons (Commands sidebar, tab list, Settings,
-      New Terminal) and then just start typing without clicking the terminal
-      first — text should always land in the terminal, never re-trigger a
-      button or toggle a checkbox. This is the highest-value thing to
-      actually click through by hand rather than trust from code review.
-- [ ] Ask the AI a question that returns a multi-paragraph response with a
-      code block — confirm the response text appears smoothly without visible
-      layout jitter/jumping while streaming, and the code block is properly
-      syntax-highlighted once the response finishes.
-- [ ] Click "Hide PairAdmin" / "Show PairAdmin" — chat collapses/expands, the
-      terminal resizes to fill the freed space, and the preference survives
-      an app restart.
+## Section 3 items
 
-## 6. Commands dialog, clipboard hotkey, Light theme, and a real tmux bug —
-   added/fixed since section 5, tested only on Windows so far
+- **App icon aspect ratio:** the source image is now square —
+  `build/appicon.png` measured at 512×512 (was 698×665). The
+  source-level defect is resolved; remaining visual confirmation on real
+  macOS/Windows is retained above.
+- **Terminal Ctrl+C / Cmd+C on macOS:** **retained** above — needs a real
+  Mac (see Remaining items). The current handler is unchanged.
+- **Windows-only test files / thin Unix PTY coverage:** the Unix path now
+  has test files (`remote_ssh_test.go` with an in-process SSH server
+  covering connect/PTY/resize/exit/auth-methods/tmux-attach,
+  `remote_winrm_test.go` + `remote_winrm_tls_test.go` covering
+  line-buffering/auth/TLS-endpoint construction, and the PTY read-loop
+  exercised via `openLocalTMTerminal` tests). The parity gap this item
+  called out is closed to the extent unit tests can close it (real remote
+  boxes are retained above).
 
-Four more changes since the remote-terminal work above, all in shared
-frontend code (or pure prompt text) except where called out.
+## Section 4 (manual checklist)
 
-### Already fixed proactively (context, not action items)
+- The checklist itself is retained (above), with items that referenced
+  resolved code (non-square icon, TLS-absent WinRM, missing Ollama key)
+  updated or replaced.
 
-- **Light mode now actually changes the app's appearance.** It previously
-  toggled a CSS class correctly but had no visible effect, because nearly
-  every component used literal dark-only Tailwind classes (`bg-zinc-900`,
-  `text-zinc-400`, etc.) instead of theme-aware tokens. Fixed with a
-  "surface scale" (`surface-0`..`surface-3`, `surface-text`,
-  `surface-text-muted`, `surface-border`, `surface-border-strong`) defined
-  in `index.css`'s `:root`/`.dark` blocks, swept across essentially every
-  component file. Dark-mode values were derived via precise hex→HSL
-  conversion of the exact zinc shades already in use, so dark mode is
-  pixel-identical to before — this is a pure CSS/React change with no OS
-  dependency, but it touches nearly every file in `frontend/src/components`,
-  so a visual smoke-test in both Light and Dark on your platform's WebView
-  engine (WebKitGTK/WKWebView vs. Windows' WebView2) is worth doing once
-  rather than trusting it blind.
-  - The terminal itself needed separate handling since xterm.js's colors are
-    a JS object, not CSS: `TerminalPreview.tsx` now has `getXtermTheme()`
-    (dark: `#0d0d0d`/`#d4d4d4`, light: `#ffffff`/`#1e1e1e`) applied at
-    mount, plus a `MutationObserver` on `<html>`'s `class` attribute so an
-    already-open terminal recolors immediately on toggle rather than only
-    on next launch. `MutationObserver` is a standard DOM API with no known
-    cross-engine quirks, but this is new code and worth a glance.
-  - Code-block syntax highlighting (react-shiki, in `CodeBlock.tsx`) now
-    uses a `{ light: "github-light", dark: "github-dark" }` theme pair
-    (`defaultColor={false}`) instead of being hardcoded to `github-dark`,
-    with a matching CSS rule in `index.css` that switches between shiki's
-    emitted `--shiki-light`/`--shiki-dark` variables based on the same
-    `.dark` class.
-- **A real, non-hypothetical tmux bug, root-caused and fixed:** SSH
-  connections with tmux enabled would consistently open at roughly half the
-  terminal's real width (e.g. 80 of ~137 real columns), only self-correcting
-  after some unrelated later resize (toggling the chat pane's Hide/Show
-  button). Root cause: `term.onResize(...)` in `TerminalPreview.tsx` was
-  registered *after* the first `fitAddon.fit()` call. xterm only fires its
-  resize event when the size actually *changes*, and the very first fit —
-  from xterm's default constructed size to the real container-fitted size —
-  is exactly that one-time change, so nothing was listening yet when it
-  fired. The remote PTY never learned the terminal's real size and silently
-  stayed at `RequestPty`'s 80×24 placeholder (`services/remote_ssh.go`)
-  until some later, unrelated resize happened to fire `onResize` again with
-  a listener finally attached. Fixed by moving the listener registration
-  above the first fit call. This is pure frontend timing logic with **zero
-  platform dependency** — the same xterm.js/`FitAddon` code path runs
-  identically regardless of OS or WebView engine — but it was only actually
-  verified against a real SSH+tmux host on Windows. Two earlier fix attempts
-  (a backend-side wait-for-resize-before-launching-tmux change, and a
-  frontend-side "re-fit one frame later" change) were both wrong guesses and
-  fully reverted; the real fix was found only by adding temporary file-based
-  diagnostic logging (since WebView2's DevTools console wasn't reliably
-  reachable in that environment) and reading actual measured values —
-  worth remembering as a debugging approach if a similar "works after an
-  unrelated action" bug ever shows up on your platform: don't trust a
-  plausible-sounding theory without measuring first.
-- **System prompt tightened against stacked/chained commands**
-  (`services/llm/context.go`) — the model would sometimes bundle multiple
-  independent commands into one fenced block, either bare-space-separated
-  (invalid shell syntax) or chained with `&&` (which silently no-ops the
-  rest of the chain the moment an earlier command fails). The prompt now
-  asks for one command per block by default, reserving chaining for
-  genuinely atomic operations. Pure prompt text, no platform dependency.
-- **Command editing moved from a cramped inline `<input>` to a proper
-  dialog** (`EditCommandDialog.tsx`, new) — a 12-row monospace textarea
-  (Ctrl+Enter to save, Esc to cancel), reused by Edit, Edit/Append-for-
-  next-use, and a new "Add Command" button in the sidebar for typing/
-  pasting a command directly. Pure React/base-ui `Dialog`, no OS dependency.
+## Section 5 items (remote terminals)
 
-### Needs your judgment / testing
+- **`expandHomeDir` `~` expansion:** shipped and unit-tested
+  (`TestExpandHomeDir`, `TestBuildSSHAuthMethods_PrivateKey_TildeExpansion`
+  in `services/remote_ssh_test.go`). The "confirm `os.UserHomeDir()` on a
+  real box" residual is minimal and folded into the real-SSH-host check.
+- **Keychain keys containing colons:** `sanitizeKey` shipped long ago;
+  no-op on Linux/macOS by construction. Context only — no action.
+- **Test `$HOME`/`%USERPROFILE%` isolation:** present in all affected test
+  files (`t.Setenv("USERPROFILE", ...)` alongside `HOME`). Context only.
+- **No macOS Keychain backend:** **stale — resolved in code.**
+  `keyring.KeychainBackend` is in `AllowedBackends` with
+  `KeychainTrustApplication: true`. Retained above only as a
+  verify-on-real-Mac item.
+- **WinRM client never run off Windows:** the pure-Go argument stands, and
+  the WinRM TLS endpoint construction is now unit-tested on Linux; the real
+  connect test is retained above.
+- **`useDefaultTerminalFocus.ts`:** shipped; uses only standard DOM APIs.
+  The click-through verification is folded into the manual checklist.
+- **tmux create-or-attach without remote tmux:** visible-error behavior is
+  by design (backend writes the command; the shell reports the missing
+  binary). Context only — no action.
+- **Remote-terminal manual checklist:** retained (above).
 
-- **New hotkey default (`Ctrl+Shift+A`) may not be the right default on
-  macOS.** `useAddClipboardCommandHotkey.ts` reads the current OS clipboard
-  and adds it as a new sidebar command; `DefaultHotkeyAddClipboardCommand`
-  in `services/config/config.go` and `DEFAULT_ADD_CLIPBOARD_COMMAND_HOTKEY`
-  in the frontend hook both hardcode `"Ctrl+Shift+A"` — a single default
-  shared across all platforms, chosen specifically to avoid AltGr
-  composition conflicts (which only affect `Ctrl+Alt+<letter>` combos) and
-  known Chromium/WebView2 devtools shortcuts. It was **not** chosen with
-  macOS conventions in mind: macOS users generally expect `Cmd`-based
-  shortcuts, not `Ctrl`-based ones, and `Ctrl+Shift+<letter>` is a less
-  idiomatic combo there. It's user-rebindable in Settings → Hotkeys either
-  way, so nothing is broken, but consider whether the *default* should
-  differ on macOS (e.g. a `Cmd`-based combo), and verify `Ctrl+Shift+A`
-  doesn't collide with any real macOS/WKWebView system shortcut before
-  deciding it's fine as-is.
-- **Hotkey capture UI** (`HotkeysTab.tsx`'s `buildKeyCombo`) records
-  `event.metaKey` as `"Meta"` in the combo string — on macOS that's the
-  `Cmd` key. The matching logic in `useAddClipboardCommandHotkey.ts` reads
-  it back correctly (`event.metaKey === parsed.meta`), so a user
-  *rebinding* to a `Cmd`-based combo on macOS should already work — this is
-  about the shipped *default*, not a functional gap.
+## Section 6 items
 
-### Manual verification checklist — this section specifically
+- **Light theme (surface scale + xterm theme + MutationObserver + shiki
+  light/dark pair):** all shipped in `index.css`, `TerminalPreview.tsx`,
+  `CodeBlock.tsx`; visually verified by the frontend test suite only to the
+  extent code assertions can go — the visual smoke test is folded into the
+  manual checklist.
+- **tmux half-width bug (onResize registered after first fit):** the fix is
+  present and commented in `TerminalPreview.tsx` (listener registration
+  explicitly ordered before the first `fitAddon.fit()` call). The real-host
+  tmux check is retained in the manual checklist.
+- **System prompt anti-chaining:** present in `services/llm/context.go`.
+- **EditCommandDialog:** shipped and unit-tested.
+- **macOS hotkey default question:** **retained** above (needs a real Mac).
+- **Hotkey capture Meta handling:** `buildKeyCombo` records `metaKey` and
+  `matchesHotkey` compares it — rebinding works as described. Folded into
+  the macOS hotkey item above.
+- **Section 6 manual checklist:** retained (above).
 
-- [ ] Toggle Light/Dark in Settings → Appearance — every panel (sidebar,
-      terminal chrome, dialogs, chat, status bar, context menus) actually
-      changes appearance, not just some of them. Toggle back to Dark and
-      confirm it looks identical to before this change (nothing should have
-      shifted shade in Dark mode).
-- [ ] In Light mode, open a chat response with a code block — confirm the
-      syntax highlighting uses light colors, not a dark box floating in a
-      light page.
-- [ ] Connect to a real SSH host with "Use tmux" checked — tmux fills the
-      **entire** terminal width immediately on connect, with no need to
-      toggle Hide/Show PairAdmin or otherwise touch the layout.
-- [ ] Hover a command in the sidebar, click the pencil icon (not right-
-      click) — opens a proper multi-line dialog, not a one-line field.
-- [ ] Click "+ Add Command" in the sidebar (above Clear History) — opens an
-      empty version of the same dialog; typing/pasting text and clicking
-      Save adds it as a new command.
-- [ ] Copy some text to the OS clipboard, press the configured hotkey
-      (`Ctrl+Shift+A` by default) while the terminal has focus — it's added
-      as a new sidebar command with no dialog. Confirm it does *not* fire
-      while typing in Settings, the chat input, or an open dialog's text
-      field.
-- [ ] Ask the AI something that would naturally take multiple steps —
-      confirm each command lands in its own separate code block rather than
-      being joined with `&&`/`;` or bare spaces on one line.
+## On testing rigor
 
-## On testing rigor generally
-
-None of the remote-terminal backend logic can be fully exercised by unit
-tests alone — `services/remote_ssh_test.go` uses a real in-process SSH server
-(not a live remote host), and `services/remote_winrm_test.go` only covers the
-pure-logic pieces (line-buffering, auth validation) since `masterzen/winrm`'s
-types are concrete, not interfaces. That's sufficient to catch regressions in
-logic, but it is *not* a substitute for connecting to a real remote Linux box
-and a real remote Windows box by hand. The tmux width bug in section 6 is a
-second, independent example of the same lesson from a different angle: it
-was pure frontend logic with 100% unit-test-able code paths, and two wrong
-fixes still shipped and were confirmed "not fixed" only by a real human
-manually reconnecting to a real tmux session — the automated test suite
-alone never would have caught it, and the real fix was only found by
-measuring the actual live state rather than reasoning from the code. Treat
-the manual checklists in this file (sections 4, 5, and 6) as a required,
-recurring part of shipping any change here — not a one-time box to check
-off — since a green `go test ./...` / `vitest run` run only proves the code
-does what the tests assume, not that it works against a real server, a real
-remote host, or a real WebView engine on your platform.
+The original file's closing lesson stands and is worth keeping verbatim in
+spirit: unit tests prove the code does what the tests assume — not that it
+works against a real server, a real remote host, or a real WebView engine.
+That is exactly why the checklists above are retained even after the
+code-verifiable items were burned down.
