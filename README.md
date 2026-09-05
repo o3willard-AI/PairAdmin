@@ -87,16 +87,19 @@ Light and dark themes throughout, including the terminal itself.
 
 ```bash
 # Install (auto-detects .deb / .rpm)
-curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin/master/install.sh | bash -s install
 
 # Upgrade to latest version
 curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin/master/install.sh | bash -s upgrade
 
 # Uninstall
 curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin/master/install.sh | bash -s uninstall
+
+# Verify a release's checksum before installing (no sudo needed)
+curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin/master/install.sh | bash -s -- --sha256
 ```
 
-The installer detects your distro and picks the right package format automatically (`.deb` for Debian/Ubuntu, `.rpm` for Fedora and other dnf/yum-based distros). `sudo` is required during install/uninstall. No AppImage build exists yet, so a system without `dpkg` or `rpm` isn't supported by the one-line installer — use [Building from Source](#building-from-source) instead.
+The installer detects your distro and picks the right package format automatically (`.deb` for Debian/Ubuntu, `.rpm` for Fedora and other dnf/yum-based distros). The checksum is **always verified** before installation — `install`, `upgrade`, and `--sha256` all download `SHA256SUMS` from the same release and abort on mismatch. `sudo` is required during install/uninstall. No AppImage build exists yet, so a system without `dpkg` or `rpm` isn't supported by the one-line installer — use [Building from Source](#building-from-source) instead.
 
 > **macOS & Windows:** see the manual install sections below.
 
@@ -136,7 +139,40 @@ xattr -dr com.apple.quarantine /Applications/PairAdmin.app
 
 ## Verifying Downloads
 
+### Automated checksum verification (install.sh)
+
+The `install.sh` script supports a `--sha256` mode that downloads the release
+asset **and** the release's `SHA256SUMS` file, then verifies the checksum
+before any installation. A mismatch aborts with a clear error and does **not**
+install.
+
 ```bash
+# Verify the latest release (auto-detects .deb/.rpm):
+bash install.sh --sha256
+
+# Verify a specific version:
+bash install.sh --sha256 v2.3.0
+
+# Via the one-line installer (note the -- before args):
+curl -fsSL https://raw.githubusercontent.com/o3willard-AI/PairAdmin/master/install.sh | bash -s -- --sha256 v2.3.0
+
+# The plain "verify" command is an alias for the latest:
+bash install.sh verify
+```
+
+The regular `install` command also verifies the checksum automatically before
+installing — the verify step is built into the install flow.
+
+### Manual verification
+
+```bash
+# Download both the asset and SHA256SUMS from the same release:
+curl -fsSL -o pairadmin_2.3.0_linux_amd64.deb \
+  https://github.com/o3willard-AI/PairAdmin/releases/download/v2.3.0/pairadmin_2.3.0_linux_amd64.deb
+curl -fsSL -o SHA256SUMS \
+  https://github.com/o3willard-AI/PairAdmin/releases/download/v2.3.0/SHA256SUMS
+
+# Verify:
 sha256sum --check SHA256SUMS
 ```
 
@@ -195,7 +231,7 @@ machine.
 # Install build dependencies
 sudo ./scripts/install-deps.sh
 
-# Install Go 1.24+ and Node.js 20+
+# Install Go 1.26.6 and Node.js 20+
 # Install Wails CLI: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
 # Build
@@ -206,7 +242,7 @@ wails build -platform linux/amd64 -tags webkit2_41
 **Windows:**
 
 ```powershell
-# Install Go 1.24+, Node.js 20+, and the Wails CLI (same as above)
+# Install Go 1.26.6, Node.js 20+, and the Wails CLI (same as above)
 # WebView2 Runtime is required (preinstalled on Windows 11; installable on Windows 10)
 
 wails build -platform windows/amd64
@@ -248,6 +284,98 @@ node scripts/check-diff-coverage.mjs origin/master
 ```
 
 See `frontend/scripts/check-diff-coverage.mjs` for details.
+## Security Model
+
+PairAdmin makes four security guarantees. Each is backed by specific code you
+can point at.
+
+### 1. SSH host-key TOFU (trust-on-first-use)
+
+When you connect to a new SSH host, PairAdmin pins the server's public key.
+This is the same trust-on-first-use model as `ssh` / `~/.ssh/known_hosts`.
+
+- **First connect to a host:** the key is pinned silently (no prompt); a
+  mismatch on a later connection is always rejected.
+- **To require confirmation on first connect** (security-team review path),
+  set `prompt_new_host_keys: true` in config (Settings → Terminals →
+  "Prompt on new host keys"). The first connection pauses for explicit
+  approval; subsequent connections without a prompt behave as above.
+- A key mismatch on any later connection is **always rejected** — the setting
+  only affects whether the *first* connect asks for approval, not whether
+  later mismatches are caught.
+
+See `services/config/config.go` (`PromptNewHostKeys` field, default `false`),
+`services/remote_ssh.go` (key pinning logic), and
+`services/remote_types.go` (the saved-host struct).
+
+### 2. Credential redaction (filter pipeline)
+
+Terminal output, user input, and any content sent to an LLM is scrubbed
+through an in-process filter pipeline **before** it leaves the process —
+whether to a model, a log file, or the audit trail. The pipeline lives in
+`services/llm/filter/` and is constructed in `services/llm_service.go`
+(line ~189: `pipeline := filter.NewPipeline(...)`).
+
+Built-in redaction patterns (`services/llm/filter/credential.go`):
+
+| Pattern ID | What it catches |
+|---|---|
+| `aws-access-key-id` | AWS access key IDs (AKIA...) |
+| `github-token` | GitHub PATs (`ghp_...`, `github_pat_...`) |
+| `gitlab-personal-access-token` | GitLab PATs (`glpat-...`) |
+| `openai-api-key` / `anthropic-api-key` | Provider API keys |
+| `slack-token` | Slack tokens |
+| `google-api-key` / `google-service-account` | Google API keys + service-account JSON private keys |
+| `azure-account-key` | Azure AccountKey / SharedAccessKey |
+| `bearer-token` | Bare bearer/JWT tokens |
+| `jwt` | JWT tokens |
+| `pem-private-key` | RSA/EC/OpenSSH private-key blocks |
+| `password-assignment` | `password = value` / `passwd: value` patterns |
+| `generic-api-key` | Generic `api_key=...` / `apiKey: ...` assignments |
+| `connection-string-credentials` | URI-style `scheme://user:pass@host` |
+
+You can add custom regex patterns in Settings → Prompts → Redaction Patterns
+(persisted as `CustomPatterns` in `services/config/config.go`).
+
+### 3. OS keychain for secrets
+
+Credentials (API keys, SSH key passphrases, saved remote-host passwords) are
+stored in the **OS keychain**, never in config files:
+
+- **macOS:** real Keychain.app (`keyring.KeychainBackend` with
+  `KeychainTrustApplication: true`).
+- **Windows:** Windows Credential Manager (`keyring.WinCredBackend`).
+- **Linux:** Secret Service / gnome-keyring / kwallet
+  (`keyring.SecretServiceBackend`).
+- **Fallback:** if no OS backend opens *or* passes a write probe, PairAdmin
+  falls back to an encrypted on-disk `FileBackend`
+  (`~/.pairadmin/keyring/` for dev builds, the OS data dir for releases)
+  unlocked by a **user-chosen master password**.
+
+API keys held in memory use `memguard.Enclave` (sealed, mlock'd, not plain
+variables). See `services/keychain/keychain.go` (allow-listed backends,
+`FileBackend` fallback) and `services/llm_service.go` (`apiKeyEnclaves`).
+
+### 4. WebKit content-process sandbox (Linux)
+
+On Linux, Wails renders the UI via WebKitGTK. WebKitGTK ≥ 2.40 enables a
+content-process sandbox (bubblewrap + user namespaces) by default. This
+sandbox is **disabled unconditionally** in `main.go` via
+`WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1` (a no-op on macOS/Windows,
+which use WKWebView / WebView2 respectively).
+
+**Why:** the sandbox fails — producing a **blank window** — on PairAdmin's
+primary Linux targets (VMs with VirtIO GPU, containers, headless hosts,
+hosts with user namespaces disabled by kernel/AppArmor/seccomp). There is
+no reliable pre-flight check that models all failure legs, so the disable
+is unconditional and documented.
+
+**Risk is bounded** because the WebView loads **only bundled, first-party,
+trusted UI** (`//go:embed all:frontend/dist`) — no remote web content, no
+third-party webviews, no network-loaded JS.
+
+Rationale, OS matrix, and alternatives are recorded in
+[`docs/adr/ADR-0001-webkit-sandbox-disable.md`](docs/adr/ADR-0001-webkit-sandbox-disable.md).
 
 ## License
 
