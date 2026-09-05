@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 import { DEFAULT_ADD_CLIPBOARD_COMMAND_HOTKEY } from "@/hooks/useAddClipboardCommandHotkey";
@@ -123,5 +123,40 @@ describe("HotkeysTab", () => {
     expect(saveSettings).toHaveBeenCalledWith(
       expect.objectContaining({ HotkeyQuickSelect: "Ctrl+Alt" })
     );
+  });
+});
+
+describe("HotkeysTab — key capture (buildKeyCombo)", () => {
+  it("records a Ctrl+Shift key combo when a field is focused and keys are pressed", async () => {
+    const user = userEvent.setup();
+    render(<HotkeysTab />);
+    // Wait for the New Terminal default to load so the field is interactive.
+    await screen.findByDisplayValue("Ctrl+Shift+N");
+    const input = screen.getByDisplayValue("Ctrl+Shift+N");
+
+    await user.click(input);
+    // Focus shows the capturing prompt.
+    expect(screen.getByDisplayValue("Press a key combination...")).toBeInTheDocument();
+    await user.keyboard("b");
+
+    // 'b' with no modifiers → "B"; the field also blurs after capture.
+    expect(screen.getByDisplayValue("B")).toBeInTheDocument();
+  });
+
+  it("builds a combo that includes Alt/Meta modifiers", () => {
+    render(<HotkeysTab />);
+    // All six hotkey inputs share the capture placeholder; use the first.
+    const input = screen.getAllByPlaceholderText("Click to capture shortcut")[0];
+    fireEvent.keyDown(input, { key: "k", ctrlKey: true, altKey: true });
+
+    expect(input).toHaveValue("Ctrl+Alt+K");
+  });
+
+  it("excludes the modifier keys themselves as the primary key (a lone Shift is just 'Shift')", () => {
+    render(<HotkeysTab />);
+    const input = screen.getAllByPlaceholderText("Click to capture shortcut")[0];
+    fireEvent.keyDown(input, { key: "Shift", shiftKey: true });
+
+    expect(input).toHaveValue("Shift");
   });
 });

@@ -220,6 +220,35 @@ wails build -platform darwin/universal
 # App bundle at: build/bin/pairadmin.app
 ```
 
+## Testing
+
+The frontend uses Vitest (jsdom) with `@vitest/coverage-v8`. To run the test
+suite with a coverage report locally:
+
+```bash
+cd frontend
+npm ci
+npx vitest run --coverage
+```
+
+This emits an HTML-friendly Console/text report plus a machine-readable
+`coverage/coverage-final.json` that the CI diff-coverage gate consumes.
+
+### Diff-coverage gate
+
+CI hard-fails a pull request whose **changed feature lines** (intersection of
+`git diff <base> HEAD` ranges with the coverage report's statement lines) fall
+below an 80% floor. This deliberately measures coverage of what a PR touched,
+not a gameable whole-project total. To run the same gate locally against `main`:
+
+```bash
+cd frontend
+npx vitest run --coverage
+node scripts/check-diff-coverage.mjs origin/master
+```
+
+See `frontend/scripts/check-diff-coverage.mjs` for details.
+
 ## License
 
 [Apache License 2.0](LICENSE)

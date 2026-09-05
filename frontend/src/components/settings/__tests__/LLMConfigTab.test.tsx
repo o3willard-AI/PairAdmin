@@ -2,13 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
-import { LLMConfigTab } from "@/components/settings/LLMConfigTab";
+import { LLMConfigTab, isLoopbackHost } from "@/components/settings/LLMConfigTab";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 const getSettings = vi.fn();
 const saveSettings = vi.fn();
 const saveAPIKey = vi.fn();
 const setModel = vi.fn();
+const testConnection = vi.fn();
+const getApiKeyStatus = vi.fn();
 
 // Resolves (from frontend/src/components/settings/) to
 // frontend/wailsjs/go/services/SettingsService. From this test file
@@ -18,9 +20,9 @@ const setModel = vi.fn();
 vi.mock("../../../../wailsjs/go/services/SettingsService", () => ({
   GetSettings: (...args: unknown[]) => getSettings(...args),
   SaveSettings: (...args: unknown[]) => saveSettings(...args),
-  GetAPIKeyStatus: vi.fn(() => Promise.resolve("")),
+  GetAPIKeyStatus: (...args: unknown[]) => getApiKeyStatus(...args),
   SaveAPIKey: (...args: unknown[]) => saveAPIKey(...args),
-  TestConnection: vi.fn(() => Promise.resolve("Connected")),
+  TestConnection: (...args: unknown[]) => testConnection(...args),
   SetModel: (...args: unknown[]) => setModel(...args),
 }));
 
@@ -30,6 +32,8 @@ describe("LLMConfigTab — Disable Pair LLM", () => {
     saveSettings.mockReset().mockResolvedValue(undefined);
     saveAPIKey.mockReset().mockResolvedValue(undefined);
     setModel.mockReset().mockResolvedValue("Model set to openai:gpt-4");
+    getApiKeyStatus.mockReset().mockResolvedValue("");
+    testConnection.mockReset().mockResolvedValue("Connected");
     useSettingsStore.setState({
       activeModel: "",
       settingsOpen: false,
@@ -101,6 +105,8 @@ describe("LLMConfigTab — Ollama API key (remote servers)", () => {
     saveSettings.mockReset().mockResolvedValue(undefined);
     saveAPIKey.mockReset().mockResolvedValue(undefined);
     setModel.mockReset().mockResolvedValue("Model set to ollama:llama3");
+    getApiKeyStatus.mockReset().mockResolvedValue("");
+    testConnection.mockReset().mockResolvedValue("Connected");
     useSettingsStore.setState({
       activeModel: "",
       settingsOpen: false,
@@ -140,6 +146,24 @@ describe("LLMConfigTab — Ollama API key (remote servers)", () => {
 
     expect(saveAPIKey).not.toHaveBeenCalled();
   });
+
+  it("updates the model field when the user types into it", async () => {
+    const user = userEvent.setup();
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await user.type(screen.getByPlaceholderText(/e\.g\. gpt-4o/), "gpt-4o-mini");
+
+    expect(screen.getByDisplayValue("gpt-4o-mini")).toBeInTheDocument();
+  });
+
+  it("updates the API key field when the user types into it", async () => {
+    const user = userEvent.setup();
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await user.type(screen.getByPlaceholderText("Enter API key"), "sk-test-123");
+
+    expect(screen.getByDisplayValue("sk-test-123")).toBeInTheDocument();
+  });
 });
 
 describe("LLMConfigTab — remote Ollama privacy warning", () => {
@@ -148,6 +172,8 @@ describe("LLMConfigTab — remote Ollama privacy warning", () => {
     saveSettings.mockReset().mockResolvedValue(undefined);
     saveAPIKey.mockReset().mockResolvedValue(undefined);
     setModel.mockReset().mockResolvedValue("Model set to ollama:llama3");
+    getApiKeyStatus.mockReset().mockResolvedValue("");
+    testConnection.mockReset().mockResolvedValue("Connected");
     useSettingsStore.setState({
       activeModel: "",
       settingsOpen: false,
@@ -215,5 +241,59 @@ describe("LLMConfigTab — remote Ollama privacy warning", () => {
     expect(
       screen.queryByText(/terminal output will be sent to a remote ollama server/i)
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("LLMConfigTab — isLoopbackHost", () => {
+  it("treats empty host as loopback (default localhost)", () => {
+    expect(isLoopbackHost("")).toBe(true);
+    expect(isLoopbackHost("   ")).toBe(true);
+  });
+
+  it("treats localhost and 127.x addresses as loopback", () => {
+    expect(isLoopbackHost("http://localhost:11434")).toBe(true);
+    expect(isLoopbackHost("http://127.0.0.1:11434")).toBe(true);
+    expect(isLoopbackHost("http://127.8.8.8:11434")).toBe(true);
+  });
+
+  it("treats IPv6 loopback (bracketed URL) as loopback", () => {
+    expect(isLoopbackHost("http://[::1]:11434")).toBe(true);
+  });
+
+  it("treats a bare IPv6 literal as non-loopback (URL parsing fails closed)", () => {
+    // A bare "::1" is not a parseable URL, so isLoopbackHost falls through to
+    // the fail-closed path (returns false → the remote warning shows). This
+    // documents the actual behavior, not the ideal one.
+    expect(isLoopbackHost("::1")).toBe(false);
+  });
+
+  it("treats remote and unparseable hosts as non-loopback (fail closed)", () => {
+    expect(isLoopbackHost("http://team-gpu-box.lan:11434")).toBe(false);
+    expect(isLoopbackHost("not a url at all")).toBe(false);
+  });
+});
+
+describe("LLMConfigTab — Test Connection", () => {
+  it("shows a success message when the connection test resolves", async () => {
+    const user = userEvent.setup();
+    testConnection.mockResolvedValue("Connected to Ollama on http://localhost:11434");
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+
+    expect(
+      await screen.findByText(/✓ Connected to Ollama/i)
+    ).toBeInTheDocument();
+  });
+
+  it("shows a failure message when the connection test rejects", async () => {
+    const user = userEvent.setup();
+    testConnection.mockRejectedValue(new Error("connection refused"));
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+
+    // wailsErrorMessage surfaces the backend Error's own message verbatim.
+    expect(await screen.findByText(/✗ connection refused/i)).toBeInTheDocument();
   });
 });
