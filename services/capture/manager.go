@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,7 @@ type CaptureManager struct {
 	adapters []TerminalAdapter
 	active   []TerminalAdapter // adapters that passed IsAvailable check
 	emitFn   func(ctx context.Context, eventName string, optionalData ...interface{})
+	log      *slog.Logger // structured diagnostics; configured once at construction
 
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -49,6 +51,7 @@ func NewCaptureManager(adapters []TerminalAdapter, emitFn func(ctx context.Conte
 		panes:    make(map[string]*captureState),
 		sem:      semaphore.NewWeighted(4),
 		emitFn:   emitFn,
+		log:      slog.Default().With("component", "capture"),
 	}
 }
 
@@ -91,18 +94,18 @@ func (m *CaptureManager) tick() {
 	for _, a := range m.active {
 		panes, err := a.Discover(m.ctx)
 		if err != nil {
-			fmt.Printf("[CaptureManager] Discover error from %s: %v\n", a.Name(), err)
+			m.log.Error("capture discover failed", "adapter", a.Name(), "err", err)
 			continue
 		}
 		allPanes = append(allPanes, panes...)
 	}
 
 	if len(allPanes) > 0 {
-		fmt.Printf("[CaptureManager] Discovered %d panes: ", len(allPanes))
+		ids := make([]string, 0, len(allPanes))
 		for _, p := range allPanes {
-			fmt.Printf("%s ", p.ID)
+			ids = append(ids, p.ID)
 		}
-		fmt.Println()
+		m.log.Debug("capture panes discovered", "count", len(allPanes), "panes", strings.Join(ids, " "))
 	}
 
 	// Build set of current pane IDs
@@ -115,7 +118,7 @@ func (m *CaptureManager) tick() {
 	var membershipChanged bool
 	for id := range currentSet {
 		if _, exists := m.panes[id]; !exists {
-			fmt.Printf("[CaptureManager] New pane: %s\n", id)
+			m.log.Debug("capture pane discovered", "pane", id)
 			m.panes[id] = &captureState{}
 			membershipChanged = true
 		}
@@ -124,7 +127,7 @@ func (m *CaptureManager) tick() {
 		if _, exists := currentSet[id]; !exists {
 			state.missCount++
 			if state.missCount >= 3 {
-				fmt.Printf("[CaptureManager] Removing pane: %s\n", id)
+				m.log.Debug("capture pane removed", "pane", id)
 				delete(m.panes, id)
 				membershipChanged = true
 			}
@@ -175,9 +178,9 @@ func (m *CaptureManager) tick() {
 				rmu.Unlock()
 				return
 			}
-			fmt.Printf("[CaptureManager] Starting capture for %s\n", pane.ID)
+			m.log.Debug("capture starting", "pane", pane.ID)
 			content, err := adapter.Capture(m.ctx, pane)
-			fmt.Printf("[CaptureManager] Finished capture for %s (err: %v)\n", pane.ID, err)
+			m.log.Debug("capture finished", "pane", pane.ID, "err", err)
 			m.sem.Release(1)
 			rmu.Lock()
 			results = append(results, captureResult{pane: pane, content: content, err: err})
