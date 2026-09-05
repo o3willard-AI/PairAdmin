@@ -11,6 +11,16 @@ type credPattern struct {
 	re *regexp.Regexp
 }
 
+// PatternIDs returns the ids of all configured credential patterns, so
+// callers (and the README-drift test) can enumerate which rules exist.
+func PatternIDs() []string {
+	out := make([]string, 0, len(credentialPatterns))
+	for _, p := range credentialPatterns {
+		out = append(out, p.id)
+	}
+	return out
+}
+
 // credentialPatterns are fallback regex patterns for common credential formats.
 // These are compiled once at startup and always applied regardless of whether
 // a gitleaks detector is available.
@@ -39,11 +49,50 @@ var credentialPatterns = []*credPattern{
 		id: "generic-api-key",
 		re: regexp.MustCompile(`(?i)(api[_-]?key|apikey|api[_-]?secret)\s*[:=]\s*['"]?[A-Za-z0-9\-_]{16,}['"]?`),
 	},
+	{
+		id: "gitlab-personal-access-token",
+		re: regexp.MustCompile(`\bglpat-[0-9a-zA-Z_\-]{20,}`),
+	},
+	{
+		id: "slack-token",
+		re: regexp.MustCompile(`\bxox[baprs]-[0-9A-Za-z-]{10,}`),
+	},
+	{
+		id: "google-api-key",
+		re: regexp.MustCompile(`\bAIza[0-9A-Za-z_\-]{35}\b`),
+	},
+	{
+		id: "google-service-account",
+		re: regexp.MustCompile(`"type"\s*:\s*"service_account"[\s\S]*?"private_key"\s*:\s*"[^"]*"`),
+	},
+	{
+		id: "azure-account-key",
+		re: regexp.MustCompile(`\b(?:AccountKey|SharedAccessKey)\s*=\s*[A-Za-z0-9+/]{40,}={0,2}`),
+	},
+	{
+		id: "jwt",
+		re: regexp.MustCompile(`\beyJ[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]{5,}={0,2}\b`),
+	},
+	{
+		id: "pem-private-key",
+		re: regexp.MustCompile(`(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----`),
+	},
+	{
+		id: "password-assignment",
+		re: regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9])(?:password|passwd)\s*[:=]\s*[^[:space:]'";]{6,}`),
+	},
+	{
+		id: "connection-string-credentials",
+		re: regexp.MustCompile(`\b[a-z][a-z0-9+.-]*://[^/\s:@]+:[^@\s/]+@`),
+	},
 }
 
 // CredentialFilter detects and redacts credential patterns in content.
 // It uses regex fallback patterns for common credential formats (AWS keys,
-// GitHub tokens, OpenAI keys, Anthropic keys, bearer tokens, and generic API keys).
+// GitHub/GitLab tokens, OpenAI/Anthropic keys, Slack tokens, Google API keys
+// & service-account JSON, Azure storage keys, bearer tokens & bare JWTs, PEM
+// private keys, password/passwd assignments, and connection strings with
+// embedded credentials).
 type CredentialFilter struct{}
 
 // NewCredentialFilter creates a new CredentialFilter.

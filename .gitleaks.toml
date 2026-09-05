@@ -29,4 +29,32 @@ useDefault = true
         # justification above; it is the identical inert placeholder, not a
         # real token. Both allowlist entries point at that one test only.
         '''ghp_1234567890abcdefghij1234567890abcdef''',
+
+        # --- R-06 expanded-pattern test fixtures (all inert, deliberate) ---
+        # JUSTIFICATION: Inert, fixed placeholder values in
+        # services/llm/filter/filter_test.go used to verify PairAdmin's own
+        # credential redaction strips each fake credential. None is a real
+        # secret; each is an obviously-synthetic string (a made-up PAT,
+        # the RFC-7519 example JWT, a placeholder AIza key, xox* Slack-shaped
+        # placeholders, fixed PEM bodies, a repeating hex Azure key). They
+        # appear only as test inputs/assertions in that one file.
+
+        # GitLab PAT fixture (gitlab-pat rule matches a 26-char prefix).
+        '''glpat-clintru5svolve9''',
+        # RFC 7519 example JWT used verbatim as a bare-JWT fixture (jwt rule).
+        '''SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c''',
+        # Google placeholder API key (gcp-api-key rule).
+        '''AIzaSyA1234567890ABcdefghijklmnopqrstuv''',
+        # Slack-shaped placeholders (generic-api-key rule matches these).
+        '''xoxb-1234567890-ABCDEFGHIJKL''',
+        '''xoxp-123123123-123123123-abcdefghijkl''',
+        # Inert PEM body (base64 of "pair-admin-inert-test-key") used inside the
+        # service-account + RSA private-key fixtures. A 36-char base64 value
+        # (base64 of "...inert-test-key") is NOT a real private key and never
+        # appears in production; allowlisted because it is the FULL unique inert
+        # placeholder, NOT the universal RSA DER header (MIIEvQI...) — so real
+        # private keys are never suppressed. See the verify-real-key regression.
+        '''cGFpci1hZG1pbi1pbmVydC10ZXN0LWtleQ==''',
+        # Repeating-hex Azure SharedAccessKey fixture.
+        '''0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd''',
     ]

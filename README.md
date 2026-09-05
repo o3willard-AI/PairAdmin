@@ -48,8 +48,14 @@ connection. Remote Windows hosts over WinRM too. It's the "replace PuTTY and
 stop keeping a text file of IP addresses" tier of useful.
 
 **Your secrets stay yours.** Terminal output is scrubbed *before* it's sent to
-any model: AWS keys, GitHub tokens, OpenAI/Anthropic keys, bearer tokens, and
-generic API-key patterns are redacted in-process, and you can add your own regex
+any model. In-process redaction covers: `aws-access-key-id`,
+`github-token`, `gitlab-personal-access-token`, `openai-api-key`,
+`anthropic-api-key`, `slack-token`, `google-api-key`,
+`google-service-account` (service-account JSON private keys), `azure-account-key`
+(AccountKey / SharedAccessKey), `bearer-token`, `jwt` (bare, no Bearer
+prefix needed), `pem-private-key` (RSA/EC/OpenSSH private-key blocks),
+`password-assignment`, `generic-api-key`, and `connection-string-credentials`
+(URI-style `scheme://user:pass@host`). You can also add your own regex
 patterns to redact matches or drop whole lines. API keys are held in encrypted,
 mlock'd memory (memguard) rather than plain variables. Every prompt and response
 is written to a local rotating JSONL audit log, so you can answer "what did we

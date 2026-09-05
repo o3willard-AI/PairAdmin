@@ -1,6 +1,7 @@
 package filter_test
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -182,5 +183,166 @@ func TestPipeline_AppliesFiltersInSequence(t *testing.T) {
 	}
 	if got != input {
 		t.Errorf("Pipeline modified safe plain text: got %q, want %q", got, input)
+	}
+}
+
+// TestCredentialFilter_RedactsExpandedPatterns exercises the expanded (R-06)
+// credential pattern set. Each case drives a REAL secret through Apply and
+// asserts (a) the secret is gone and (b) a [REDACTED:...] marker is present.
+func TestCredentialFilter_RedactsExpandedPatterns(t *testing.T) {
+	f, err := filter.NewCredentialFilter()
+	if err != nil {
+		t.Fatalf("NewCredentialFilter() error: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		input  string
+		secret string // must be absent from the output
+	}{
+		{
+			name:   "gitlab personal access token",
+			input:  "token: glpat-clintru5svolve9akhzyf40madeup",
+			secret: "glpat-clintru5svolve9akhzyf40madeup",
+		},
+		{
+			name:   "slack bot token",
+			input:  "SLACK_BOT_TOKEN=xoxb-1234567890-ABCDEFGHIJKL",
+			secret: "xoxb-1234567890-ABCDEFGHIJKL",
+		},
+		{
+			name:   "slack app-level token",
+			input:  "token=xoxp-123123123-123123123-abcdefghijkl",
+			secret: "xoxp-123123123-123123123-abcdefghijkl",
+		},
+		{
+			name:   "google api key",
+			input:  "key=AIzaSyA1234567890ABcdefghijklmnopqrstuv",
+			secret: "AIzaSyA1234567890ABcdefghijklmnopqrstuv",
+		},
+		{
+			name: "google service account private key",
+			input: `{
+  "type": "service_account",
+  "project_id": "my-proj",
+  "private_key": "-----BEGIN PRIVATE KEY-----\ncGFpci1hZG1pbi1pbmVydC10ZXN0LWtleQ==\n-----END PRIVATE KEY-----\n"
+}`,
+			secret: "cGFpci1hZG1pbi1pbmVydC10ZXN0LWtleQ==",
+		},
+		{
+			name:   "azure storage account key",
+			input:  "DefaultEndpointsProtocol=https;AccountName=store;AccountKey=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/==;EndpointSuffix=core.windows.net",
+			secret: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/==",
+		},
+		{
+			name:   "azure shared access key",
+			input:  "ServiceBusConnectionString=Endpoint=sb://x.servicebus.windows.net/;SharedAccessKeyName=root;SharedAccessKey=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd",
+			secret: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd",
+		},
+		{
+			name:   "bare jwt (no bearer prefix)",
+			input:  "session cookie: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+			secret: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+		},
+		{
+			name: "rsa private key block",
+			input: `-----BEGIN RSA PRIVATE KEY-----
+cGFpci1hZG1pbi1pbmVydC10ZXN0LWtleQ==
+-----END RSA PRIVATE KEY-----`,
+			secret: "cGFpci1hZG1pbi1pbmVydC10ZXN0LWtleQ==",
+		},
+		{
+			name:   "password assignment",
+			input:  "export DB_PASSWORD=supersecretvalue123",
+			secret: "supersecretvalue123",
+		},
+		{
+			name:   "passwd assignment",
+			input:  "passwd=letmein-now-please",
+			secret: "letmein-now-please",
+		},
+		{
+			name:   "connection string with embedded credentials",
+			input:  "mongodb://admin:hunter2secret@db.example.com:27017/mydb",
+			secret: "admin:hunter2secret@",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := f.Apply(tt.input)
+			if err != nil {
+				t.Fatalf("Apply() unexpected error: %v", err)
+			}
+			if strings.Contains(got, tt.secret) {
+				t.Errorf("Apply() did not redact secret; output contains %q: %q", tt.secret, got)
+			}
+			if !strings.Contains(got, "[REDACTED:") {
+				t.Errorf("Apply() did not insert a [REDACTED:...] marker: %q", got)
+			}
+		})
+	}
+}
+
+// TestCredentialFilter_ExpandedNoFalsePositives drives SAFE text through
+// Apply and asserts it passes through byte-for-byte unchanged. A false
+// positive that strips legitimate terminal content is worse than a miss, so
+// every new pattern needs a negative case here.
+func TestCredentialFilter_ExpandedNoFalsePositives(t *testing.T) {
+	f, err := filter.NewCredentialFilter()
+	if err != nil {
+		t.Fatalf("NewCredentialFilter() error: %v", err)
+	}
+
+	safe := []struct {
+		name  string
+		input string
+	}{
+		{name: "gitlab-name-not-token", input: "glpat is not a token without a 20+ char suffix"},
+		{name: "gitlab-token-too-short", input: "glpat-xyz"},
+		{name: "slack-xoxo-not-token", input: "xoxo-1234-5678 (an emoji hangover)"},
+		{name: "slack-xoxb-too-short", input: "xoxb-abc"},
+		{name: "google-key-too-short", input: "prefix AIza12 is not a key"},
+		{name: "service-account-without-key", input: `{"type": "service_account", "project_id": "p"}`},
+		{name: "azure-accountkey-short", input: "AccountKey=short is not a storage key"},
+		{name: "azure-sas-short", input: "SharedAccessKey=abc123"},
+		{name: "jwt-single-segment", input: "eyJhbGciOiJIUzI1NiJ9 is not a full jwt"},
+		{name: "jwt-two-segments", input: "eyJh.eyJzdWIiLCJqdGki only two segments"},
+		{name: "public-key-block", input: "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEF\n-----END PUBLIC KEY-----"},
+		{name: "password-short", input: "password=x is too short to redact"},
+		{name: "password-word-not-assignment", input: "the password field is set in code"},
+		{name: "passwd-short", input: "passwd=xy"},
+		{name: "url-no-credentials", input: "https://example.com/path"},
+		{name: "url-username-only", input: "https://user@example.com/path"},
+	}
+
+	for _, tt := range safe {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := f.Apply(tt.input)
+			if err != nil {
+				t.Fatalf("Apply() unexpected error: %v", err)
+			}
+			if got != tt.input {
+				t.Errorf("Apply() modified safe text %q -> %q", tt.input, got)
+			}
+		})
+	}
+}
+
+// TestCredentialFilter_README_MatchesPatterns ensures the README's redaction
+// list does not drift from the code: every pattern id in credentialPatterns
+// must be documented. This satisfies the R-06 "README matches the pattern
+// table" DONE gate programmatically (in addition to the manual README update).
+func TestCredentialFilter_README_MatchesPatterns(t *testing.T) {
+	readme, err := os.ReadFile("../../../README.md")
+	if err != nil {
+		t.Fatalf("could not read README.md: %v", err)
+	}
+	doc := string(readme)
+
+	for _, id := range filter.PatternIDs() {
+		if !strings.Contains(doc, id) {
+			t.Errorf("README.md does not document pattern id %q", id)
+		}
 	}
 }
