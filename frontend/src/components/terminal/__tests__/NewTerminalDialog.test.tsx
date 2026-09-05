@@ -650,6 +650,198 @@ describe("NewTerminalDialog", () => {
     });
   });
 
+  describe("WinRM TLS (default on, opt-in plaintext)", () => {
+    // Opens the dialog, selects WinRM, fills host + username so Connect is
+    // enabled. Returns the filled-in helpers for further interaction.
+    async function openWinrmForm(user: ReturnType<typeof userEvent.setup>) {
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+      await user.click(screen.getByText("Remote Windows (WinRM)"));
+      await user.type(screen.getByPlaceholderText("10.0.1.5"), "192.0.2.10");
+      const usernameInput = screen.getByText("Username").parentElement?.querySelector(
+        "input"
+      ) as HTMLInputElement;
+      await user.type(usernameInput, "Administrator");
+      const passwordInput = screen
+        .getByText("Password", { selector: "label" })
+        .parentElement?.querySelector("input") as HTMLInputElement;
+      await user.type(passwordInput, "hunter2");
+      return { user };
+    }
+
+    it("renders the Use TLS toggle default ON with port 5986", async () => {
+      const user = userEvent.setup();
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await user.click(screen.getByText("Remote Windows (WinRM)"));
+
+      const tlsToggle = screen.getByLabelText("Use TLS") as HTMLInputElement;
+      expect(tlsToggle.checked).toBe(true);
+      expect(screen.getByDisplayValue("5986")).toBeInTheDocument();
+      // Plaintext warning must not show while TLS is on.
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("toggling TLS OFF shows the plaintext warning (role=alert) and switches port to 5985; back ON restores 5986", async () => {
+      const user = userEvent.setup();
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await user.click(screen.getByText("Remote Windows (WinRM)"));
+      expect(screen.getByDisplayValue("5986")).toBeInTheDocument();
+
+      await user.click(screen.getByLabelText("Use TLS"));
+
+      const warning = screen.getByRole("alert");
+      expect(warning).toBeInTheDocument();
+      expect(warning.textContent).toMatch(/unencrypted/i);
+      expect(warning.textContent).toMatch(/plaintext/i);
+      expect(screen.getByDisplayValue("5985")).toBeInTheDocument();
+
+      await user.click(screen.getByLabelText("Use TLS"));
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(screen.getByDisplayValue("5986")).toBeInTheDocument();
+    });
+
+    it("hides the insecure-skip-verify checkbox when TLS is off and shows it when on", async () => {
+      const user = userEvent.setup();
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await user.click(screen.getByText("Remote Windows (WinRM)"));
+      expect(screen.getByLabelText(/skip certificate verification/i)).toBeInTheDocument();
+
+      await user.click(screen.getByLabelText("Use TLS"));
+      expect(screen.queryByLabelText(/skip certificate verification/i)).not.toBeInTheDocument();
+    });
+
+    it("does not overwrite an explicitly typed port when toggling TLS", async () => {
+      const user = userEvent.setup();
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await user.click(screen.getByText("Remote Windows (WinRM)"));
+      const portInput = screen.getByLabelText("Port");
+      await user.clear(portInput);
+      await user.type(portInput, "15999");
+
+      await user.click(screen.getByLabelText("Use TLS")); // off -> plaintext port default would be 5985
+      expect(screen.getByDisplayValue("15999")).toBeInTheDocument();
+      await user.click(screen.getByLabelText("Use TLS")); // back on
+      expect(screen.getByDisplayValue("15999")).toBeInTheDocument();
+    });
+
+    it("carries useTls + insecureSkipVerify correctly into OpenRemoteTerminal and SaveRemoteHost", async () => {
+      const user = userEvent.setup();
+      openRemoteTerminal.mockResolvedValue("winrm:resolved-id");
+      saveRemoteHost.mockResolvedValue({ ID: "new-winrm-host" });
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await user.click(screen.getByText("Remote Windows (WinRM)"));
+      await user.type(screen.getByPlaceholderText("10.0.1.5"), "192.0.2.10");
+      const usernameInput = screen.getByText("Username").parentElement?.querySelector(
+        "input"
+      ) as HTMLInputElement;
+      await user.type(usernameInput, "Administrator");
+      const passwordInput = screen
+        .getByText("Password", { selector: "label" })
+        .parentElement?.querySelector("input") as HTMLInputElement;
+      await user.type(passwordInput, "hunter2");
+      await user.click(screen.getByText("Save Terminal"));
+      // TLS on by default; leave insecure off.
+      await user.click(screen.getByText("Connect"));
+
+      await vi.waitFor(() => expect(openRemoteTerminal).toHaveBeenCalledTimes(1));
+      const [, params] = openRemoteTerminal.mock.calls[0];
+      expect(params).toMatchObject({ kind: "winrm", useTls: true, insecureSkipVerify: false, port: 5986 });
+
+      await vi.waitFor(() => expect(saveRemoteHost).toHaveBeenCalledTimes(1));
+      const [record] = saveRemoteHost.mock.calls[0];
+      expect(record).toMatchObject({ Kind: "winrm", UseTLS: true, InsecureSkipVerify: false, Port: 5986 });
+    });
+
+    it("carries insecureSkipVerify=true through connect and save when checked", async () => {
+      const user = userEvent.setup();
+      openRemoteTerminal.mockResolvedValue("winrm:resolved-id");
+      saveRemoteHost.mockResolvedValue({ ID: "new-winrm-host" });
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await user.click(screen.getByText("Remote Windows (WinRM)"));
+      await user.type(screen.getByPlaceholderText("10.0.1.5"), "192.0.2.10");
+      const usernameInput = screen.getByText("Username").parentElement?.querySelector(
+        "input"
+      ) as HTMLInputElement;
+      await user.type(usernameInput, "Administrator");
+      const passwordInput = screen
+        .getByText("Password", { selector: "label" })
+        .parentElement?.querySelector("input") as HTMLInputElement;
+      await user.type(passwordInput, "hunter2");
+      await user.click(screen.getByText("Save Terminal"));
+      await user.click(screen.getByLabelText(/skip certificate verification/i));
+      await user.click(screen.getByText("Connect"));
+
+      await vi.waitFor(() => expect(openRemoteTerminal).toHaveBeenCalledTimes(1));
+      const [, params] = openRemoteTerminal.mock.calls[0];
+      expect(params).toMatchObject({ useTls: true, insecureSkipVerify: true });
+
+      await vi.waitFor(() => expect(saveRemoteHost).toHaveBeenCalledTimes(1));
+      const [record] = saveRemoteHost.mock.calls[0];
+      expect(record).toMatchObject({ UseTLS: true, InsecureSkipVerify: true });
+    });
+
+    it("reconnecting a saved TLS host restores the TLS state (checkbox + toggle)", async () => {
+      const user = userEvent.setup();
+      listRemoteHostsWithStatus.mockResolvedValue([
+        status(
+          {
+            ID: "winrm-saved-1",
+            Kind: "winrm",
+            Host: "192.0.2.10",
+            Port: 5986,
+            Username: "Administrator",
+            AuthType: "password",
+            LastUsed: "2026-01-01T00:00:00Z",
+            UseTLS: true,
+            InsecureSkipVerify: true,
+          },
+          true
+        ),
+      ]);
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await screen.findByText(/Administrator@192\.0\.2\.10/);
+      await user.click(screen.getByText("Connect"));
+
+      // Direct-connect path reads the saved record in the handler.
+      await vi.waitFor(() => expect(openRemoteTerminal).toHaveBeenCalledTimes(1));
+      const [, params] = openRemoteTerminal.mock.calls[0];
+      expect(params).toMatchObject({ kind: "winrm", useTls: true, insecureSkipVerify: true, port: 5986 });
+    });
+
+    it("does NOT show TLS controls for SSH", async () => {
+      const user = userEvent.setup();
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await user.click(screen.getByText("Unix / Linux (SSH)"));
+
+      expect(screen.queryByLabelText("Use TLS")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/skip certificate verification/i)).not.toBeInTheDocument();
+      expect(screen.getByDisplayValue("22")).toBeInTheDocument();
+      // The stale "plain HTTP, no TLS" note must be gone for SSH too.
+      expect(screen.queryByText(/plain HTTP \(no TLS\)/i)).not.toBeInTheDocument();
+    });
+
+    it("shows the loud plaintext warning with role=alert when TLS is off", async () => {
+      const user = userEvent.setup();
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await user.click(screen.getByText("Remote Windows (WinRM)"));
+      await user.click(screen.getByLabelText("Use TLS"));
+
+      const alert = screen.getByRole("alert");
+      expect(alert.textContent).toMatch(/plaintext/i);
+      expect(alert.textContent).toMatch(/credentials/i);
+      // Amber treatment, consistent with the remote-Ollama warning.
+      expect(alert.className).toContain("amber");
+    });
+  });
+
   describe("local tmux sessions (Kind:\"local\" Recent entries)", () => {
     const localHost = {
       ID: "local-1",

@@ -78,11 +78,13 @@ export namespace config {
 	    LastUsed: string;
 	    UseTmux: boolean;
 	    TmuxSessionName: string;
-	
+	    UseTLS: boolean;
+	    InsecureSkipVerify: boolean;
+
 	    static createFrom(source: any = {}) {
 	        return new RemoteHost(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.ID = source["ID"];
@@ -96,6 +98,8 @@ export namespace config {
 	        this.LastUsed = source["LastUsed"];
 	        this.UseTmux = source["UseTmux"];
 	        this.TmuxSessionName = source["TmuxSessionName"];
+	        this.UseTLS = source["UseTLS"];
+	        this.InsecureSkipVerify = source["InsecureSkipVerify"];
 	    }
 	}
 	export class CustomPattern {
@@ -284,12 +288,14 @@ export namespace services {
 	    savedHostId?: string;
 	    useTmux: boolean;
 	    tmuxSessionName?: string;
+	    useTls: boolean;
+	    insecureSkipVerify?: boolean;
 	    trustNewHostKey?: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RemoteConnectParams(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.kind = source["kind"];
@@ -304,6 +310,8 @@ export namespace services {
 	        this.savedHostId = source["savedHostId"];
 	        this.useTmux = source["useTmux"];
 	        this.tmuxSessionName = source["tmuxSessionName"];
+	        this.useTls = source["useTls"];
+	        this.insecureSkipVerify = source["insecureSkipVerify"];
 	        this.trustNewHostKey = source["trustNewHostKey"];
 	    }
 	}

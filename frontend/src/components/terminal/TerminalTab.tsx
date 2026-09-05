@@ -93,6 +93,8 @@ export function TerminalTab({ tab, isActive, onClick }: TerminalTabProps) {
               LastUsed: "",
               UseTmux: false,
               TmuxSessionName: trimmed,
+              UseTLS: false,
+              InsecureSkipVerify: false,
             },
             "",
             ""
@@ -148,6 +150,10 @@ export function TerminalTab({ tab, isActive, onClick }: TerminalTabProps) {
         LastUsed: "",
         UseTmux: tab.remote.useTmux,
         TmuxSessionName: tab.remote.tmuxSessionName,
+        // Non-WinRM kinds carry the zero-value (plaintext, verify on) —
+        // these fields are only meaningful for WinRM.
+        UseTLS: false,
+        InsecureSkipVerify: false,
       };
       const saved = await SaveRemoteHost(record, "", "");
       useTerminalStore.getState().setSavedHostId(tab.id, saved.ID);
