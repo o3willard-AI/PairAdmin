@@ -181,8 +181,61 @@ jobs:
           path: build/bin/*.dmg
           if-no-files-found: error
 
+  # Generate one combined CycloneDX SBOM covering BOTH the Go module deps
+  # (go.mod/go.sum) and the frontend npm deps (package-lock.json). The frontend
+  # is compiled into each binary via go:embed, so a binary-only scan would miss
+  # it — scanning the repo root captures both halves. syft is installed PINNED:
+  # exact version + sha256-verified checksum (never a floating tag),
+  # mirroring ci.yml's gitleaks install.
+  sbom:
+    needs: verify-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # tag: v4
+
+      - name: Install syft (pinned) and verify checksum
+        env:
+          SYFT_VERSION: "1.51.1"
+          SYFT_SHA256: "8fcb33017a0dc1058298c923c436d19dfa68ae93968e0b423248542e3afb9fc3"
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/syft.tar.gz \
+            "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          # Rejects a tampered/swapped binary before we ever run it.
+          echo "${SYFT_SHA256}  /tmp/syft.tar.gz" | sha256sum --check -
+          tar -xzf /tmp/syft.tar.gz -C /tmp
+          /tmp/syft version
+
+      - name: Generate CycloneDX SBOM (Go + npm deps)
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          /tmp/syft scan dir:. \
+            --source-name pairadmin \
+            --source-version "${VERSION}" \
+            -o cyclonedx-json > "pairadmin_${VERSION}_sbom.json"
+          echo "Generated SBOM:" && ls -la p*.json
+          # Sanity: it must contain both Go and npm dependencies.
+          python3 - <<'EOF'
+          import json
+          d = json.load(open([f for f in __import__("os").listdir(".") if f.endswith("_sbom.json")][0]))
+          comps = d.get("components", [])
+          go = sum(1 for c in comps if c.get("purl","").startswith("pkg:golang"))
+          npm = sum(1 for c in comps if c.get("purl","").startswith("pkg:npm"))
+          print(f"SBOM validates: {len(comps)} components total ({go} Go, {npm} npm)")
+          assert go > 0 and npm > 0, "SBOM missing Go or npm dependencies"
+          EOF
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # tag: v4.6.2
+        with:
+          name: sbom
+          path: pairadmin_*_sbom.json
+          if-no-files-found: error
+
   release:
-    needs: [verify-version, build-linux, build-windows, build-macos]
+    needs: [verify-version, build-linux, build-windows, build-macos, sbom]
     runs-on: ubuntu-latest
     permissions:
       contents: write # the ONLY job that writes: it creates the GitHub Release
@@ -196,6 +249,8 @@ jobs:
         run: |
           cd dist
           for f in *.deb *.rpm *.exe *.dmg; do [ -f "$f" ] && sha256sum "$f"; done > SHA256SUMS
+          # The SBOM is a first-class relocatable artifact next to SHA256SUMS.
+          [ -f *.sbom.json ] && sha256sum *.sbom.json >> SHA256SUMS
           cat SHA256SUMS
 
       - name: Publish GitHub release
