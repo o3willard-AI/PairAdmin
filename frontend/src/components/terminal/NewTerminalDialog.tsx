@@ -42,6 +42,9 @@ interface ConnectRemoteParams {
   saveTerminal: boolean;
   useTmux: boolean;
   tmuxSessionName: string;
+  /** WinRM transport: TLS on by default; plaintext is an explicit opt-in. */
+  useTls: boolean;
+  insecureSkipVerify?: boolean;
   savedHostId?: string;
   /** Friendly name from the saved host record, if reconnecting to one that
    * was previously renamed. Falls back to "username@host" when absent. */
@@ -81,6 +84,11 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
   const [saveTerminal, setSaveTerminal] = useState(false);
   const [useTmux, setUseTmux] = useState(false);
   const [tmuxSessionName, setTmuxSessionName] = useState("");
+  // WinRM transport (R-03b): TLS defaults ON for new connections; plaintext
+  // is an explicit opt-in that shows a loud warning. insecureSkipVerify is
+  // for self-signed certs and only meaningful with TLS on.
+  const [useTls, setUseTls] = useState(true);
+  const [insecureSkipVerify, setInsecureSkipVerify] = useState(false);
 
   const [recentHosts, setRecentHosts] = useState<services.RemoteHostStatus[]>([]);
   const [connectStatus, setConnectStatus] = useState<"idle" | "connecting" | "error">("idle");
@@ -114,6 +122,8 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
     setSaveTerminal(false);
     setUseTmux(false);
     setTmuxSessionName("");
+    setUseTls(true);
+    setInsecureSkipVerify(false);
     setConnectStatus("idle");
     setConnectError("");
     setSaveWarning("");
@@ -194,6 +204,8 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
         savedHostId: h.ID,
         useTmux: false,
         tmuxSessionName: h.TmuxSessionName || "",
+        useTls: false,
+        insecureSkipVerify: false,
       });
 
       // Best-effort last-used update — a failure must not undo the connection.
@@ -223,8 +235,21 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
     // starts a brand-new connection — drop any carried-over saved-host target.
     setReconnectHost(null);
     setKind(k);
-    setPort(k === "ssh" ? 22 : 5985);
+    // WinRM defaults to TLS (5986); SSH stays 22; (see the Use TLS toggle for
+    // the plaintext opt-in — an explicitly typed port is never overwritten).
+    setPort(k === "ssh" ? 22 : k === "winrm" ? 5986 : 5985);
+    if (k === "winrm") setUseTls(true);
     setStep("form");
+  };
+
+  // TLS toggle handler: flips the transport and, ONLY when the port is still
+  // a WinRM default, follows the toggle to the matching default (5986 TLS /
+  // 5985 plaintext). An explicitly typed port is never overwritten.
+  const handleUseTlsToggle = (on: boolean) => {
+    setUseTls(on);
+    if (port === 5986 || port === 5985) {
+      setPort(on ? 5986 : 5985);
+    }
   };
 
   const applyHostToForm = (h: config.RemoteHost) => {
@@ -236,6 +261,11 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
     setPrivateKeyPath(h.PrivateKeyPath || "");
     setUseTmux(h.UseTmux || false);
     setTmuxSessionName(h.TmuxSessionName || "");
+    // Restore the saved WinRM transport choice (undefined on legacy records
+    // and non-WinRM kinds — fall back to plaintext false, matching the
+    // backend's zero-value semantics).
+    setUseTls(h.Kind === "winrm" ? !!h.UseTLS : false);
+    setInsecureSkipVerify(!!h.InsecureSkipVerify);
   };
 
   // Connection details are passed explicitly rather than read from component
@@ -269,6 +299,8 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
         savedHostId: params.savedHostId || "",
         useTmux: params.kind === "ssh" ? params.useTmux : false,
         tmuxSessionName: params.kind === "ssh" ? params.tmuxSessionName : "",
+        useTls: params.kind === "winrm" ? params.useTls : false,
+        insecureSkipVerify: params.kind === "winrm" ? !!params.insecureSkipVerify : false,
         trustNewHostKey: params.kind === "ssh" ? !!params.trustNewHostKey : false,
       });
 
@@ -303,6 +335,8 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
               LastUsed: "",
               UseTmux: params.kind === "ssh" ? params.useTmux : false,
               TmuxSessionName: params.kind === "ssh" ? params.tmuxSessionName : "",
+              UseTLS: params.kind === "winrm" ? params.useTls : false,
+              InsecureSkipVerify: params.kind === "winrm" ? !!params.insecureSkipVerify : false,
             },
             params.authType === "password" ? params.password : "",
             params.authType === "privatekey" ? params.passphrase : ""
@@ -332,6 +366,8 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
               LastUsed: "",
               UseTmux: params.kind === "ssh" ? params.useTmux : false,
               TmuxSessionName: params.kind === "ssh" ? params.tmuxSessionName : "",
+              UseTLS: params.kind === "winrm" ? params.useTls : false,
+              InsecureSkipVerify: params.kind === "winrm" ? !!params.insecureSkipVerify : false,
             },
             params.authType === "password" ? params.password : "",
             params.authType === "privatekey" ? params.passphrase : ""
@@ -427,6 +463,8 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
       saveTerminal,
       useTmux,
       tmuxSessionName,
+      useTls: kind === "winrm" ? useTls : false,
+      insecureSkipVerify: kind === "winrm" ? insecureSkipVerify : false,
       // When this form was reached via a no-credential saved host's "Connect",
       // carry that host's ID + friendly name through so the connect upserts the
       // entered credential onto the same record (no duplicate).
@@ -448,6 +486,8 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
       saveTerminal: false,
       useTmux: h.UseTmux || false,
       tmuxSessionName: h.TmuxSessionName || "",
+      useTls: h.Kind === "winrm" ? !!h.UseTLS : false,
+      insecureSkipVerify: h.Kind === "winrm" ? !!h.InsecureSkipVerify : false,
       savedHostId: h.ID,
       name: h.Name || undefined,
     });
@@ -756,8 +796,11 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-xs text-surface-text-muted">Port</label>
+                    <label className="text-xs text-surface-text-muted" htmlFor="connect-port">
+                      Port
+                    </label>
                     <input
+                      id="connect-port"
                       type="number"
                       className={inputClass}
                       value={port}
@@ -872,10 +915,44 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                   </p>
                 )}
                 {kind === "winrm" && (
-                  <p className="text-xs text-amber-500/80">
-                    WinRM connects over plain HTTP (no TLS). Ctrl+C has no effect on a running
-                    remote command.
-                  </p>
+                  <>
+                    <label className="flex items-center gap-2 text-xs text-surface-text-muted pt-1">
+                      <input
+                        type="checkbox"
+                        checked={useTls}
+                        onChange={(e) => handleUseTlsToggle(e.target.checked)}
+                      />
+                      Use TLS
+                    </label>
+                    {useTls && (
+                      <div className="pl-5 space-y-1 border-l border-surface-border">
+                        <label className="flex items-center gap-2 text-xs text-surface-text-muted">
+                          <input
+                            type="checkbox"
+                            checked={insecureSkipVerify}
+                            onChange={(e) => setInsecureSkipVerify(e.target.checked)}
+                          />
+                          Skip certificate verification (self-signed)
+                        </label>
+                        <p className="text-xs text-surface-text-muted">
+                          Only for servers with a self-signed or otherwise untrusted
+                          certificate — verification is on unless you check this.
+                        </p>
+                      </div>
+                    )}
+                    {!useTls && (
+                      <p
+                        role="alert"
+                        className="text-xs text-amber-500"
+                      >
+                        ⚠ Plaintext WinRM: your credentials and ALL terminal traffic are
+                        sent unencrypted. Prefer TLS unless the host has no certificate.
+                      </p>
+                    )}
+                    <p className="text-xs text-surface-text-muted">
+                      Ctrl+C has no effect on a running remote command.
+                    </p>
+                  </>
                 )}
 
                 {saveWarning && (
