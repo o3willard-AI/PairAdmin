@@ -91,31 +91,39 @@ func (s *PTYService) OpenNewTerminal(tabId string) (string, error) {
 	s.sessions[tabId] = &ptySession{ptmx: ptmx, cmd: cmd}
 	s.mu.Unlock()
 
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			n, err := ptmx.Read(buf)
-			if n > 0 {
-				s.emitFn(s.ctx, "pty:output", PTYOutputEvent{
-					TabID: tabId,
-					Data:  string(buf[:n]),
-				})
-			}
-			if err != nil {
-				s.mu.Lock()
-				_, stillOpen := s.sessions[tabId]
-				delete(s.sessions, tabId)
-				s.mu.Unlock()
-				if stillOpen {
-					ptmx.Close()
-				}
-				s.emitFn(s.ctx, "pty:closed", map[string]string{"tabId": tabId})
-				return
-			}
-		}
-	}()
+	go s.pumpPTYOutput(tabId, ptmx)
 
 	return tabId, nil
+}
+
+// pumpPTYOutput is the shared read loop for Unix PTY-backed terminals
+// (OpenNewTerminal's plain shell and openLocalTMTerminal's tmux shell). It
+// reads from the PTY master and emits "pty:output" events per chunk until the
+// read fails, then removes the session and emits "pty:closed" — closing the
+// master only if it was still registered (CloseTerminal may have beaten the
+// read loop to it and already closed everything).
+func (s *PTYService) pumpPTYOutput(tabId string, ptmx *os.File) {
+	buf := make([]byte, 4096)
+	for {
+		n, err := ptmx.Read(buf)
+		if n > 0 {
+			s.emitFn(s.ctx, "pty:output", PTYOutputEvent{
+				TabID: tabId,
+				Data:  string(buf[:n]),
+			})
+		}
+		if err != nil {
+			s.mu.Lock()
+			_, stillOpen := s.sessions[tabId]
+			delete(s.sessions, tabId)
+			s.mu.Unlock()
+			if stillOpen {
+				ptmx.Close()
+			}
+			s.emitFn(s.ctx, "pty:closed", map[string]string{"tabId": tabId})
+			return
+		}
+	}
 }
 
 // OpenRemoteTerminal opens a remote SSH or WinRM session for tabId (expected to be
@@ -267,29 +275,7 @@ func (s *PTYService) openLocalTMTerminal(tabId, sessionName string) (string, err
 	s.sessions[tabId] = &ptySession{ptmx: ptmx, cmd: cmd}
 	s.mu.Unlock()
 
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			n, err := ptmx.Read(buf)
-			if n > 0 {
-				s.emitFn(s.ctx, "pty:output", PTYOutputEvent{
-					TabID: tabId,
-					Data:  string(buf[:n]),
-				})
-			}
-			if err != nil {
-				s.mu.Lock()
-				_, stillOpen := s.sessions[tabId]
-				delete(s.sessions, tabId)
-				s.mu.Unlock()
-				if stillOpen {
-					ptmx.Close()
-				}
-				s.emitFn(s.ctx, "pty:closed", map[string]string{"tabId": tabId})
-				return
-			}
-		}
-	}()
+	go s.pumpPTYOutput(tabId, ptmx)
 
 	// Same create-or-attach timing as the SSH path: give the shell time to
 	// reach a prompt, then write the tmux command as keystrokes to the PTY
