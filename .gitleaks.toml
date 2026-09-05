@@ -48,9 +48,13 @@ useDefault = true
         # Slack-shaped placeholders (generic-api-key rule matches these).
         '''xoxb-1234567890-ABCDEFGHIJKL''',
         '''xoxp-123123123-123123123-abcdefghijkl''',
-        # Fixed PEM body from the service-account + RSA key fixtures.
-        '''MIIEvQIBADANBgkqhkiG9w0BAQEFA''',
-        '''MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCy915irt''',
+        # Inert PEM body (base64 of "pair-admin-inert-test-key") used inside the
+        # service-account + RSA private-key fixtures. A 36-char base64 value
+        # (base64 of "...inert-test-key") is NOT a real private key and never
+        # appears in production; allowlisted because it is the FULL unique inert
+        # placeholder, NOT the universal RSA DER header (MIIEvQI...) — so real
+        # private keys are never suppressed. See the verify-real-key regression.
+        '''cGFpci1hZG1pbi1pbmVydC10ZXN0LWtleQ==''',
         # Repeating-hex Azure SharedAccessKey fixture.
         '''0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd''',
     ]

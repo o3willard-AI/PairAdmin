@@ -225,9 +225,9 @@ func TestCredentialFilter_RedactsExpandedPatterns(t *testing.T) {
 			input: `{
   "type": "service_account",
   "project_id": "my-proj",
-  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFA\n-----END PRIVATE KEY-----\n"
+  "private_key": "-----BEGIN PRIVATE KEY-----\ncGFpci1hZG1pbi1pbmVydC10ZXN0LWtleQ==\n-----END PRIVATE KEY-----\n"
 }`,
-			secret: "MIIEvQIBADANBgkqhkiG9w0BAQEFA",
+			secret: "cGFpci1hZG1pbi1pbmVydC10ZXN0LWtleQ==",
 		},
 		{
 			name:   "azure storage account key",
@@ -247,9 +247,9 @@ func TestCredentialFilter_RedactsExpandedPatterns(t *testing.T) {
 		{
 			name: "rsa private key block",
 			input: `-----BEGIN RSA PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCy915irt
+cGFpci1hZG1pbi1pbmVydC10ZXN0LWtleQ==
 -----END RSA PRIVATE KEY-----`,
-			secret: "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCy915irt",
+			secret: "cGFpci1hZG1pbi1pbmVydC10ZXN0LWtleQ==",
 		},
 		{
 			name:   "password assignment",
