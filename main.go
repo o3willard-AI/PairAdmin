@@ -31,6 +31,8 @@ func main() {
 	// WEBKIT_DISABLE_COMPOSITING_MODE: stops WebKit GPU compositing.
 	// WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1: WebKit ≥2.40 sandbox rename; the sandbox
 	//   is blocked by seccomp/namespace restrictions on many Linux configs (blank window).
+	//   Kept UNCONDITIONAL — no reliable pre-flight probe exists (multi-cause failure).
+	//   Decision recorded in docs/adr/ADR-0001-webkit-sandbox-disable.md.
 	// WEBKIT_DISABLE_DMABUF_RENDERER=1: DMA-BUF renderer silently fails on VirtIO/Intel/AMD
 	//   without full kernel DRM support.
 	// GDK_BACKEND=x11 and GSK_RENDERER=cairo are intentionally NOT set: forcing X11 on
