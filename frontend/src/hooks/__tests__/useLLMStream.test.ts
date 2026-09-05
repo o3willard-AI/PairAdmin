@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useChatStore } from "@/stores/chatStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 // Storage for mock EventsOn across test accesses
 const mockEventHandlers: Record<string, unknown> = {};
@@ -170,5 +171,78 @@ describe("useLLMStream", () => {
     const texts = appendSpy.mock.calls.map((c) => c[2]);
     expect(texts[0]).toBe("hello ");
     expect(texts[1]).toBe("world");
+  });
+});
+
+// [DONE] gate: "confirm nothing can flip a 'disabled' state back to
+// 'connected'/'disconnected' (a stale in-flight stream, an error event, etc.)".
+// useLLMStream is the only code that writes connectionStatus from stream
+// events, so these tests pin that a "disabled" status always wins.
+describe("useLLMStream — disabled gate", () => {
+  beforeEach(() => {
+    useChatStore.setState({ messagesByTab: {} });
+    useSettingsStore.setState({
+      activeModel: "",
+      settingsOpen: false,
+      connectionStatus: "disabled",
+    });
+    vi.clearAllMocks();
+    Object.keys(mockEventHandlers).forEach((k) => delete mockEventHandlers[k]);
+    Object.keys(mockUnsubFns).forEach((k) => delete mockUnsubFns[k]);
+  });
+
+  it("llm:done does NOT move connectionStatus off 'disabled'", async () => {
+    const { useLLMStream } = await import("@/hooks/useLLMStream");
+    renderHook(() => useLLMStream("tab-1"));
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    const doneHandler = mockEventHandlers["llm:done"] as () => void;
+    expect(doneHandler).toBeDefined();
+
+    await act(async () => {
+      doneHandler();
+    });
+
+    expect(useSettingsStore.getState().connectionStatus).toBe("disabled");
+  });
+
+  it("llm:error does NOT move connectionStatus off 'disabled'", async () => {
+    const { useLLMStream } = await import("@/hooks/useLLMStream");
+    renderHook(() => useLLMStream("tab-1"));
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    const errorHandler = mockEventHandlers["llm:error"] as (event: {
+      error: string;
+    }) => void;
+    expect(errorHandler).toBeDefined();
+
+    await act(async () => {
+      errorHandler({ error: "boom" });
+    });
+
+    expect(useSettingsStore.getState().connectionStatus).toBe("disabled");
+  });
+
+  it("llm:done still sets 'connected' when the LLM is not disabled", async () => {
+    useSettingsStore.setState({ connectionStatus: "disconnected" });
+    const { useLLMStream } = await import("@/hooks/useLLMStream");
+    renderHook(() => useLLMStream("tab-1"));
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    const doneHandler = mockEventHandlers["llm:done"] as () => void;
+    await act(async () => {
+      doneHandler();
+    });
+
+    expect(useSettingsStore.getState().connectionStatus).toBe("connected");
   });
 });

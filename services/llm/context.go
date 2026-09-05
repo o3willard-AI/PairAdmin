@@ -2,7 +2,6 @@ package llm
 
 import (
 	"fmt"
-	"math"
 )
 
 // SystemPrompt is the locked system prompt for the terminal assistant.
@@ -29,10 +28,4 @@ func BuildMessages(systemPrompt, terminalContext, userInput string) []Message {
 		{Role: RoleSystem, Content: systemPrompt},
 		{Role: RoleUser, Content: userContent},
 	}
-}
-
-// EstimateTokens provides a fast approximation of token count based on character length.
-// Uses the rule of thumb: ~4 characters per token (standard for English text).
-func EstimateTokens(text string) int {
-	return int(math.Ceil(float64(len(text)) / 4.0))
 }
