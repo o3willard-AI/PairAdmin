@@ -38,9 +38,7 @@ automatically as part of `go test`.
 ```bash
 # From frontend/:
 npm ci              # clean install — requires package-lock.json (committed)
-npx vitest run      # run all tests (non-watch mode, 37 test files total (including
-                     # 3 named *.disabled.test.* — despite the "disabled" name,
-                     # vitest's exclude pattern does NOT skip them))
+npx vitest run      # run all tests (non-watch mode)
 npx tsc --noEmit    # TypeScript type-check (also run in CI, line 101)
 npm run build       # = tsc && vite build — production build
 ```
