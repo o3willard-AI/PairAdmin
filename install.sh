@@ -118,7 +118,7 @@ do_install() {
 
   case "$pkg_mgr" in
     deb)
-      local file="${BINARY_NAME}_${version}_linux_${ARCH}.deb"
+      local file="${BINARY_NAME}_linux_${ARCH}.deb"
       fetch_release_asset "$version" "$file" "$tmpdir" >/dev/null
       # Verify checksum before installing — only on amd64 (release ships deb for amd64).
       verify_sha256 "$version" "$file" "$tmpdir"
@@ -127,7 +127,7 @@ do_install() {
       check_webkit_version
       ;;
     rpm)
-      local file="${BINARY_NAME}_${version}_linux_${ARCH}.rpm"
+      local file="${BINARY_NAME}_linux_${ARCH}.rpm"
       fetch_release_asset "$version" "$file" "$tmpdir" >/dev/null
       verify_sha256 "$version" "$file" "$tmpdir"
       info "Installing (requires sudo)..."
@@ -185,7 +185,7 @@ do_verify() {
     *)   error "No supported package manager found (dpkg or rpm required). Cannot verify." ;;
   esac
 
-  local file="${BINARY_NAME}_${version}_linux_${ARCH}.${ext}"
+  local file="${BINARY_NAME}_linux_${ARCH}.${ext}"
   local tmpdir
   tmpdir="$(mktemp -d)"
   trap "rm -rf '$tmpdir'" EXIT

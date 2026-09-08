@@ -110,13 +110,13 @@ Prebuilt binaries are **not in this repository** — CI builds them and attaches
 **Debian/Ubuntu (.deb)**
 ```bash
 sudo apt install -y libwebkit2gtk-4.1-0 at-spi2-core
-sudo dpkg -i pairadmin_*_linux_amd64.deb
+sudo dpkg -i pairadmin_linux_amd64.deb
 ```
 
 **Fedora (.rpm)**
 ```bash
 sudo dnf install -y webkit2gtk4.1 at-spi2-atk
-sudo rpm -Uvh pairadmin_*_linux_amd64.rpm
+sudo rpm -Uvh pairadmin_linux_amd64.rpm
 ```
 
 **Windows (.exe installer)**
@@ -127,7 +127,7 @@ sudo rpm -Uvh pairadmin_*_linux_amd64.rpm
 
 **macOS (alpha — unsigned)**
 
-macOS builds ship **unsigned** during the alpha. Download `PairAdmin-v*.dmg` from the [latest release](https://github.com/o3willard-AI/PairAdmin/releases/latest), mount it, and drag PairAdmin to Applications. Gatekeeper will block the app on first launch, so approve it once with:
+macOS builds ship **unsigned** during the alpha. Download `PairAdmin-universal.dmg` from the [latest release](https://github.com/o3willard-AI/PairAdmin/releases/latest), mount it, and drag PairAdmin to Applications. Gatekeeper will block the app on first launch, so approve it once with:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/PairAdmin.app
@@ -167,10 +167,10 @@ installing — the verify step is built into the install flow.
 
 ```bash
 # Download both the asset and SHA256SUMS from the same release:
-curl -fsSL -o pairadmin_2.3.0_linux_amd64.deb \
-  https://github.com/o3willard-AI/PairAdmin/releases/download/v2.3.0/pairadmin_2.3.0_linux_amd64.deb
+curl -fsSL -o pairadmin_linux_amd64.deb \
+  https://github.com/o3willard-AI/PairAdmin/releases/latest/download/pairadmin_linux_amd64.deb
 curl -fsSL -o SHA256SUMS \
-  https://github.com/o3willard-AI/PairAdmin/releases/download/v2.3.0/SHA256SUMS
+  https://github.com/o3willard-AI/PairAdmin/releases/latest/download/SHA256SUMS
 
 # Verify:
 sha256sum --check SHA256SUMS
