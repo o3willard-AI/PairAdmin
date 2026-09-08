@@ -81,12 +81,12 @@ jobs:
           export PATH="$PATH:$(go env GOPATH)/bin"
           # Pin nfpm to a specific release (never a floating tag) so packaging output is reproducible.
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
-          export VERSION="${GITHUB_REF_NAME#v}"
           nfpm package --packager deb
           nfpm package --packager rpm
-          # rename to the canonical install.sh/README convention
-          mv pairadmin_*_amd64.deb "pairadmin_${VERSION}_linux_amd64.deb"
-          mv pairadmin-*.x86_64.rpm "pairadmin_${VERSION}_linux_amd64.rpm"
+          # rename to the canonical version-agnostic names used by the website,
+          # README, and SHA256SUMS (nfpm emits its own versioned filenames)
+          mv pairadmin_*_amd64.deb pairadmin_linux_amd64.deb
+          mv pairadmin-*.x86_64.rpm pairadmin_linux_amd64.rpm
           mkdir -p dist
           mv *.deb *.rpm dist/
           ls -la dist/
@@ -173,7 +173,7 @@ jobs:
           cd build/bin
           APP="$(find . -maxdepth 1 -name '*.app' | head -1)"
           echo "Packaging $APP"
-          hdiutil create -volname "PairAdmin" -srcfolder "$APP" -ov -format UDZO "PairAdmin-${GITHUB_REF_NAME}.dmg"
+          hdiutil create -volname "PairAdmin" -srcfolder "$APP" -ov -format UDZO "PairAdmin-universal.dmg"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # tag: v4.6.2
         with:
