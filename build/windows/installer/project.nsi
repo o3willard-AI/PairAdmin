@@ -100,9 +100,32 @@ SectionEnd
 Section "uninstall"
     !insertmacro wails.setShellContext
 
+    # Kill lingering app + WebView2 processes (and children) before touching
+    # the WebView2 DataPath. msedgewebview2.exe and its crashpad handler hold
+    # file locks that would otherwise make the RMDir below fail silently and
+    # leave ~35 MB of WebView2 cache on disk. taskkill /T = whole tree.
+    nsExec::Exec 'taskkill /F /T /IM "${PRODUCT_EXECUTABLE}"'
+    nsExec::Exec 'taskkill /F /T /IM "msedgewebview2.exe"'
+    Sleep 1000 # brief delay for processes to release file handles
+
     RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the WebView2 DataPath
+    # Surface (not swallow) a failure to fully clear the WebView2 cache.
+    IfErrors WebViewCacheError WebViewCacheDone
+    WebViewCacheError:
+        DetailPrint "Warning: could not fully remove WebView2 cache (files may be locked): $AppData\${PRODUCT_EXECUTABLE}"
+    WebViewCacheDone:
+
+    # Remove the release per-user data dir: config.yaml, known_hosts.yaml and
+    # logs/audit-*.jsonl (see services/config/config.go ConfigDir(); release
+    # builds resolve to %LOCALAPPDATA%\PairAdmin).
+    RMDir /r "$LocalAppData\PairAdmin"
 
     RMDir /r $INSTDIR
+
+    # Remove the now-empty publisher folder created by the InstallDir path
+    # ($PROGRAMFILES64\<Company>\<Product>). Non-recursive — a safe no-op if
+    # it still contains other software.
+    RMDir "$PROGRAMFILES64\${INFO_COMPANYNAME}"
 
     Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk"
     Delete "$DESKTOP\${INFO_PRODUCTNAME}.lnk"
