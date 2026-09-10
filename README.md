@@ -122,7 +122,15 @@ sudo rpm -Uvh pairadmin_linux_amd64.rpm
 **Windows (.exe installer)**
 
 1. Download `pairadmin-amd64-installer.exe` from the [latest release](https://github.com/o3willard-AI/PairAdmin/releases/latest) and run it.
-2. Windows SmartScreen may show "Windows protected your PC" (the app is unsigned during alpha) — click **More info → Run anyway**.
+2. Windows SmartScreen may show **"Windows protected your PC"** (the app is unsigned during alpha). Click through it in two steps:
+
+   **Step 1 — click "More info"**
+
+   <img src="assets/windows-smartscreen-more-info.jpg" alt="Windows SmartScreen warning — click More info" width="460" />
+
+   **Step 2 — click "Run anyway"**
+
+   <img src="assets/windows-smartscreen-run-anyway.jpg" alt="Windows SmartScreen warning — click Run anyway" width="460" />
 3. Requires the WebView2 Runtime (preinstalled on Windows 11; the installer fetches it on Windows 10). Windows 10 1809+ supported.
 
 **macOS (alpha — unsigned)**
