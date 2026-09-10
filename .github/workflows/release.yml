@@ -32,7 +32,7 @@ jobs:
       - name: Check tag matches wails.json productVersion
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          declared="$(node -p "require('./wails.json').productVersion")"
+          declared="$(node -p "require('./wails.json').info.productVersion")"
           echo "pushed tag: ${GITHUB_REF_NAME} | wails.json productVersion: ${declared}"
           if [ "$tag" != "$declared" ]; then
             echo "::error::Release tag '${GITHUB_REF_NAME}' does not match wails.json productVersion '${declared}'. Bump wails.json to match the tag before releasing." >&2
