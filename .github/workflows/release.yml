@@ -173,7 +173,18 @@ jobs:
           cd build/bin
           APP="$(find . -maxdepth 1 -name '*.app' | head -1)"
           echo "Packaging $APP"
-          hdiutil create -volname "PairAdmin" -srcfolder "$APP" -ov -format UDZO "PairAdmin-universal.dmg"
+          # hdiutil -srcfolder auto-sizes the image and under-estimates for the
+          # universal (fat) binary, failing with "No space left on device" even
+          # though / has plenty of room. Build an explicitly-sized RW image,
+          # copy the app in, then convert to compressed UDZO instead.
+          APP_KB=$(du -sk "$APP" | awk '{print $1}')
+          IMG_MB=$(( APP_KB / 1024 + 200 ))
+          hdiutil create -ov -size "${IMG_MB}m" -fs HFS+ -volname "PairAdmin" "PairAdmin-tmp.dmg"
+          hdiutil attach "PairAdmin-tmp.dmg" -nobrowse
+          cp -R "$APP" "/Volumes/PairAdmin/"
+          hdiutil detach "/Volumes/PairAdmin"
+          hdiutil convert "PairAdmin-tmp.dmg" -format UDZO -o "PairAdmin-universal.dmg"
+          rm -f "PairAdmin-tmp.dmg"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # tag: v4.6.2
         with:
