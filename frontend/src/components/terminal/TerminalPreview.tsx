@@ -63,9 +63,12 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
     // Register term ref in terminalStore so ChatPane can read terminal context
     useTerminalStore.getState().setTermRef(tabId, term);
 
-    // CanvasAddon MUST be loaded after open()
+    // CanvasAddon MUST be loaded after open(). The reference is kept OUTSIDE
+    // the try block so cleanup can dispose it BEFORE term.dispose() — see the
+    // disposal-order comment in the cleanup below.
+    let canvasAddon: CanvasAddon | null = null;
     try {
-      const canvasAddon = new CanvasAddon();
+      canvasAddon = new CanvasAddon();
       term.loadAddon(canvasAddon);
     } catch (err) {
       console.warn("CanvasAddon failed to load, continuing without hardware acceleration:", err);
@@ -222,7 +225,19 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
       // pending, causing the "undefined is not an object (_linkifier2)" crash.
       // Writing an empty string with a callback flushes the queue in FIFO
       // order; dispose fires only after all queued writes have rendered.
-      term.write("", () => term.dispose());
+      //
+      // Disposal ORDER matters here (UAT-found crash): term.dispose() tears
+      // down xterm's _core (disposing the linkifier) BEFORE AddonManager
+      // disposes CanvasAddon — and CanvasAddon's own cleanup then calls
+      // _core._createRenderer(), which reads the already-torn-down linkifier
+      // and throws "Cannot read properties of undefined (reading
+      // 'onShowLinkUnderline')". Disposing the addon FIRST, while
+      // core/linkifier are still alive, avoids that; xterm's AddonManager
+      // no-ops on an already-disposed addon, so there is no double-free.
+      term.write("", () => {
+        canvasAddon?.dispose();
+        term.dispose();
+      });
     };
   }, [tabId]);
 
