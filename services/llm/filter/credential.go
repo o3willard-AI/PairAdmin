@@ -22,8 +22,7 @@ func PatternIDs() []string {
 }
 
 // credentialPatterns are fallback regex patterns for common credential formats.
-// These are compiled once at startup and always applied regardless of whether
-// a gitleaks detector is available.
+// These are compiled once at startup and always applied.
 var credentialPatterns = []*credPattern{
 	{
 		id: "aws-access-key-id",
@@ -96,9 +95,6 @@ var credentialPatterns = []*credPattern{
 type CredentialFilter struct{}
 
 // NewCredentialFilter creates a new CredentialFilter.
-// Note: gitleaks library is not currently a dependency. Regex fallback patterns
-// are used instead. The gitleaks integration would require adding
-// github.com/zricethezav/gitleaks/v8 as a dependency.
 func NewCredentialFilter() (*CredentialFilter, error) {
 	return &CredentialFilter{}, nil
 }
