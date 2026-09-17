@@ -6,6 +6,8 @@
 
 **The terminal for the agentic age.**
 
+**All of the capability. None of the handover.**
+
 ## Overview
 
 PairAdmin is a real terminal emulator — local shells, SSH, and remote Windows,
@@ -18,18 +20,59 @@ long-running jobs on remote boxes, agents and scripts producing more output than
 anyone wants to read, and a constant low-grade worry about what you're pasting
 into someone else's model. PairAdmin is designed around all four.
 
+**The assistant cannot run anything.** The AI has no path to the shell — no
+tool-calling, no function-calling, no execution interface. Not a disabled
+permission: there is nothing in the product to disable. Every command the model
+recommends arrives as text with exactly three buttons — **Save to Commands**,
+**Copy to Terminal**, **Execute in Terminal** — and no fourth option. Stage it,
+study it, or run it, each a deliberate click on a command you have read. There
+is no user in the loop. The user *is* the loop.
+
+**Or switch it off entirely.** Set the provider to **Disable Pair LLM** and no
+model is constructed and no endpoint is contacted. The request is refused in
+the backend, not hidden in the interface. The status bar reads **Disabled** in
+amber for the entire session — a chosen posture, not a fault.
+
+**Your secrets stay yours.** Terminal content is scrubbed *before* it is
+transmitted to any model — the ordering is the point: redaction happens before
+transmission, not after. In-process redaction covers: `aws-access-key-id`,
+`github-token`, `gitlab-personal-access-token`, `openai-api-key`,
+`anthropic-api-key`, `slack-token`, `google-api-key`,
+`google-service-account` (service-account JSON private keys), `azure-account-key`
+(AccountKey / SharedAccessKey), `bearer-token`, `jwt` (bare, no Bearer
+prefix needed), `pem-private-key` (RSA/EC/OpenSSH private-key blocks),
+`password-assignment`, `generic-api-key`, and `connection-string-credentials`
+(URI-style `scheme://user:pass@host`). You can also redact your own regex
+patterns via `/filter`. API keys are held in encrypted, mlock'd memory
+(memguard) rather than plain variables. Every prompt and every response — the
+operator's typed message and the model's reply — is written to a local
+rotating JSONL audit log. Prefer nothing leave the box at all? Point it at
+Ollama or LM Studio on this machine — both default to loopback (Ollama to
+`http://localhost:11434`), so a typo in a host field can't quietly send your
+terminal elsewhere.
+
+**Ollama on a remote host?** Also supported — point the Server URL at a team
+GPU box or any other instance you control. Two things to know: terminal output
+*will* leave your machine, so only point at a host you trust, and if the remote
+requires authentication, set `OLLAMA_API_KEY` (or paste a key into the Ollama
+API key field in Settings → LLM Config; it's stored in the OS keychain and sent
+as `Authorization: Bearer`). PairAdmin shows a warning in Settings whenever a
+non-loopback Ollama host is configured.
+
+**One tab, one question.** A request carries the system prompt, the last N
+lines of the terminal you are looking at, and what you typed — nothing else. No
+history, no other sessions, no filesystem, no saved connections. Switch tabs
+and the assistant knows nothing about where you just were. Bring your own
+provider: OpenAI, Anthropic, Ollama, LM Studio, or OpenRouter, switchable
+mid-session with `/model`. Slash commands cover the rest: `/context` to size the
+context window, `/filter` to manage redaction patterns, `/export` to save a
+session transcript, `/refresh`, `/clear`, `/theme`, and more.
+
 **A terminal first.** Real PTYs (ConPTY on Windows), a proper tabbed session
 list, per-tab renaming, full scrollback, and keyboard focus that stays where you
 expect it — when you start typing, it goes to the terminal, not to whatever
 button you clicked last. When you don't want the assistant, collapse it and
 you've got a clean, capable terminal with a persistent command palette.
-
-**tmux, minus the papercuts.** tmux is the right answer for sessions that
-outlive your connection, and a rough experience the moment you try to use it
-casually. PairAdmin does the create-or-attach dance for you (`tmux new-session
--A`) so reconnecting to a named session is a checkbox, not a memorized
-incantation. Sessions survive disconnects; you don't have
-to think about it.
 
 **Quick Commands — a runbook that builds itself.** Every command the AI suggests
 becomes a one-click *Copy to Terminal* / *Execute in Terminal* / *Save to
@@ -47,37 +90,12 @@ in a config file; friendly names that stick; optional tmux auto-attach per
 connection. Remote Windows hosts over WinRM too. It's the "replace PuTTY and
 stop keeping a text file of IP addresses" tier of useful.
 
-**Your secrets stay yours.** Terminal output is scrubbed *before* it's sent to
-any model. In-process redaction covers: `aws-access-key-id`,
-`github-token`, `gitlab-personal-access-token`, `openai-api-key`,
-`anthropic-api-key`, `slack-token`, `google-api-key`,
-`google-service-account` (service-account JSON private keys), `azure-account-key`
-(AccountKey / SharedAccessKey), `bearer-token`, `jwt` (bare, no Bearer
-prefix needed), `pem-private-key` (RSA/EC/OpenSSH private-key blocks),
-`password-assignment`, `generic-api-key`, and `connection-string-credentials`
-(URI-style `scheme://user:pass@host`). You can also add your own regex
-patterns to redact matches or drop whole lines. API keys are held in encrypted,
-mlock'd memory (memguard) rather than plain variables. Every prompt and response
-is written to a local rotating JSONL audit log, so you can answer "what did we
-send them?" with a file instead of a shrug. Prefer nothing leave the box at all?
-Point it at Ollama or LM Studio on this machine — both default to loopback
-(Ollama to `http://localhost:11434`), so a typo in a host field can't quietly
-ship your terminal elsewhere.
-
-**Ollama on a remote host?** Also supported — point the Server URL at a team
-GPU box or any other instance you control. Two things to know: terminal output
-*will* leave your machine, so only point at a host you trust, and if the remote
-requires authentication, set `OLLAMA_API_KEY` (or paste a key into the Ollama
-API key field in Settings → LLM Config; it's stored in the OS keychain and sent
-as `Authorization: Bearer`). PairAdmin shows a warning in Settings whenever a
-non-loopback Ollama host is configured.
-
-**Bring your own model.** OpenAI, Anthropic, Ollama, LM Studio, and OpenRouter,
-switchable mid-session with `/model`. Each terminal tab keeps its own separate
-conversation, so the chat about your flaky CI box doesn't bleed into the one
-about your database migration. Ten slash commands cover the rest: `/context`
-to size the context window, `/filter` to manage redaction patterns, `/export` to
-save a session transcript, `/refresh`, `/clear`, `/theme`, and more.
+**tmux, minus the papercuts.** tmux is the right answer for sessions that
+outlive your connection, and a rough experience the moment you try to use it
+casually. PairAdmin does the create-or-attach dance for you (`tmux new-session
+-A`) so reconnecting to a named session is a checkbox, not a memorized
+incantation. Sessions survive disconnects; you don't have
+to think about it.
 
 Light and dark themes throughout, including the terminal itself.
 
