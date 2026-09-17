@@ -11,11 +11,18 @@ import (
 )
 
 // AuditEntry represents a single auditable event in the system.
+// The context_* and redactions fields are statistics about the terminal
+// context that was redacted — they never carry the context content itself.
+// All three are omitempty so older events (which have no stats) serialize
+// unchanged.
 type AuditEntry struct {
-	Event      string `json:"event"`
-	SessionID  string `json:"session_id"`
-	TerminalID string `json:"terminal_id,omitempty"`
-	Content    string `json:"content,omitempty"`
+	Event         string         `json:"event"`
+	SessionID     string         `json:"session_id"`
+	TerminalID    string         `json:"terminal_id,omitempty"`
+	Content       string         `json:"content,omitempty"`
+	ContextLines  int            `json:"context_lines,omitempty"`
+	ContextBytes  int            `json:"context_bytes,omitempty"`
+	Redactions    map[string]int `json:"redactions,omitempty"`
 }
 
 // AuditLogger writes JSON-lines audit records to a rotating log file.
@@ -64,12 +71,25 @@ func (a *AuditLogger) Write(entry AuditEntry) error {
 		return nil
 	}
 
-	a.logger.Info("audit",
-		slog.String("event", entry.Event),
-		slog.String("session_id", entry.SessionID),
-		slog.String("terminal_id", entry.TerminalID),
-		slog.String("content", entry.Content),
-	)
+	// Context statistics honor the same "omitempty" semantics as the struct's
+	// JSON tags: events that carry no stats (session_start, ai_response, ...)
+	// are emitted exactly as before, with no zero-valued placeholder fields.
+	attrs := make([]any, 0, 7)
+	attrs = append(attrs, slog.String("event", entry.Event))
+	attrs = append(attrs, slog.String("session_id", entry.SessionID))
+	attrs = append(attrs, slog.String("terminal_id", entry.TerminalID))
+	attrs = append(attrs, slog.String("content", entry.Content))
+	if entry.ContextLines != 0 {
+		attrs = append(attrs, slog.Int("context_lines", entry.ContextLines))
+	}
+	if entry.ContextBytes != 0 {
+		attrs = append(attrs, slog.Int("context_bytes", entry.ContextBytes))
+	}
+	if len(entry.Redactions) != 0 {
+		attrs = append(attrs, slog.Any("redactions", entry.Redactions))
+	}
+
+	a.logger.Info("audit", attrs...)
 
 	return nil
 }

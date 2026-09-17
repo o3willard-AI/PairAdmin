@@ -120,6 +120,54 @@ func TestCredentialFilter_SafeTextUnchanged(t *testing.T) {
 	}
 }
 
+// TestCredentialFilter_MatchCounts verifies Apply counts matches per pattern
+// and that counts reset on each Apply call. These statistics are what make the
+// audit log prove the scrubber ran without exposing the redacted content.
+// Mutation check: removing the counter increment in CredentialFilter.Apply
+// makes this test fail (counts stay empty).
+func TestCredentialFilter_MatchCounts(t *testing.T) {
+	f, err := filter.NewCredentialFilter()
+	if err != nil {
+		t.Fatalf("NewCredentialFilter() error: %v", err)
+	}
+
+	input := "AWS=AKIAIOSFODNN7EXAMPLE\n" +
+		"github=ghp_1234567890abcdefghij1234567890abcdef12\n" +
+		"Authorization: Bearer aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"
+
+	got, err := f.Apply(input)
+	if err != nil {
+		t.Fatalf("Apply() error: %v", err)
+	}
+
+	counts := f.MatchCounts()
+	if n, ok := counts["aws-access-key-id"]; !ok || n != 1 {
+		t.Errorf("expected aws-access-key-id count 1, got %v (present=%v)", n, ok)
+	}
+	if n, ok := counts["github-token"]; !ok || n != 1 {
+		t.Errorf("expected github-token count 1, got %v (present=%v)", n, ok)
+	}
+	if n, ok := counts["bearer-token"]; !ok || n != 1 {
+		t.Errorf("expected bearer-token count 1, got %v (present=%v)", n, ok)
+	}
+	if !strings.Contains(got, "[REDACTED:aws-access-key-id]") {
+		t.Errorf("expected aws redaction marker in output, got: %q", got)
+	}
+
+	// Counts are per-Apply: a subsequent Apply with nothing to redact yields
+	// an empty map, so stale statistics never leak into the next entry.
+	got2, err := f.Apply("just plain text, nothing sensitive")
+	if err != nil {
+		t.Fatalf("Apply() error: %v", err)
+	}
+	if strings.Contains(got2, "[REDACTED:") {
+		t.Errorf("unexpected redaction marker in clean input, got: %q", got2)
+	}
+	if len(f.MatchCounts()) != 0 {
+		t.Errorf("expected empty match counts after clean Apply, got %v", f.MatchCounts())
+	}
+}
+
 // TestCredentialFilter_RedactsBearerToken verifies Bearer token patterns are redacted.
 func TestCredentialFilter_RedactsBearerToken(t *testing.T) {
 	f, err := filter.NewCredentialFilter()
