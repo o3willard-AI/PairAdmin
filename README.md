@@ -46,7 +46,9 @@ prefix needed), `pem-private-key` (RSA/EC/OpenSSH private-key blocks),
 patterns via `/filter`. API keys are held in encrypted, mlock'd memory
 (memguard) rather than plain variables. Every prompt and every response — the
 operator's typed message and the model's reply — is written to a local
-rotating JSONL audit log. Prefer nothing leave the box at all? Point it at
+rotating JSONL audit log, along with what the scrubber caught: the
+transmitted context's line and byte counts and per-pattern redaction match
+counts. The context content itself is never logged. Prefer nothing leave the box at all? Point it at
 Ollama or LM Studio on this machine — both default to loopback (Ollama to
 `http://localhost:11434`), so a typo in a host field can't quietly send your
 terminal elsewhere.

@@ -68,7 +68,11 @@ Plus any regexes you add with `/filter`.
 Every prompt and every response is written to a local rotating JSONL log
 (`services/audit/audit.go`; events `user_message` and `ai_response` in
 `services/llm_service.go`). The log records the operator's typed message and the
-model's reply. It does **not** record the terminal context that was transmitted.
+model's reply. Each user message also records statistics about the transmitted
+terminal context — its line count, byte count, and which redaction patterns
+matched, with match counts (`services/llm/filter/credential.go` —
+`MatchCounts()`) — so you can see exactly what the scrubber caught. The
+terminal context content itself is never logged.
 
 ## 7. Key storage
 
@@ -83,7 +87,9 @@ trust store (ADR-0002). No blanket skip-verify.
 
 ## 9. Known limitations
 
-- The audit log excludes the transmitted terminal context.
+- The audit log records statistics about the transmitted terminal context
+  (line/byte counts and per-pattern redaction matches), but never the content
+  itself.
 - Redaction is regex-based; it is not a commercial secret-scanning engine.
 - Remote Ollama is supported by design (defaults to loopback; Settings warns
   while a non-loopback host is configured).
