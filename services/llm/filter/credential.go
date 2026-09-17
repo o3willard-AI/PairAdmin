@@ -92,20 +92,42 @@ var credentialPatterns = []*credPattern{
 // & service-account JSON, Azure storage keys, bearer tokens & bare JWTs, PEM
 // private keys, password/passwd assignments, and connection strings with
 // embedded credentials).
-type CredentialFilter struct{}
+// matchCounts records, for the most recent Apply call, how many times each
+// pattern matched. It lets callers report redaction statistics without ever
+// exposing the redacted content itself, and is reset at the start of each
+// Apply call.
+type CredentialFilter struct {
+	matchCounts map[string]int
+}
 
 // NewCredentialFilter creates a new CredentialFilter.
 func NewCredentialFilter() (*CredentialFilter, error) {
-	return &CredentialFilter{}, nil
+	return &CredentialFilter{matchCounts: make(map[string]int)}, nil
+}
+
+// MatchCounts returns the per-pattern match counts from the most recent Apply
+// call. An empty map means no patterns matched. MatchCounts is nil-safe.
+func (f *CredentialFilter) MatchCounts() map[string]int {
+	if f == nil || f.matchCounts == nil {
+		return make(map[string]int)
+	}
+	return f.matchCounts
 }
 
 // Apply scans content for credential patterns and replaces each match with
-// [REDACTED:<rule_id>]. All configured patterns are applied.
+// [REDACTED:<rule_id>]. All configured patterns are applied, and each match is
+// counted per pattern for MatchCounts.
 func (f *CredentialFilter) Apply(content string) (string, error) {
+	f.matchCounts = make(map[string]int)
 	result := content
 	for _, pattern := range credentialPatterns {
 		id := pattern.id
 		result = pattern.re.ReplaceAllStringFunc(result, func(match string) string {
+			if n, ok := f.matchCounts[id]; ok {
+				f.matchCounts[id] = n + 1
+			} else {
+				f.matchCounts[id] = 1
+			}
 			return fmt.Sprintf("[REDACTED:%s]", id)
 		})
 	}

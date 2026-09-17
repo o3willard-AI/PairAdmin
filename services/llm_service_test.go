@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -168,6 +169,76 @@ func TestSendMessageAuditUserMessage(t *testing.T) {
 	}
 	if strings.Contains(contents, "terminal context here") {
 		t.Errorf("expected terminalContext NOT in audit log, but it was found:\n%s", contents)
+	}
+}
+
+// TestSendMessageAuditContextStats verifies the user_message audit entry
+// records terminal-context STATISTICS (line count, byte count, and per-pattern
+// redaction match counts) while never logging the terminal content itself.
+// This is what makes the audit log prove the scrubber ran on the sensitive
+// payload without exposing what it scrubbed.
+// Mutation checks: removing the ContextLines/ContextBytes/Redactions fields
+// from the user_message entry in SendMessage, or dropping the MatchCounts
+// capture before the userInput Apply resets it, makes this test fail.
+func TestSendMessageAuditContextStats(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger, err := audit.NewAuditLogger(tmpDir)
+	if err != nil {
+		t.Fatalf("NewAuditLogger: %v", err)
+	}
+	t.Cleanup(func() { logger.Close() })
+
+	ctx := "AWS=AKIAIOSFODNN7EXAMPLE\n" +
+		"github=ghp_1234567890abcdefghij1234567890abcdef12\n" +
+		"Authorization: Bearer aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"
+
+	svc := &LLMService{
+		cfg:            Config{Provider: "mock"},
+		activeProvider: &streamingMockProvider{text: "hello"},
+		emitFn:         func(_ context.Context, _ string, _ ...interface{}) {},
+	}
+	svc.ctx = context.Background()
+	svc.SetAuditLogger(logger, "test-session")
+
+	err = svc.SendMessage("tmux:%3", "what does this output mean", ctx)
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	// Wait for goroutine to complete.
+	time.Sleep(300 * time.Millisecond)
+
+	contents := readAuditLog(t, tmpDir)
+
+	if !strings.Contains(contents, `"user_message"`) {
+		t.Errorf("expected user_message event in audit log, got:\n%s", contents)
+	}
+	if !strings.Contains(contents, `"context_lines":3`) {
+		t.Errorf("expected context_lines=3 in audit log, got:\n%s", contents)
+	}
+	expectedBytes := len(ctx)
+	if !strings.Contains(contents, `"context_bytes":` + fmt.Sprintf("%d", expectedBytes)) {
+		t.Errorf("expected context_bytes=%d in audit log, got:\n%s", expectedBytes, contents)
+	}
+	if !strings.Contains(contents, `"aws-access-key-id":1`) {
+		t.Errorf("expected aws-access-key-id count 1 in audit log, got:\n%s", contents)
+	}
+	if !strings.Contains(contents, `"github-token":1`) {
+		t.Errorf("expected github-token count 1 in audit log, got:\n%s", contents)
+	}
+	if !strings.Contains(contents, `"bearer-token":1`) {
+		t.Errorf("expected bearer-token count 1 in audit log, got:\n%s", contents)
+	}
+
+	// Raw secret values must never appear — only their redaction statistics.
+	for _, secret := range []string{
+		"AKIAIOSFODNN7EXAMPLE",
+		"ghp_1234567890abcdefghij1234567890abcdef12",
+		"aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789",
+	} {
+		if strings.Contains(contents, secret) {
+			t.Errorf("audit log contains raw secret %q in plaintext:\n%s", secret, contents)
+		}
 	}
 }
 

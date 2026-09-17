@@ -189,6 +189,19 @@ func (s *LLMService) SendMessage(tabId, userInput, terminalContext string) error
 	pipeline := filter.NewPipeline(filters...)
 	filteredContext, _ := pipeline.Apply(terminalContext)
 
+	// Capture statistics about the terminal context (NOT its content) for the
+	// audit log: line/byte counts and per-pattern redaction match counts for
+	// the credential filter. These make the audit log prove the scrubber ran
+	// without exposing what it scrubbed. MatchCounts must be read here, right
+	// after the terminal-context Apply — the later userInput Apply below resets
+	// the credential filter's counts.
+	credCounts := credFilter.MatchCounts()
+	contextLines := 0
+	if terminalContext != "" {
+		contextLines = len(strings.Split(terminalContext, "\n"))
+	}
+	contextBytes := len(terminalContext)
+
 	messages := llm.BuildMessages(llm.SystemPrompt, filteredContext, userInput)
 
 	// Write user_message audit entry before goroutine launch (user text only, NOT terminalContext).
@@ -200,10 +213,13 @@ func (s *LLMService) SendMessage(tabId, userInput, terminalContext string) error
 	if s.auditLogger != nil {
 		filteredPrompt, _ := pipeline.Apply(userInput)
 		s.auditLogger.Write(audit.AuditEntry{
-			Event:      "user_message",
-			SessionID:  s.sessionID,
-			TerminalID: tabId,
-			Content:    filteredPrompt,
+			Event:         "user_message",
+			SessionID:     s.sessionID,
+			TerminalID:    tabId,
+			Content:       filteredPrompt,
+			ContextLines:  contextLines,
+			ContextBytes:  contextBytes,
+			Redactions:    credCounts,
 		})
 	}
 
