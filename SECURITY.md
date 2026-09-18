@@ -55,13 +55,13 @@ each one true, in the repository threat model:
 
 ## Accountability
 
-PairAdmin attributes agent-assisted actions to a specific accountable human
-through the **Registered Accountable Entity (RAE)** concept — the single
-identified natural person who sponsored or approved an action in advance,
-regardless of the degree of automation. See the full definition, normative
-clauses, and assurance levels:
+PairAdmin's free tier **displays** a **Registered Accountable Entity (RAE)** at
+L0 (declared, unverified) — the logged-in OS account, shown without claiming
+verification or registration. The free build performs no identity verification
+or registration; it makes the accountable human visible at L0 only. See the
+specification for the full definition, normative clauses, and assurance levels:
 
-- **RAE definition and glossary:** [`docs/security/rae.md`](docs/security/rae.md)
+- **RAE specification:** <https://github.com/o3willard-AI/RAE>
 
 Every claim in the threat model is verifiable against the source; the
 execution boundary in particular can be checked with the published

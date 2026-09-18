@@ -60,7 +60,7 @@ export function SecurityTab() {
               : `Registered Accountable Entity (RAE): ${raeUsername}${RAE_L0_SUFFIX}`}
         </h3>
         <p className="text-xs text-surface-text-muted mt-1">
-          The OS account accountable for agent-assisted actions in this session.
+          The OS account declared as accountable for agent-assisted actions — declared, unverified (L0).
         </p>
       </div>
       <div>

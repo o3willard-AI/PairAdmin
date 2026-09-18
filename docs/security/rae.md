@@ -6,7 +6,7 @@ The canonical definition of RAE lives in a standalone, versioned specification:
 
 ## PairAdmin implementation
 
-PairAdmin's free tier implements RAE at **L0 (declared)**: the Settings
+PairAdmin's free tier **displays an RAE at L0 (declared, unverified)**: the Settings
 Security tab resolves the logged-in OS account and displays it with the
 explicit label `declared, unverified (L0)`. No identity verification or
 registration is performed in the free build — the display makes the accountable
