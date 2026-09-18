@@ -53,6 +53,16 @@ each one true, in the repository threat model:
 - **Repository threat model:** [`docs/security/threat-model.md`](docs/security/threat-model.md)
 - **Website threat model:** <https://pairadmin.tech/security>
 
+## Accountability
+
+PairAdmin attributes agent-assisted actions to a specific accountable human
+through the **Registered Accountable Entity (RAE)** concept — the single
+identified natural person who sponsored or approved an action in advance,
+regardless of the degree of automation. See the full definition, normative
+clauses, and assurance levels:
+
+- **RAE definition and glossary:** [`docs/security/rae.md`](docs/security/rae.md)
+
 Every claim in the threat model is verifiable against the source; the
 execution boundary in particular can be checked with the published
 verification command. If any claim in the threat model does not hold, that is
