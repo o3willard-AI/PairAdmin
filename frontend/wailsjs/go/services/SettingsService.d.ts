@@ -12,6 +12,8 @@ export function ForceRefresh(arg1:string):Promise<string>;
 
 export function GetAPIKeyStatus(arg1:string):Promise<string>;
 
+export function GetCurrentUsername():Promise<string>;
+
 export function GetSettings():Promise<config.AppConfig>;
 
 export function HasMasterPassword():Promise<boolean>;

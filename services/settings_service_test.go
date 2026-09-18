@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/user"
 	"strings"
 	"testing"
 
@@ -783,5 +784,42 @@ func TestSettingsService_RenameTab(t *testing.T) {
 	}
 	if emittedData == nil {
 		t.Error("RenameTab() expected emitted data, got nil")
+	}
+}
+
+// TestSettingsService_GetCurrentUsername verifies GetCurrentUsername resolves
+// the logged-in OS account to a non-empty short/login name that matches the
+// host's resolved username (os/user.Current().Username, or the USER/LOGNAME
+// env fallback).
+// Mutation check: stubbing the resolver to a constant empty string, or
+// removing the os/user.Current() / env-fallback path, makes this test red
+// (the returned value would be empty or not equal the host's resolved name).
+func TestSettingsService_GetCurrentUsername(t *testing.T) {
+	svc := NewSettingsService(nil)
+
+	got, err := svc.GetCurrentUsername()
+	if err != nil {
+		t.Fatalf("GetCurrentUsername() unexpected error: %v", err)
+	}
+	if got == "" {
+		t.Fatal("GetCurrentUsername() returned an empty username")
+	}
+
+	expected := ""
+	if u, uerr := user.Current(); uerr == nil && u.Username != "" {
+		expected = u.Username
+	} else {
+		for _, name := range []string{"USER", "LOGNAME"} {
+			if v := os.Getenv(name); v != "" {
+				expected = v
+				break
+			}
+		}
+	}
+	if expected == "" {
+		t.Skip("cannot determine expected username on this host")
+	}
+	if got != expected {
+		t.Errorf("GetCurrentUsername() = %q, want %q", got, expected)
 	}
 }

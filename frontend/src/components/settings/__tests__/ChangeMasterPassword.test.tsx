@@ -7,14 +7,18 @@ import { SecurityTab } from "@/components/settings/SecurityTab";
 
 const changeMasterPassword = vi.fn();
 const hasMasterPassword = vi.fn();
+const getCurrentUsername = vi.fn();
 
 vi.mock("../../../../wailsjs/go/services/SettingsService", () => ({
   ChangeMasterPassword: (...args: unknown[]) => changeMasterPassword(...args),
   HasMasterPassword: (...args: unknown[]) => hasMasterPassword(...args),
+  GetCurrentUsername: (...args: unknown[]) => getCurrentUsername(...args),
 }));
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // SecurityTab now also resolves the Registered Accountable Entity on mount.
+  getCurrentUsername.mockResolvedValue("sblanken");
 });
 
 describe("ChangeMasterPasswordDialog", () => {

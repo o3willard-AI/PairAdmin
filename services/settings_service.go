@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"time"
 
@@ -180,6 +182,36 @@ func (s *SettingsService) NeedsMasterPassword() (bool, error) {
 // See keychain.Client.HasMasterPassword.
 func (s *SettingsService) HasMasterPassword() bool {
 	return s.keychainClient.HasMasterPassword()
+}
+
+// GetCurrentUsername resolves the logged-in OS account — the human operator
+// accountable for agent-assisted actions — and returns its short/login name.
+//
+// On Windows the USERNAME environment variable is authoritative (short name,
+// no DOMAIN\ prefix). On Unix this prefers os/user.Current() and, if that is
+// unavailable, falls back to the USER then LOGNAME environment variables.
+//
+// Purely informational in the free build: only OS identity is read, nothing is
+// persisted, and an error is returned only if the username cannot be resolved
+// at all. Reading USERNAME/USER/LOGNAME here is deliberate — they identify the
+// OS account, not an application setting.
+func (s *SettingsService) GetCurrentUsername() (string, error) {
+	if goruntime.GOOS == "windows" {
+		if u := os.Getenv("USERNAME"); u != "" {
+			return u, nil
+		}
+		return "", fmt.Errorf("cannot resolve current username: USERNAME is not set")
+	}
+
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username, nil
+	}
+	for _, name := range []string{"USER", "LOGNAME"} {
+		if v := os.Getenv(name); v != "" {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("cannot resolve current username: os/user unavailable and USER/LOGNAME not set")
 }
 
 // SetMasterPassword sets the master password for the first time.

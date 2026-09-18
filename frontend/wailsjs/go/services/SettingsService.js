@@ -18,6 +18,10 @@ export function GetAPIKeyStatus(arg1) {
   return window['go']['services']['SettingsService']['GetAPIKeyStatus'](arg1);
 }
 
+export function GetCurrentUsername() {
+  return window['go']['services']['SettingsService']['GetCurrentUsername']();
+}
+
 export function GetSettings() {
   return window['go']['services']['SettingsService']['GetSettings']();
 }
