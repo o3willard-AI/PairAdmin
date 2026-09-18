@@ -163,12 +163,31 @@ jobs:
           rm -rf ~/Library/Caches/Homebrew ~/Library/Caches/pip 2>/dev/null || true
           df -h /
 
-      - name: Build .app (unsigned)
+      - name: Build .app
         run: |
           export PATH="$PATH:$(go env GOPATH)/bin"
           wails build -platform darwin/universal -ldflags "$RELEASE_LDFLAGS"
 
-      - name: Package .dmg (unsigned)
+      - name: Import Developer ID certificate
+        env:
+          DEV_ID_CERT_P12: ${{ secrets.DEV_ID_CERT_P12 }}
+          DEV_ID_CERT_PASSWORD: ${{ secrets.DEV_ID_CERT_PASSWORD }}
+        run: |
+          echo "$DEV_ID_CERT_P12" | base64 -d > cert.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import cert.p12 -k build.keychain -P "$DEV_ID_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+
+      - name: Sign .app (Developer ID)
+        run: |
+          APP="$(find build/bin -maxdepth 1 -name '*.app' | head -1)"
+          codesign --deep --force --options runtime \
+            --sign "Developer ID Application: Stephen Blankenship (Y34F3ZH6XY)" "$APP"
+          codesign --verify --deep --strict "$APP"
+
+      - name: Package .dmg
         run: |
           cd build/bin
           APP="$(find . -maxdepth 1 -name '*.app' | head -1)"
@@ -185,6 +204,21 @@ jobs:
           hdiutil detach "/Volumes/PairAdmin"
           hdiutil convert "PairAdmin-tmp.dmg" -format UDZO -o "PairAdmin-universal.dmg"
           rm -f "PairAdmin-tmp.dmg"
+
+      - name: Notarize and staple .dmg
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_APP_PASSWORD: ${{ secrets.NOTARY_APP_PASSWORD }}
+        run: |
+          cd build/bin
+          xcrun notarytool submit PairAdmin-universal.dmg \
+            --apple-id "$NOTARY_APPLE_ID" \
+            --team-id Y34F3ZH6XY \
+            --password "$NOTARY_APP_PASSWORD" \
+            --wait
+          xcrun stapler staple PairAdmin-universal.dmg
+          spctl -a -vvv PairAdmin-universal.dmg
+          xcrun stapler validate PairAdmin-universal.dmg
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # tag: v4.6.2
         with:
