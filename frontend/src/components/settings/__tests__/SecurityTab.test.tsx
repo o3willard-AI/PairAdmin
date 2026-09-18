@@ -28,6 +28,8 @@ describe("SecurityTab", () => {
     const rae = await screen.findByText(/Registered Accountable Entity \(RAE\):/);
     expect(rae).toBeInTheDocument();
     expect(rae).toHaveTextContent("sblanken");
+    // Free tier appends the constant assurance suffix once resolved.
+    expect(rae).toHaveTextContent(" - declared, unverified (L0)");
   });
 
   it("renders the RAE block before the Master password block", async () => {

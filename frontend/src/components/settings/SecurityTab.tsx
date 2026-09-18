@@ -4,6 +4,10 @@ import { ChangeMasterPasswordDialog } from "./ChangeMasterPasswordDialog";
 const buttonClass =
   "text-sm bg-surface-3 hover:bg-surface-3/80 text-surface-text px-3 py-1.5 rounded disabled:opacity-50";
 
+// Free-tier assurance suffix shown next to the resolved account. Always L0
+// (declared, unverified) in the free build — never dynamic.
+const RAE_L0_SUFFIX = " - declared, unverified (L0)";
+
 // Security tab: master-password management. The "change" flow only applies
 // when the encrypted file backend is actually in use (a master password has
 // been configured); with a functional OS keychain there is nothing to change,
@@ -51,7 +55,9 @@ export function SecurityTab() {
         <h3 className="text-sm font-medium text-surface-text">
           {raeChecking
             ? "Registered Accountable Entity (RAE): resolving…"
-            : `Registered Accountable Entity (RAE): ${raeUsername === "" ? "unknown" : raeUsername}`}
+            : raeUsername === ""
+              ? "Registered Accountable Entity (RAE): unknown"
+              : `Registered Accountable Entity (RAE): ${raeUsername}${RAE_L0_SUFFIX}`}
         </h3>
         <p className="text-xs text-surface-text-muted mt-1">
           The OS account accountable for agent-assisted actions in this session.

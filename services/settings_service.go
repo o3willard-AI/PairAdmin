@@ -195,6 +195,11 @@ func (s *SettingsService) HasMasterPassword() bool {
 // persisted, and an error is returned only if the username cannot be resolved
 // at all. Reading USERNAME/USER/LOGNAME here is deliberate — they identify the
 // OS account, not an application setting.
+//
+// Assurance level: the free tier presents this account as declared but
+// UNVERIFIED at assurance level L0 — the username is self-reported and has not
+// been independently verified. See docs/security/rae.md; the UI appends the
+// constant " - declared, unverified (L0)" suffix.
 func (s *SettingsService) GetCurrentUsername() (string, error) {
 	if goruntime.GOOS == "windows" {
 		if u := os.Getenv("USERNAME"); u != "" {
