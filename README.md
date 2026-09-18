@@ -142,7 +142,7 @@ sudo rpm -Uvh pairadmin_linux_amd64.rpm
 **Windows (.exe installer)**
 
 1. Download `pairadmin-amd64-installer.exe` from the [latest release](https://github.com/o3willard-AI/PairAdmin/releases/latest) and run it.
-2. Windows SmartScreen may show **"Windows protected your PC"** (the app is unsigned during alpha). Click through it in two steps:
+2. Windows SmartScreen may show **"Windows protected your PC"** (the open source Windows signing authority is a work in progress). Click through it in two steps:
 
    **Step 1 — click "More info"**
 
