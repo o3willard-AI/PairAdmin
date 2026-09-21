@@ -17,6 +17,7 @@ import (
 	"pairadmin/services/capture"
 	"pairadmin/services/config"
 	"pairadmin/services/keychain"
+	"pairadmin/services/scanner"
 )
 
 //go:embed all:frontend/dist
@@ -79,6 +80,19 @@ func main() {
 	settingsService.SetLLMService(llmService)
 	settingsService.SetCaptureManager(manager)
 
+	// Create ScanService for Mode-A network sweeps. NewScanService captures
+	// cfg by value, so wire a LIVE config getter: the scanner's enable/disable
+	// gate (AppConfig.ScannerEnabled, toggled in Settings) must take effect on
+	// the next Start without restarting the app. The construction-time
+	// snapshot is only the gate's fallback on a config load error.
+	appCfg, _ := config.LoadAppConfig()
+	scanCfg := config.AppConfig{ScannerEnabled: true}
+	if appCfg != nil {
+		scanCfg = *appCfg
+	}
+	scanService := scanner.NewScanService(scanCfg, runtime.EventsEmit)
+	scanService.SetLiveCfgFn(config.LoadAppConfig)
+
 	// API keys are NOT loaded here. On a file-backend machine the keychain
 	// needs the master password, which only exists after the frontend's
 	// startup gate (NeedsMasterPassword -> Set/VerifyMasterPassword) has
@@ -136,6 +150,7 @@ func main() {
 			settingsService,
 			ptyService,
 			remoteService,
+			scanService,
 		},
 	})
 
