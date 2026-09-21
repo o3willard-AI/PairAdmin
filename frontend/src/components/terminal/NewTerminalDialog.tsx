@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { wailsErrorMessage } from "@/utils/wailsError";
@@ -9,6 +9,14 @@ import type { config, services } from "../../../wailsjs/go/models";
 export interface NewTerminalDialogProps {
   open: boolean;
   onClose: () => void;
+  /** Optional SSH pre-fill used by the Network panel's "Add to hosts" action.
+   * When set, the dialog opens directly on the connection form with the host
+   * populated — the connect still flows through the exact same
+   * maybeConnectToRemote -> CheckHostKeyTrust -> hostKeyConfirm path as a
+   * manual connect. This ONLY steers the initial form values; it never
+   * auto-accepts or bypasses host-key trust, and it never connects on its
+   * own (the user must complete the form and click Connect). */
+  initial?: { kind: "ssh"; host: string; port: number };
 }
 
 type TerminalKind = "local" | "ssh" | "winrm";
@@ -73,13 +81,20 @@ interface HostKeyConfirmState {
   changed: boolean;
 }
 
-export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
+export function NewTerminalDialog({ open, onClose, initial }: NewTerminalDialogProps) {
   const [step, setStep] = useState<"type" | "form" | "recentAll" | "hostKeyConfirm">("type");
   const [kind, setKind] = useState<TerminalKind>("local");
   const [recentSearch, setRecentSearch] = useState("");
   const [recentPage, setRecentPage] = useState(0);
   const [promptNewHostKeys, setPromptNewHostKeys] = useState(false);
   const [hostKeyConfirm, setHostKeyConfirm] = useState<HostKeyConfirmState | null>(null);
+
+  // Tracks the optional SSH pre-fill (Network panel "Add to hosts") in a ref so
+  // the on-open reset effect can read the LATEST value without re-running on
+  // every parent render (each call passes a fresh object). Deliberately kept out
+  // of the effect's deps — only `open` toggling should drive the reset.
+  const initialRef = useRef(initial);
+  initialRef.current = initial;
 
   const [host, setHost] = useState("");
   const [port, setPort] = useState(22);
@@ -114,13 +129,19 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
       .catch(() => setRecentHosts([]));
   };
 
-  // Reset the wizard every time the dialog opens, and refresh the recent-hosts list.
+  // Reset the wizard every time the dialog opens, and refresh the recent-hosts
+  // list. When an `initial` SSH pre-fill (Network "Add to hosts") is present,
+  // open straight on the connection form with the discovered host populated —
+  // otherwise the usual type-selection step. Either way NO connection is made;
+  // the Connect button remains user-initiated and routes through the normal
+  // maybeConnectToRemote -> CheckHostKeyTrust -> hostKeyConfirm flow.
   useEffect(() => {
     if (!open) return;
-    setStep("type");
-    setKind("local");
-    setHost("");
-    setPort(22);
+    const pre = initialRef.current;
+
+    // Field defaults shared by both open paths (fresh host on "type", or a
+    // pre-filled SSH host on "form") — always cleared so a previous dialog
+    // session's credential values can't leak into a new target.
     setUsername("");
     setAuthType("password");
     setPassword("");
@@ -138,6 +159,18 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
     setRecentSearch("");
     setRecentPage(0);
     setHostKeyConfirm(null);
+
+    if (pre && pre.kind === "ssh") {
+      setKind("ssh");
+      setHost(pre.host);
+      setPort(pre.port);
+      setStep("form");
+    } else {
+      setStep("type");
+      setKind("local");
+      setHost("");
+      setPort(22);
+    }
 
     refreshRecentHosts();
 

@@ -9,6 +9,7 @@ import { useNewTerminalHotkey } from "@/hooks/useNewTerminalHotkey";
 import { useAddCommandHotkey } from "@/hooks/useAddCommandHotkey";
 import { TerminalTabList } from "@/components/terminal/TerminalTabList";
 import { TerminalPreview } from "@/components/terminal/TerminalPreview";
+import { NetworkPanel } from "@/components/scanner/NetworkPanel";
 import { QuickSelectOverlay } from "@/components/QuickSelectOverlay";
 import { StatusBar } from "./StatusBar";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
@@ -149,6 +150,9 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
           style={{ width: `${terminalsSidebarWidthCh}ch` }}
         >
           <TerminalTabList />
+          {/* Scanner UI. When "Network scanner" is off in Settings, this renders
+              nothing (no panel, no entry point). */}
+          <NetworkPanel />
         </aside>
 
         {/* Center column: terminal preview + chat area, top to bottom.
