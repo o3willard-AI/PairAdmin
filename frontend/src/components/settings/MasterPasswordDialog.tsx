@@ -9,6 +9,14 @@ export interface MasterPasswordDialogProps {
   mode: "set" | "unlock";
   /** Called after the password was set or verified successfully. */
   onSuccess: () => void;
+  /**
+   * Re-run the OS keychain probe (NeedsMasterPassword already re-probes fresh
+   * on every call, so this is just a re-invocation). Return `true` when the OS
+   * keychain is STILL unavailable (dialog stays open); return `false`/`undefined`
+   * when the keychain is now available (the parent proceeds and dismisses this
+   * dialog).
+   */
+  onRetryOSKeychain?: () => Promise<boolean> | boolean | void;
 }
 
 const inputClass =
@@ -16,12 +24,21 @@ const inputClass =
 
 // Non-dismissable by design: there is no usable app behind this dialog until
 // the master password gate passes, so no onOpenChange handler is wired up
-// (backdrop click / Escape are no-ops) and there is no close button.
-export function MasterPasswordDialog({ open, mode, onSuccess }: MasterPasswordDialogProps) {
+// (backdrop click / Escape are no-ops) and there is no close button. The
+// "Retry OS Keychain" button is the only additional escape: it re-probes the
+// OS keychain and, if one is now available, the parent closes the dialog.
+export function MasterPasswordDialog({
+  open,
+  mode,
+  onSuccess,
+  onRetryOSKeychain = () => {},
+}: MasterPasswordDialogProps) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [retrying, setRetrying] = useState(false);
+  const [retryMessage, setRetryMessage] = useState("");
 
   const isSet = mode === "set";
 
@@ -30,6 +47,8 @@ export function MasterPasswordDialog({ open, mode, onSuccess }: MasterPasswordDi
     setConfirm("");
     setPending(false);
     setError("");
+    setRetrying(false);
+    setRetryMessage("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -66,6 +85,29 @@ export function MasterPasswordDialog({ open, mode, onSuccess }: MasterPasswordDi
     } catch (err) {
       setPending(false);
       setError(wailsErrorMessage(err, "Failed to set the master password"));
+    }
+  };
+
+  const handleRetryOSKeychain = async () => {
+    if (retrying || pending) return;
+    setRetrying(true);
+    // The button label flips to "Checking OS keychain…" while running; only
+    // the outcome is reported here.
+    setRetryMessage("");
+    try {
+      const stillNeedsPassword = await onRetryOSKeychain();
+      // false/undefined means the parent found an OS keychain and is dismissing
+      // this dialog (open -> false); true means still unavailable, stay open.
+      if (stillNeedsPassword) {
+        setRetryMessage(
+          "No OS keychain detected — set or unlock a master password, or retry.",
+        );
+      }
+    } catch {
+      // A failed re-check is treated as "still needs the password", not a crash.
+      setRetryMessage("Could not re-check the OS keychain — set or unlock a master password, or retry.");
+    } finally {
+      setRetrying(false);
     }
   };
 
@@ -113,6 +155,17 @@ export function MasterPasswordDialog({ open, mode, onSuccess }: MasterPasswordDi
               {pending ? "Working…" : isSet ? "Create Master Password" : "Unlock"}
             </button>
           </form>
+          <div className="px-6 pb-6 -mt-2 space-y-2">
+            {retryMessage && <p className="text-xs text-surface-text-muted">{retryMessage}</p>}
+            <button
+              type="button"
+              className="w-full text-sm text-surface-text-muted hover:text-surface-text bg-transparent border border-surface-border-strong rounded px-3 py-2 disabled:opacity-50"
+              disabled={retrying || pending}
+              onClick={() => void handleRetryOSKeychain()}
+            >
+              {retrying ? "Checking OS keychain…" : "Retry OS Keychain"}
+            </button>
+          </div>
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
