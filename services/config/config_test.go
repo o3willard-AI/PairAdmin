@@ -309,6 +309,71 @@ func TestSaveAppConfig_Merge(t *testing.T) {
 	}
 }
 
+// TestLoadAppConfig_DefaultsScannerEnabled verifies a fresh install ships with
+// the network scanner enabled by default (ScannerEnabled defaults to true).
+func TestLoadAppConfig_DefaultsScannerEnabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	cfg, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
+	}
+	if !cfg.ScannerEnabled {
+		t.Errorf("ScannerEnabled: expected default true, got false")
+	}
+}
+
+// TestSaveAndLoadAppConfig_ScannerEnabledRoundTrip verifies the scanner flag
+// survives a save/reload cycle — so a user or Enterprise policy that disables
+// the scanner keeps it disabled across app restarts.
+//
+// Mutation check: removing the `v.Set("scanner_enabled", …)` line in
+// SaveAppConfig (or the ScannerEnabled field / its mapstructure+yaml tags)
+// makes this test red — the false spike is silently dropped and the reload
+// returns the "true" default instead of the persisted false.
+func TestSaveAndLoadAppConfig_ScannerEnabledRoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	original := &AppConfig{ScannerEnabled: false} // deliberately non-default
+	if err := SaveAppConfig(original); err != nil {
+		t.Fatalf("SaveAppConfig() unexpected error: %v", err)
+	}
+
+	loaded, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() after save unexpected error: %v", err)
+	}
+	if loaded.ScannerEnabled != false {
+		t.Errorf("ScannerEnabled: expected persisted false, got %v", loaded.ScannerEnabled)
+	}
+}
+
+// TestSaveAndLoadAppConfig_ScannerEnabledTrueRoundTrip mirrors the false case
+// for completeness: the explicit true is also preserved (guards against the
+// field being persisted as a zero-value false).
+func TestSaveAndLoadAppConfig_ScannerEnabledTrueRoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	original := &AppConfig{ScannerEnabled: true}
+	if err := SaveAppConfig(original); err != nil {
+		t.Fatalf("SaveAppConfig() unexpected error: %v", err)
+	}
+
+	loaded, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() after save unexpected error: %v", err)
+	}
+	if !loaded.ScannerEnabled {
+		t.Errorf("ScannerEnabled: expected persisted true, got false")
+	}
+}
+
 // TestSaveAndLoadAppConfig_RemoteHostsRoundTrip verifies RemoteHost entries
 // round-trip through YAML without leaking secrets (RemoteHost carries none)
 // and without clobbering other fields (merge-before-write pattern).
