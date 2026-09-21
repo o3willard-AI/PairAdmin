@@ -28,6 +28,7 @@ export interface SSHInfo {
 
 export interface HostRow {
   ip: string;
+  port: number;
   state: HostState;
   ssh?: SSHInfo;
 }
@@ -79,7 +80,7 @@ interface ScannerState {
   stats: ScanStats | null;
   error: string;
 
-  startScan: (targets: string[], maxProbes?: number) => Promise<string | null>;
+  startScan: (targets: string[], ports: number[], maxProbes?: number) => Promise<string | null>;
   stopScan: () => Promise<void>;
   handleProgress: (event: ScanProgressEvent) => void;
   handleHost: (event: ScanHostEvent) => void;
@@ -99,10 +100,11 @@ export const useScannerStore = create<ScannerState>()(
       stats: null,
       error: "",
 
-      startScan: async (targets, maxProbes) => {
+      startScan: async (targets, ports, maxProbes) => {
         try {
           const scanID = await scanStart({
             targets,
+            ports,
             maxProbes: maxProbes ?? 0,
           });
           set((state) => {

@@ -81,6 +81,7 @@ describe("NetworkPanel", () => {
       rows: [
         {
           ip: "10.0.0.3",
+          port: 22,
           state: "ssh",
           ssh: {
             port: 22,
@@ -90,8 +91,8 @@ describe("NetworkPanel", () => {
             hostKeyFingerprint: "SHA256:abc",
           },
         },
-        { ip: "10.0.0.4", state: "filtered" },
-        { ip: "10.0.0.5", state: "closed" },
+        { ip: "10.0.0.4", port: 22241, state: "filtered" },
+        { ip: "10.0.0.5", port: 22, state: "closed" },
       ],
     });
     render(<NetworkPanel />);
@@ -101,6 +102,10 @@ describe("NetworkPanel", () => {
     expect(screen.getByText("10.0.0.4")).toBeInTheDocument();
     expect(screen.getByText("filtered")).toBeInTheDocument();
     expect(screen.getByText("10.0.0.5")).toBeInTheDocument();
+    // The top-level row port must render for NON-ssh rows (ssh rows already
+    // show ssh.port) — with multi-port sweeps a filtered/closed row is
+    // attributable to its exact port.
+    expect(screen.getByText("Port 22241")).toBeInTheDocument();
     // Mutation check: removing the rows.map render leaves rows invisible even
     // though they arrived in the store — the streaming table would be empty.
   });
@@ -120,7 +125,7 @@ describe("NetworkPanel", () => {
     // wiring) leaves the active scan running with no user way to halt it.
   });
 
-  it("Scan starts a scan with the parsed CIDR targets", async () => {
+  it("Scan starts a scan with the parsed CIDR targets and default ports", async () => {
     const user = userEvent.setup();
     render(<NetworkPanel />);
     await screen.findByRole("button", { name: /^scan$/i });
@@ -128,8 +133,27 @@ describe("NetworkPanel", () => {
     await user.click(screen.getByRole("button", { name: /^scan$/i }));
     expect(scanStart).toHaveBeenCalledWith({
       targets: ["10.0.1.0/24", "10.0.2.0/24"],
+      ports: [],
       maxProbes: 16,
     });
+    // A blank Ports input must forward as [] (backend default [22]) — never a
+    // hardcoded port leaking from the frontend.
+  });
+
+  it("Scan parses the Ports input (list + ranges) into the port array", async () => {
+    const user = userEvent.setup();
+    render(<NetworkPanel />);
+    await screen.findByRole("button", { name: /^scan$/i });
+    await user.type(screen.getByLabelText(/SSH ports to scan/), "22241-22242,22");
+    await user.click(screen.getByRole("button", { name: /^scan$/i }));
+    expect(scanStart).toHaveBeenCalledWith({
+      targets: [],
+      ports: [22241, 22242, 22],
+      maxProbes: 16,
+    });
+    // Mutation check: if the Scan handler kept calling startScan with a blank
+    // port list (ignoring the Ports input), this fails — a NAT'd host on
+    // 22241-22250 would never be found.
   });
 
   it("an empty Scan target scans the local /24 networks", async () => {
@@ -137,7 +161,7 @@ describe("NetworkPanel", () => {
     render(<NetworkPanel />);
     await screen.findByRole("button", { name: /^scan$/i });
     await user.click(screen.getByRole("button", { name: /^scan$/i }));
-    expect(scanStart).toHaveBeenCalledWith({ targets: [], maxProbes: 16 });
+    expect(scanStart).toHaveBeenCalledWith({ targets: [], ports: [], maxProbes: 16 });
     // Mutation check: if parseTargets replaced the empty result with some
     // non-empty default, the local-/24 sweep the backend performs on an empty
     // targets array would never run.
@@ -148,6 +172,7 @@ describe("NetworkPanel", () => {
       rows: [
         {
           ip: "10.0.0.9",
+          port: 22,
           state: "ssh",
           ssh: {
             port: 22,

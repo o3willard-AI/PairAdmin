@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useScannerStore, type HostRow } from "@/stores/scannerStore";
 import { useScanner, startScan, stopScan } from "@/hooks/useScanner";
 import { NewTerminalDialog } from "@/components/terminal/NewTerminalDialog";
+import { parsePorts } from "@/components/scanner/ports";
 
 const inputClass =
   "w-full bg-surface-2 border border-surface-border-strong rounded px-2 py-1 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none";
@@ -41,6 +42,7 @@ export function NetworkPanel() {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [expanded, setExpanded] = useState(true);
   const [target, setTarget] = useState("");
+  const [portsRaw, setPortsRaw] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogInitial, setDialogInitial] = useState<
     { kind: "ssh"; host: string; port: number } | undefined
@@ -92,8 +94,16 @@ export function NetworkPanel() {
               placeholder="Targets (blank = local /24s)"
               aria-label="Scan target CIDR(s)"
             />
+            <input
+              className="w-32 bg-surface-2 border border-surface-border-strong rounded px-2 py-1 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
+              value={portsRaw}
+              onChange={(e) => setPortsRaw(e.target.value)}
+              placeholder="Ports (22)"
+              aria-label="SSH ports to scan"
+              title="Comma/space-separated ports and ranges, e.g. 22,2222 or 22241-22250. Blank = default (22)."
+            />
             <button
-              onClick={() => startScan(parseTargets(target), 16)}
+              onClick={() => startScan(parseTargets(target), parsePorts(portsRaw), 16)}
               disabled={scanning}
               className={`bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-3 py-1.5 rounded disabled:opacity-50 ${focusRingClass}`}
             >
@@ -156,6 +166,9 @@ export function NetworkPanel() {
                           ? row.ssh.banner
                           : `Port ${row.ssh.port}`}
                     </div>
+                  )}
+                  {!row.ssh && (
+                    <div className="text-xs text-surface-text-muted truncate">Port {row.port}</div>
                   )}
                 </div>
               ))}

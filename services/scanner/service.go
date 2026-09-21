@@ -57,10 +57,13 @@ type SSHInfo struct {
 	HostKeyFingerprint string `json:"hostKeyFingerprint"`
 }
 
-// HostRow is one result row, the payload of scan:host ("row" field). This
-// JSON shape is the pinned frontend contract.
+// HostRow is one result row, the payload of scan:host ("row" field). Port is
+// set TOP-LEVEL on every row (not only ssh rows) so filtered/closed rows are
+// attributable to the exact port that was probed — with multi-port sweeps an
+// IP alone is not a unique key.
 type HostRow struct {
 	IP    string    `json:"ip"`
+	Port  int       `json:"port"`
 	State HostState `json:"state"`
 	SSH   *SSHInfo  `json:"ssh,omitempty"`
 }
@@ -118,6 +121,11 @@ type ScanRequest struct {
 	// MaxProbes bounds probes in flight. Zero (or negative) selects the
 	// default of 64; the value is clamped to [16, 256].
 	MaxProbes int
+	// Ports is the SSH probe-port list for the sweep. Empty/nil means the
+	// default [22]; duplicates are dropped (order preserved). Hosts behind a
+	// NAT/port-forward layer answer SSH on non-standard ports (e.g.
+	// <host>:22241), so this makes the sweep customizable beyond :22.
+	Ports []int
 }
 
 // ErrScanningDisabled is returned by Start when the scanner is disabled in
@@ -253,7 +261,10 @@ func (s *ScanService) run(scanID string, ctx context.Context, cancel context.Can
 		s.emitFn(ctx, "scan:error", ScanErrorEvent{ScanID: scanID, Message: err.Error()})
 		return
 	}
-	total := len(targets)
+	// Normalize the probe-port list once: empty/nil -> [22]; duplicates
+	// dropped, order preserved. total counts every (ip, port) probe.
+	ports := normalizePorts(req.Ports)
+	total := len(targets) * len(ports)
 
 	var (
 		done    atomic.Int64
@@ -290,43 +301,55 @@ func (s *ScanService) run(scanID string, ctx context.Context, cancel context.Can
 	}()
 
 	for _, ip := range targets {
-		// Acquire BEFORE spawning so the dispatch loop itself stops when
-		// the semaphore is full — the number of goroutines never exceeds
-		// maxProbes, and ctx cancellation unblocks a waiting Acquire.
-		if err := sem.Acquire(ctx, 1); err != nil {
-			break // scan cancelled while waiting for a slot
+		// Inner (per-port) loop with an early-out sentinel so cancellation
+		// breaks BOTH nests — a blocked Acquire or a cancelled ctx must halt
+		// the whole sweep, not just the current target's current port.
+		cancelled := false
+		for pi := 0; pi < len(ports); pi++ {
+			// Acquire BEFORE spawning so the dispatch loop itself stops when
+			// the semaphore is full — the number of goroutines never exceeds
+			// maxProbes, and ctx cancellation unblocks a waiting Acquire.
+			if err := sem.Acquire(ctx, 1); err != nil {
+				cancelled = true
+				break // scan cancelled while waiting for a slot
+			}
+			if ctx.Err() != nil {
+				sem.Release(1)
+				cancelled = true
+				break
+			}
+			port := ports[pi]
+			ipStr := ip.String()
+			wg.Add(1)
+			go func(ipStr string, port int) {
+				defer wg.Done()
+				defer sem.Release(1)
+				defer active.Add(-1)
+				active.Add(1)
+
+				res := ProbeSSH(ipStr, port, true)
+
+				// Cancelled while this probe was in flight: discard the
+				// result — a cancelled scan must not keep emitting rows.
+				if ctx.Err() != nil {
+					return
+				}
+				row := rowFromProbe(ipStr, port, res)
+				switch row.State {
+				case HostStateSSH:
+					ssh.Add(1)
+				case HostStateFiltered:
+					filterd.Add(1)
+				case HostStateClosed:
+					closed.Add(1)
+				}
+				s.emitFn(ctx, "scan:host", ScanHostEvent{ScanID: scanID, Row: row})
+				done.Add(1)
+			}(ipStr, port)
 		}
-		if ctx.Err() != nil {
-			sem.Release(1)
+		if cancelled {
 			break
 		}
-		ipStr := ip.String()
-		wg.Add(1)
-		go func(ipStr string) {
-			defer wg.Done()
-			defer sem.Release(1)
-			defer active.Add(-1)
-			active.Add(1)
-
-			res := ProbeSSH(ipStr, DefaultSSHPort, true)
-
-			// Cancelled while this probe was in flight: discard the
-			// result — a cancelled scan must not keep emitting rows.
-			if ctx.Err() != nil {
-				return
-			}
-			row := rowFromProbe(ipStr, res)
-			switch row.State {
-			case HostStateSSH:
-				ssh.Add(1)
-			case HostStateFiltered:
-				filterd.Add(1)
-			case HostStateClosed:
-				closed.Add(1)
-			}
-			s.emitFn(ctx, "scan:host", ScanHostEvent{ScanID: scanID, Row: row})
-			done.Add(1)
-		}(ipStr)
 	}
 
 	wg.Wait()
@@ -394,15 +417,17 @@ func buildTargets(specs []string) ([]net.IP, error) {
 }
 
 // rowFromProbe maps one probe outcome to the pinned result-row shape.
-// filtered vs closed is carried, never collapsed.
-func rowFromProbe(ip string, res SSHProbeResult) HostRow {
+// filtered vs closed is carried, never collapsed. The port that was actually
+// probed is stamped both into the top-level row.Port and (for ssh) SSHInfo.
+func rowFromProbe(ip string, port int, res SSHProbeResult) HostRow {
 	switch res.State {
 	case StateOpen:
 		return HostRow{
 			IP:    ip,
+			Port:  port,
 			State: HostStateSSH,
 			SSH: &SSHInfo{
-				Port:               DefaultSSHPort,
+				Port:               port,
 				Banner:             res.Banner,
 				Software:           parseSoftware(res.Banner),
 				HostKeyType:        res.KeyType,
@@ -410,10 +435,35 @@ func rowFromProbe(ip string, res SSHProbeResult) HostRow {
 			},
 		}
 	case StateClosed:
-		return HostRow{IP: ip, State: HostStateClosed}
+		return HostRow{IP: ip, Port: port, State: HostStateClosed}
 	default: // StateFiltered
-		return HostRow{IP: ip, State: HostStateFiltered}
+		return HostRow{IP: ip, Port: port, State: HostStateFiltered}
 	}
+}
+
+// normalizePorts maps a request's Ports to the actual probe list: empty/nil
+// means the backward-compatible default [22], and duplicates are dropped
+// (first occurrence kept, order preserved) so e.g. [22, 22, 2222] probes
+// exactly {22, 2222} — an IP is never dialed twice on the same port.
+func normalizePorts(reqPorts []int) []int {
+	if len(reqPorts) == 0 {
+		reqPorts = []int{DefaultSSHPort}
+	}
+	var out []int
+	for i := 0; i < len(reqPorts); i++ {
+		p := reqPorts[i]
+		seen := false
+		for j := 0; j < len(out); j++ {
+			if out[j] == p {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // parseSoftware extracts the software component from an SSH identification

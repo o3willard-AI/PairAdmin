@@ -43,8 +43,8 @@ export function useScanner() {
 // Helpers that drive a scan through the generated Start/Stop bindings (via the
 // store, which owns the status transitions). UI components call these without
 // touching the store's binding layer directly.
-export function startScan(targets: string[], maxProbes?: number) {
-  return useScannerStore.getState().startScan(targets, maxProbes);
+export function startScan(targets: string[], ports: number[], maxProbes?: number) {
+  return useScannerStore.getState().startScan(targets, ports, maxProbes);
 }
 
 export function stopScan() {

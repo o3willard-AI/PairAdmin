@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"runtime"
@@ -317,6 +318,160 @@ func TestScanService_InvalidTarget_EmitsScanErrorAsOnlyTerminalEvent(t *testing.
 	// Exactly one terminal event: no done, no cancelled for this scan.
 	if n := len(rec.eventsFor("scan:done")) + len(rec.eventsFor("scan:cancelled")); n != 0 {
 		t.Errorf("failed scan must emit only scan:error, saw %d other terminal events", n)
+	}
+}
+
+// Scan over an alternate SSH port: a host reachable on a non-22 port
+// (e.g. behind a NAT/port-forward) must be found, and BOTH the top-level
+// row port and ssh.port must carry the actually-probed port, not 22.
+// Mutation check: removing the per-port loop in run() (probing only
+// DefaultSSHPort, ignoring req.Ports) makes this test red — the row would
+// report port 22 instead of the requested alt port, and the dial would
+// target :22 rather than :22241.
+func TestScanService_AltPort_ProbesNonDefaultPort(t *testing.T) {
+	bannerAddr := startBannerListener(t, "SSH-2.0-test\r\n")
+	var dialed []string
+	withDialFunc(t, func(_, addr string, timeout time.Duration) (net.Conn, error) {
+		dialed = append(dialed, addr)
+		return net.DialTimeout("tcp", bannerAddr, timeout)
+	})
+	// Hermetic host-key probe (as in the happy path).
+	origSSH := DialFunc
+	DialFunc = func(_ string, _ string, _ *ssh.ClientConfig) (*ssh.Client, error) {
+		return nil, errors.New("no ssh handshake in this test")
+	}
+	t.Cleanup(func() { DialFunc = origSSH })
+
+	rec := &emitRecorder{}
+	svc := NewScanService(config.AppConfig{ScannerEnabled: true}, rec.emit)
+
+	if _, err := svc.Start(ScanRequest{Targets: []string{"127.0.0.1/32"}, Ports: []int{22241}}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	row := hostRow(t, rec.waitFor(t, "scan:host", 5*time.Second))
+	if row.State != HostStateSSH {
+		t.Fatalf("expected state ssh, got %q", row.State)
+	}
+	if row.Port != 22241 {
+		t.Errorf("expected top-level row port 22241, got %d", row.Port)
+	}
+	if row.SSH == nil || row.SSH.Port != 22241 {
+		t.Errorf("expected ssh.port 22241, got %v", row.SSH)
+	}
+	// The sweep must have actually dialed the alt port (not 22).
+	hit := false
+	for i := 0; i < len(dialed); i++ {
+		if strings.HasSuffix(dialed[i], ":22241") {
+			hit = true
+		}
+	}
+	if !hit {
+		t.Error("never dialed the alternate port :22241")
+	}
+	done := rec.waitFor(t, "scan:done", 5*time.Second)
+	if ev := done.data[0].(ScanDoneEvent); ev.Stats.Total != 1 {
+		t.Errorf("single alt port over 1 target: expected total 1, got %d", ev.Stats.Total)
+	}
+}
+
+// Default (no Ports) keeps the backward-compatible behaviour: probe 22 only,
+// total == len(targets).
+func TestScanService_DefaultPorts_ProbesPort22Only(t *testing.T) {
+	bannerAddr := startBannerListener(t, "SSH-2.0-test\r\n")
+	var dialed []string
+	withDialFunc(t, func(_, addr string, timeout time.Duration) (net.Conn, error) {
+		dialed = append(dialed, addr)
+		return net.DialTimeout("tcp", bannerAddr, timeout)
+	})
+	origSSH := DialFunc
+	DialFunc = func(_ string, _ string, _ *ssh.ClientConfig) (*ssh.Client, error) {
+		return nil, errors.New("no ssh handshake in this test")
+	}
+	t.Cleanup(func() { DialFunc = origSSH })
+
+	rec := &emitRecorder{}
+	svc := NewScanService(config.AppConfig{ScannerEnabled: true}, rec.emit)
+
+	if _, err := svc.Start(ScanRequest{Targets: []string{"127.0.0.1/32"}}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	row := hostRow(t, rec.waitFor(t, "scan:host", 5*time.Second))
+	if row.Port != DefaultSSHPort {
+		t.Errorf("default ports must probe 22, got %d", row.Port)
+	}
+	for i := 0; i < len(dialed); i++ {
+		if !strings.HasSuffix(dialed[i], ":22") {
+			t.Errorf("default probe hit a non-22 port: %q", dialed[i])
+		}
+	}
+	done := rec.waitFor(t, "scan:done", 5*time.Second)
+	if ev := done.data[0].(ScanDoneEvent); ev.Stats.Total != 1 {
+		t.Errorf("default: total must equal len(targets) = 1, got %d", ev.Stats.Total)
+	}
+}
+
+// Multi-port sweep over a single target: total == len(targets) * len(ports),
+// and a scan:host row is emitted per (ip, port).
+func TestScanService_MultiPort_TotalAndRows(t *testing.T) {
+	bannerAddr := startBannerListener(t, "SSH-2.0-test\r\n")
+	withDialFunc(t, func(_, _ string, timeout time.Duration) (net.Conn, error) {
+		return net.DialTimeout("tcp", bannerAddr, timeout)
+	})
+	origSSH := DialFunc
+	DialFunc = func(_ string, _ string, _ *ssh.ClientConfig) (*ssh.Client, error) {
+		return nil, errors.New("no ssh handshake in this test")
+	}
+	t.Cleanup(func() { DialFunc = origSSH })
+
+	rec := &emitRecorder{}
+	svc := NewScanService(config.AppConfig{ScannerEnabled: true}, rec.emit)
+
+	if _, err := svc.Start(ScanRequest{Targets: []string{"127.0.0.1/32"}, Ports: []int{2222, 22241}}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	done := rec.waitFor(t, "scan:done", 5*time.Second)
+	if ev := done.data[0].(ScanDoneEvent); ev.Stats.Total != 2 {
+		t.Errorf("2 ports x 1 target: expected total 2, got %d", ev.Stats.Total)
+	}
+	rows := rec.eventsFor("scan:host")
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 scan:host rows (one per port), got %d", len(rows))
+	}
+	gotPorts := make(map[string]bool)
+	for i := 0; i < len(rows); i++ {
+		r := hostRow(t, rows[i])
+		gotPorts[fmt.Sprintf("%d", r.Port)] = true
+		if r.SSH == nil || r.SSH.Port != r.Port {
+			t.Errorf("ssh row port mismatch: row %d ssh %v", r.Port, r.SSH)
+		}
+	}
+	if !gotPorts["2222"] || !gotPorts["22241"] {
+		t.Error("multi-port rows must cover every requested port")
+	}
+}
+
+// normalizePorts: empty -> [22]; duplicates dropped preserving first order.
+func TestNormalizePorts(t *testing.T) {
+	for _, tc := range []struct {
+		in        []int
+		want      []int
+		wantLabel string
+	}{{[]int{}, []int{22}, "empty"},
+		{[]int{DefaultSSHPort}, []int{22}, "default"},
+		{[]int{2222}, []int{2222}, "single alt"},
+		{[]int{22, 22, 2222}, []int{22, 2222}, "dedupe"},
+		{[]int{2222, 22, 2222, 443}, []int{2222, 22, 443}, "dedupe order"}} {
+		got := normalizePorts(tc.in)
+		if len(got) != len(tc.want) {
+			t.Errorf("%s: expected len %d, got %d", tc.wantLabel, len(tc.want), len(got))
+			continue
+		}
+		for i := 0; i < len(got); i++ {
+			if got[i] != tc.want[i] {
+				t.Errorf("%s: expected %+v, got %+v", tc.wantLabel, tc.want, got)
+				break
+			}
+		}
 	}
 }
 
