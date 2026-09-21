@@ -204,6 +204,12 @@ jobs:
           hdiutil detach "/Volumes/PairAdmin"
           hdiutil convert "PairAdmin-tmp.dmg" -format UDZO -o "PairAdmin-universal.dmg"
           rm -f "PairAdmin-tmp.dmg"
+          # Sign the .dmg container itself so Gatekeeper (spctl -a) has a
+          # signature to assess -- the .app inside is signed, but an unsigned
+          # .dmg reports "no usable signature" under spctl even after
+          # notarization + staple.
+          codesign --force --sign "Developer ID Application: Stephen Blankenship (Y34F3ZH6XY)" --timestamp PairAdmin-universal.dmg
+          codesign --verify --verbose PairAdmin-universal.dmg
 
       - name: Notarize and staple .dmg
         env:
