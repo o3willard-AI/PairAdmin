@@ -318,11 +318,22 @@ func (s *ScanService) run(scanID string, ctx context.Context, cancel context.Can
 	})
 }
 
+// localNetsFn is the injectable seam for local-network discovery; tests
+// swap it to simulate a host with no discoverable IPv4 /24 networks.
+var localNetsFn = NewLocalNetsFeeder
+
 // buildTargets drains the configured feeders into one flat target list.
-// An empty spec discovers the local /24 networks via LocalNetsFeeder.
+// An empty spec discovers the local /24 networks via LocalNetsFeeder. A
+// discovery failure (e.g. a host with no active IPv4 network) is returned
+// as an error — a target-build failure is fatal for the scan and reported
+// via scan:error, NEVER a panic for the whole app.
 func buildTargets(specs []string) ([]net.IP, error) {
 	if len(specs) == 0 {
-		return Collect(mustFeeder(NewLocalNetsFeeder()))
+		f, err := localNetsFn()
+		if err != nil {
+			return nil, err
+		}
+		return Collect(f)
 	}
 
 	var out []net.IP
@@ -349,13 +360,6 @@ func buildTargets(specs []string) ([]net.IP, error) {
 		out = append(out, ips...)
 	}
 	return out, nil
-}
-
-func mustFeeder(f IPFeeder, err error) IPFeeder {
-	if err != nil {
-		panic(err)
-	}
-	return f
 }
 
 // rowFromProbe maps one probe outcome to the pinned result-row shape.
