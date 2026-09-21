@@ -1,7 +1,6 @@
 package services
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"pairadmin/services/config"
+	"pairadmin/services/scanner"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -182,32 +182,19 @@ func (e *UnknownHostKeyError) Error() string {
 	return fmt.Sprintf("unrecognized host key for %s (%s %s) — accept it before connecting", e.HostPort, e.KeyType, e.Fingerprint)
 }
 
-// errHostKeyCaptured is a sentinel used only to abort probeHostKey's
-// handshake immediately after the host key becomes available, before any
-// authentication is attempted — probing a host's key should never risk
-// triggering an auth-failure lockout on the remote server.
-var errHostKeyCaptured = errors.New("host key captured")
-
 // probeHostKey connects just far enough to observe the remote host's SSH key
 // and reports its type/fingerprint, without attempting authentication or
 // leaving a session open. Used by PTYService.CheckHostKeyTrust so the
 // frontend can show a real fingerprint in its accept/reject prompt before
 // the actual (authenticating) connection is attempted.
+//
+// The implementation (and its injectable ssh dial seam, scanner.DialFunc)
+// lives in services/scanner — shared with the network scanner so both probe
+// a host's key through one code path. This wrapper keeps the services-level
+// call sites unchanged. services may import services/scanner; scanner never
+// imports back, so no cycle.
 func probeHostKey(host string, port int) (keyType, fingerprint string, err error) {
-	cfg := &ssh.ClientConfig{
-		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
-			keyType = key.Type()
-			fingerprint = ssh.FingerprintSHA256(key)
-			return errHostKeyCaptured
-		},
-		Timeout: 10 * time.Second,
-	}
-	addr := hostPortKey(host, port)
-	_, dialErr := sshDialFunc("tcp", addr, cfg)
-	if fingerprint == "" {
-		return "", "", fmt.Errorf("failed to reach %s: %w", addr, dialErr)
-	}
-	return keyType, fingerprint, nil
+	return scanner.ProbeHostKey(host, port)
 }
 
 // openSSHTerminal dials the remote host and opens a real interactive PTY shell
