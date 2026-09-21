@@ -107,4 +107,84 @@ describe("MasterPasswordDialog", () => {
     expect(await screen.findByText("keychain unavailable")).toBeInTheDocument();
     expect(onSuccess).not.toHaveBeenCalled();
   });
+
+  it("renders the Retry OS Keychain button below the form in both modes", () => {
+    const { unmount } = render(
+      <MasterPasswordDialog open mode="set" onSuccess={vi.fn()} onRetryOSKeychain={vi.fn()} />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Retry OS Keychain" }),
+    ).toBeInTheDocument();
+    unmount();
+    render(
+      <MasterPasswordDialog open mode="unlock" onSuccess={vi.fn()} onRetryOSKeychain={vi.fn()} />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Retry OS Keychain" }),
+    ).toBeInTheDocument();
+  });
+
+  it("clicking Retry OS Keychain re-invokes onRetryOSKeychain and the parent proceeds on false (dismiss)", async () => {
+    const user = userEvent.setup();
+    const onRetryOSKeychain = vi.fn().mockResolvedValue(false); // keychain now available
+    render(
+      <MasterPasswordDialog open mode="unlock" onSuccess={vi.fn()} onRetryOSKeychain={onRetryOSKeychain} />,
+    );
+    await user.click(screen.getByRole("button", { name: "Retry OS Keychain" }));
+    // Mutation check: deleting the button's onClick wiring means onRetryOSKeychain
+    // is never invoked, so this assertion fails.
+    await waitFor(() => expect(onRetryOSKeychain).toHaveBeenCalledTimes(1));
+    // false => keychain is available => parent proceeds; the transient
+    // "Checking" state is cleared and no "still needs" message is shown.
+    await waitFor(() =>
+      expect(screen.queryByText(/Checking OS keychain/)).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/No OS keychain detected/)).not.toBeInTheDocument();
+  });
+
+  it("shows a Checking state while the retry is in flight and disables the button", async () => {
+    const user = userEvent.setup();
+    let resolveRetry!: (v: boolean) => void;
+    const onRetryOSKeychain = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveRetry = resolve;
+        }),
+    );
+    render(
+      <MasterPasswordDialog open mode="set" onSuccess={vi.fn()} onRetryOSKeychain={onRetryOSKeychain} />,
+    );
+    await user.click(screen.getByRole("button", { name: "Retry OS Keychain" }));
+    expect(screen.getByText(/Checking OS keychain/)).toBeInTheDocument();
+    // Disabled while the probe runs.
+    expect(screen.getByRole("button", { name: /Checking OS keychain/ })).toBeDisabled();
+    resolveRetry(false);
+    await waitFor(() =>
+      expect(screen.queryByText(/Checking OS keychain/)).not.toBeInTheDocument(),
+    );
+  });
+
+  it("when onRetryOSKeychain resolves true the dialog stays open and the message is shown", async () => {
+    const user = userEvent.setup();
+    const onRetryOSKeychain = vi.fn().mockResolvedValue(true); // still unavailable
+    render(
+      <MasterPasswordDialog open mode="unlock" onSuccess={vi.fn()} onRetryOSKeychain={onRetryOSKeychain} />,
+    );
+    await user.click(screen.getByRole("button", { name: "Retry OS Keychain" }));
+    expect(await screen.findByText(/No OS keychain detected/)).toBeInTheDocument();
+    // Dialog still open: the title and inputs remain on screen.
+    expect(screen.getByText("Unlock PairAdmin")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry OS Keychain" })).toBeInTheDocument();
+  });
+
+  it("a failed retry probe is treated as still-needing and shown, not a crash", async () => {
+    const user = userEvent.setup();
+    const onRetryOSKeychain = vi.fn().mockRejectedValue(new Error("transport down"));
+    render(
+      <MasterPasswordDialog open mode="unlock" onSuccess={vi.fn()} onRetryOSKeychain={onRetryOSKeychain} />,
+    );
+    await user.click(screen.getByRole("button", { name: "Retry OS Keychain" }));
+    expect(await screen.findByText(/Could not re-check the OS keychain/)).toBeInTheDocument();
+    expect(screen.getByText("Unlock PairAdmin")).toBeInTheDocument();
+  });
 });

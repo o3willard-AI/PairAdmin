@@ -29,6 +29,30 @@ function App() {
     setGate("ready");
   }, []);
 
+  // User asks to re-probe the OS keychain after a transient detection failure.
+  // NeedsMasterPassword() re-opens + re-probes the keychain fresh on every call
+  // (it does NOT cache), so this is just a second invocation. Returns `true` =
+  // the keychain is still unavailable (keep the dialog open + show a message);
+  // `false` = now available (proceed exactly like the normal gate-pass path).
+  const handleRetryOSKeychain = useCallback(async (): Promise<boolean> => {
+    try {
+      const { NeedsMasterPassword } = await import(
+        /* @vite-ignore */ "../wailsjs/go/services/SettingsService"
+      );
+      const needs = await NeedsMasterPassword();
+      if (!needs) {
+        await loadAndProceed();
+        return false;
+      }
+      return true;
+    } catch (err) {
+      // A failure to even run the check is treated as "still needs the
+      // password" and surfaced, not a crash.
+      console.warn("OS keychain re-check failed; treating as still needing a password", err);
+      return true;
+    }
+  }, [loadAndProceed]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -65,7 +89,12 @@ function App() {
         <ChatPane />
       </ThreeColumnLayout>
       {gate === "password" && (
-        <MasterPasswordDialog open mode={gateMode} onSuccess={() => void loadAndProceed()} />
+        <MasterPasswordDialog
+          open
+          mode={gateMode}
+          onSuccess={() => void loadAndProceed()}
+          onRetryOSKeychain={handleRetryOSKeychain}
+        />
       )}
     </>
   );
