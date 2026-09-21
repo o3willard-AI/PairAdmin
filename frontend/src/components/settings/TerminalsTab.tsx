@@ -19,6 +19,7 @@ export function TerminalsTab() {
     DEFAULT_COMMANDS_SIDEBAR_WIDTH_CH
   );
   const [promptNewHostKeys, setPromptNewHostKeys] = useState(false);
+  const [scannerEnabled, setScannerEnabled] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
@@ -32,6 +33,9 @@ export function TerminalsTab() {
         if (cfg.TerminalsSidebarWidthCh) setTerminalsSidebarWidthCh(cfg.TerminalsSidebarWidthCh);
         if (cfg.CommandsSidebarWidthCh) setCommandsSidebarWidthCh(cfg.CommandsSidebarWidthCh);
         setPromptNewHostKeys(!!cfg.PromptNewHostKeys);
+        // Default to enabled when absent (scanner_enabled defaults to true in
+        // services/config/config.go).
+        setScannerEnabled(cfg.ScannerEnabled === undefined ? true : cfg.ScannerEnabled);
       })
       .catch(() => {});
   }, []);
@@ -45,6 +49,7 @@ export function TerminalsTab() {
         TerminalsSidebarWidthCh: clamp(terminalsSidebarWidthCh, 10, 80),
         CommandsSidebarWidthCh: clamp(commandsSidebarWidthCh, 10, 80),
         PromptNewHostKeys: promptNewHostKeys,
+        ScannerEnabled: scannerEnabled,
       });
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
@@ -146,6 +151,23 @@ export function TerminalsTab() {
             presenting a different key is always refused, regardless of this
             setting. Turn this on if your security team wants to review and accept
             each new host's fingerprint explicitly.
+          </span>
+        </span>
+      </label>
+
+      <label className="flex items-start gap-2 text-xs text-surface-text-muted">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={scannerEnabled}
+          onChange={(e) => setScannerEnabled(e.target.checked)}
+        />
+        <span>
+          Network scanner
+          <span className="block text-surface-text-muted/80">
+            On by default: shows the Network panel in the terminal sidebar,
+            where PairAdmin can sweep the local /24 networks for SSH hosts.
+            Turn this off to hide the panel and its entry point entirely.
           </span>
         </span>
       </label>

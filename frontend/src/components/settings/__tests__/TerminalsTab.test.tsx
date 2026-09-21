@@ -64,4 +64,28 @@ describe("TerminalsTab", () => {
     await user.tab(); // blur
     expect(input).toHaveValue(80);
   });
+
+  it("reflects the saved Network scanner toggle setting", async () => {
+    getSettings.mockResolvedValue({ ScannerEnabled: false });
+    render(<TerminalsTab />);
+    const toggle = await screen.findByRole("checkbox", { name: /Network scanner/ });
+    expect(toggle).not.toBeChecked();
+  });
+
+  it("saves the Network scanner toggle through the settings save path", async () => {
+    const user = userEvent.setup();
+    render(<TerminalsTab />);
+    const toggle = await screen.findByRole("checkbox", { name: /Network scanner/ });
+    expect(toggle).toBeChecked(); // "on" by default
+
+    await user.click(toggle); // turn it off
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ ScannerEnabled: false })
+    );
+    // Mutation check: dropping ScannerEnabled from handleSave's merge (or from
+    // the toggle's wiring) makes this fail — turning the toggle off would never
+    // persist, so the Network panel could not be hidden.
+  });
 });

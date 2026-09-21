@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import userEvent from "@testing-library/user-event";
 import { NewTerminalDialog } from "@/components/terminal/NewTerminalDialog";
@@ -1010,5 +1010,40 @@ describe("NewTerminalDialog", () => {
       // Mutation check: if Enter from a checkbox or the auth <select> were
       // allowed through handleFormKeyDown, openRemoteTerminal would fire here.
     });
+  });
+
+  it("opens on the connection form pre-filled when given an initial SSH target", async () => {
+    render(
+      <NewTerminalDialog
+        open={true}
+        initial={{ kind: "ssh", host: "10.0.0.5", port: 22 }}
+        onClose={vi.fn()}
+      />
+    );
+    // The pre-fill jumps straight to the connection form (not the type
+    // picker), so the Connect button and the pre-filled Host input appear.
+    expect(await screen.findByRole("button", { name: /^connect$/i })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("10.0.0.5")).toBeInTheDocument();
+  });
+
+  it("does not auto-connect or bypass host-key trust when pre-filled", async () => {
+    render(
+      <NewTerminalDialog
+        open={true}
+        initial={{ kind: "ssh", host: "10.0.0.5", port: 22 }}
+        onClose={vi.fn()}
+      />
+    );
+    await screen.findByRole("button", { name: /^connect$/i });
+    // Let any async on-open effect settle before asserting nothing connected.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(openRemoteTerminal).not.toHaveBeenCalled();
+    expect(checkHostKeyTrust).not.toHaveBeenCalled();
+    // Mutation check: if the pre-fill path automatically dialed the connection
+    // or probed trust on open, these would fire with zero user action. The
+    // dialog must wait for the user to complete the form and click Connect —
+    // pairing the discovered host with a target never accepts a key on its own.
   });
 });

@@ -141,6 +141,7 @@ export namespace config {
 	    CommandsSidebarWidthCh: number;
 	    PinnedCommands: PinnedCommand[];
 	    PromptNewHostKeys: boolean;
+	    ScannerEnabled: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppConfig(source);
@@ -170,6 +171,7 @@ export namespace config {
 	        this.CommandsSidebarWidthCh = source["CommandsSidebarWidthCh"];
 	        this.PinnedCommands = this.convertValues(source["PinnedCommands"], PinnedCommand);
 	        this.PromptNewHostKeys = source["PromptNewHostKeys"];
+	        this.ScannerEnabled = source["ScannerEnabled"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
