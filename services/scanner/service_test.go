@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -398,4 +399,42 @@ func waitGoroutinesDrain(t *testing.T, base int, timeout time.Duration) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("goroutines did not drain back to baseline %d (now %d)", base, goroutineCount())
+}
+
+func TestScanService_LocalNetsDiscoveryFailure_EmitsScanErrorNotPanic(t *testing.T) {
+	// Swap the local-network discovery seam to simulate a host with no
+	// discoverable IPv4 /24 networks (e.g. no active IPv4 interface).
+	orig := localNetsFn
+	localNetsFn = func() (*LocalNetsFeeder, error) {
+		return nil, errors.New("no local networks")
+	}
+	t.Cleanup(func() { localNetsFn = orig })
+
+	rec := &emitRecorder{}
+	svc := NewScanService(config.AppConfig{ScannerEnabled: true}, rec.emit)
+
+	// Start with empty Targets triggers local-network discovery inside the
+	// scan goroutine. The failure must surface as scan:error — a target
+	// build failure is fatal for the SCAN, never a panic for the app.
+	// Mutation check: re-introducing mustFeeder's panic (removing the
+	// `return nil, err` propagation in buildTargets) makes this test crash
+	// with an unrecovered panic instead of recording scan:error — proving
+	// the error propagation is load-bearing.
+	scanID, err := svc.Start(ScanRequest{})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	errEv := rec.waitFor(t, "scan:error", 5*time.Second)
+	ev := errEv.data[0].(ScanErrorEvent)
+	if ev.ScanID != scanID {
+		t.Errorf("scan:error scanID %q != %q", ev.ScanID, scanID)
+	}
+	if !strings.Contains(ev.Message, "no local networks") {
+		t.Errorf("scan:error should carry the discovery failure, got %q", ev.Message)
+	}
+	// scan:error is the ONLY terminal event for this scan.
+	if n := len(rec.eventsFor("scan:done")) + len(rec.eventsFor("scan:cancelled")); n != 0 {
+		t.Errorf("failed scan must emit only scan:error, saw %d other terminal events", n)
+	}
 }
