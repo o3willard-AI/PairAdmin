@@ -49,7 +49,7 @@ export function TerminalPreview({ tabId, adapterStatus }: TerminalPreviewProps) 
       fontSize: 13,
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
       scrollback: 1000,
-      convertEol: true,
+      convertEol: false, // bare-LF inside a scroll region must not reset column; true corrupted cursor tracking for curses programs (vi/less/top) — see docs/bugfix-writeups/vi-freeze-convertEol.md
       cursorBlink: true,
       cursorStyle: "bar",
       allowProposedApi: true,
