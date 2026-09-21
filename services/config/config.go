@@ -115,6 +115,11 @@ type AppConfig struct {
 	// presenting a DIFFERENT key is always rejected — that check is the
 	// actual MITM defense and isn't affected by this setting.
 	PromptNewHostKeys bool `mapstructure:"prompt_new_host_keys" yaml:"prompt_new_host_keys"`
+	// ScannerEnabled turns the network-scanner feature on or off. Defaults to
+	// true. The scanner's entry points consult services/scanner's scanAllowed
+	// seam, which honors this field for the default (non-forked) build — see that
+	// seam for how an Enterprise fork force-disables scanning.
+	ScannerEnabled bool `mapstructure:"scanner_enabled" yaml:"scanner_enabled"`
 }
 
 // DefaultHotkeyAddClipboardCommand is the out-of-the-box binding for
@@ -247,6 +252,7 @@ func LoadAppConfig() (*AppConfig, error) {
 	v.SetDefault("terminals_sidebar_width_ch", DefaultTerminalsSidebarWidthCh)
 	v.SetDefault("commands_sidebar_width_ch", DefaultCommandsSidebarWidthCh)
 	v.SetDefault("prompt_new_host_keys", false)
+	v.SetDefault("scanner_enabled", true)
 	// Missing config file is not an error — returns defaults.
 	_ = v.ReadInConfig()
 	var cfg AppConfig
@@ -289,5 +295,6 @@ func SaveAppConfig(cfg *AppConfig) error {
 	v.Set("commands_sidebar_width_ch", cfg.CommandsSidebarWidthCh)
 	v.Set("pinned_commands", cfg.PinnedCommands)
 	v.Set("prompt_new_host_keys", cfg.PromptNewHostKeys)
+	v.Set("scanner_enabled", cfg.ScannerEnabled)
 	return v.WriteConfigAs(configPath())
 }
