@@ -236,6 +236,7 @@ export namespace memguard {
 	export class ScanRequest {
 	    targets: Array<string>;
 	    maxProbes: number;
+	    ports: Array<number>;
 	
 	    static createFrom(source: any = {}) {
 	        return new ScanRequest(source);
@@ -245,6 +246,7 @@ export namespace memguard {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.targets = source["Targets"];
 	        this.maxProbes = source["MaxProbes"];
+	        this.ports = source["Ports"];
 	    }
 	}
 	

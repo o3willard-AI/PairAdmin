@@ -124,9 +124,13 @@ describe("useScanner", () => {
     mockStart.mockResolvedValue("scan-abc");
     let result: string | null | undefined;
     await act(async () => {
-      result = await startScan(["10.0.0.0/24"], 16);
+      result = await startScan(["10.0.0.0/24"], [22, 2222], 16);
     });
-    expect(mockStart).toHaveBeenCalledWith({ targets: ["10.0.0.0/24"], maxProbes: 16 });
+    expect(mockStart).toHaveBeenCalledWith({
+      targets: ["10.0.0.0/24"],
+      ports: [22, 2222],
+      maxProbes: 16,
+    });
     expect(result).toBe("scan-abc");
     expect(useScannerStore.getState().status).toBe("scanning");
   });
