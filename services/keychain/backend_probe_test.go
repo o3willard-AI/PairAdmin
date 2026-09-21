@@ -4,10 +4,18 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/99designs/keyring"
 )
+
+// init routes probe diagnostics to the null device for every test in this
+// package by default. Without it, the existing probe-backend tests would
+// create a stray keychain_debug.log in the package directory on every run.
+// Tests that need to inspect the log redirect keychainLogPath locally (and
+// restore it via t.Cleanup).
+func init() { keychainLogPath = os.DevNull }
 
 // errorKeyring is a configurable mock: each operation fails with err when
 // its fail* flag is set, and succeeds (Get -> ErrKeyNotFound, others -> nil)
@@ -301,4 +309,60 @@ func (c corruptReadKeyring) Set(keyring.Item) error { return nil }
 func (c corruptReadKeyring) Remove(string) error    { return nil }
 func (c corruptReadKeyring) Keys() ([]string, error) {
 	return []string{}, nil
+}
+
+// TestProbeBackend_LogsFailureDiagnostics verifies the observability this
+// change exists for: when the canary probe fails, a diagnostic line naming
+// the failed call (and the backend's error) is appended to the probe log —
+// so a transient Windows "no OS keychain available" is finally observable.
+func TestProbeBackend_LogsFailureDiagnostics(t *testing.T) {
+	tests := []struct {
+		name     string
+		kr       keyring.Keyring
+		wantLine string // substring the diagnostic must contain
+	}{
+		{
+			name:     "Set failure names the call and the backend error",
+			kr:       &errorKeyring{err: errors.New("Object does not exist at path /"), failSet: true},
+			wantLine: "probe Set failed",
+		},
+		{
+			name:     "read-back (Get) failure names the call and the backend error",
+			kr:       &errorKeyring{err: errors.New("read-back failed"), failGet: true},
+			wantLine: "probe Get (read-back) failed",
+		},
+		{
+			name:     "read-back data mismatch is called out",
+			kr:       &corruptReadKeyring{data: "something-else"},
+			wantLine: "probe read-back data mismatch",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logFile := filepath.Join(t.TempDir(), "keychain-debug.log")
+			orig := keychainLogPath
+			keychainLogPath = logFile
+			t.Cleanup(func() { keychainLogPath = orig })
+
+			if got := probeBackend(tt.kr); got {
+				t.Fatalf("probeBackend() = true with failing keyring, want false")
+			}
+
+			data, err := os.ReadFile(logFile)
+			if err != nil {
+				t.Fatalf("read probe log: %v", err)
+			}
+			line := string(data)
+			if !strings.Contains(line, tt.wantLine) {
+				t.Errorf("probe log = %q, want it to name %q", line, tt.wantLine)
+			}
+			if !strings.Contains(line, "pairadmin_probe") {
+				t.Errorf("probe log = %q, want it to name the canary key", line)
+			}
+			// Mutation check: removing a logProbe(...) call from probeBackend's
+			// failure branch empties the log for that case, so the assertions
+			// above fail — the diagnostic would silently vanish again.
+		})
+	}
 }

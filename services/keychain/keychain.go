@@ -107,16 +107,32 @@ const probeKey = "pairadmin_probe"
 // probing just surfaces it at startup instead of at first save.
 func probeBackend(kr keyring.Keyring) bool {
 	if kr == nil {
+		logProbe("probe failed before it began: keyring is nil")
 		return false
 	}
 	if err := kr.Set(keyring.Item{Key: probeKey, Data: []byte(ServiceName)}); err != nil {
+		// Observability only — see probe_debug.go. The Win32 / D-Bus error the
+		// backend returned is the whole point: the reason NeedsMasterPassword
+		// flipped to true is otherwise silently discarded.
+		logProbe(fmt.Sprintf("probe Set failed on canary key %q: %v", probeKey, err))
 		return false
 	}
-	defer func() { _ = kr.Remove(probeKey) }()
+	defer func() {
+		if err := kr.Remove(probeKey); err != nil {
+			logProbe(fmt.Sprintf("probe Remove (cleanup) failed on canary key %q: %v", probeKey, err))
+		}
+	}()
 	item, err := kr.Get(probeKey)
-	if err != nil || string(item.Data) != ServiceName {
+	if err != nil {
+		logProbe(fmt.Sprintf("probe Get (read-back) failed on canary key %q: %v", probeKey, err))
 		return false
 	}
+	if string(item.Data) != ServiceName {
+		// Never log the read-back Data itself — only that it did not match.
+		logProbe(fmt.Sprintf("probe read-back data mismatch on canary key %q: read-back data did not match expected marker", probeKey))
+		return false
+	}
+	logProbe("probe OK: canary Set/Get/Remove round-trip succeeded")
 	return true
 }
 
