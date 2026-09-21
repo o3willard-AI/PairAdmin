@@ -8,6 +8,9 @@ export default defineConfig({
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
   },
+  build: {
+    minify: "terser",
+  },
   test: {
     environment: "jsdom",
     globals: true,
