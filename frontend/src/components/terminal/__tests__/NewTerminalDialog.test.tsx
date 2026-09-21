@@ -902,4 +902,113 @@ describe("NewTerminalDialog", () => {
       expect(screen.queryByText("Host")).not.toBeInTheDocument();
     });
   });
+
+  describe("dark-mode focus visibility + Enter-to-connect", () => {
+    it("applies a visible focus-visible ring to the form's checkboxes and the Back/Connect buttons", async () => {
+      const user = userEvent.setup();
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+      await user.click(screen.getByText("Unix / Linux (SSH)"));
+
+      // The bare `<input type=checkbox>` elements had no focus indicator at
+      // all — assert they now carry the shared focus-visible ring.
+      const saveBox = screen.getByLabelText("Save Terminal") as HTMLInputElement;
+      expect(saveBox.className).toContain("focus-visible:ring-2");
+      await user.click(saveBox);
+      const tmuxBox = screen.getByLabelText("Use tmux if available") as HTMLInputElement;
+      expect(tmuxBox.className).toContain("focus-visible:ring-2");
+
+      // So do the Back and Connect buttons that lacked any focus style.
+      expect(screen.getByText("Back").className).toContain("focus-visible:ring-2");
+      expect(screen.getByText("Connect").className).toContain("focus-visible:ring-2");
+
+      // Mutation check: removing `focus-visible:ring-2` from focusRingClass
+      // (or dropping it from one of these classNames) fails every assertion
+      // above — tabbed focus on these elements would again be invisible.
+    });
+
+    it("applies the focus-visible ring to the WinRM TLS and skip-verify checkboxes", async () => {
+      const user = userEvent.setup();
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+      await user.click(screen.getByText("Remote Windows (WinRM)"));
+
+      const tlsBox = screen.getByLabelText("Use TLS") as HTMLInputElement;
+      expect(tlsBox.className).toContain("focus-visible:ring-2");
+      const skipBox = screen.getByLabelText(/skip certificate verification/i) as HTMLInputElement;
+      expect(skipBox.className).toContain("focus-visible:ring-2");
+
+      // Mutation check: same as above — removing the ring class fails this.
+    });
+
+    it("pressing Enter in a form text input connects when host and username are set", async () => {
+      const user = userEvent.setup();
+      openRemoteTerminal.mockResolvedValue("ssh:enter-resolved");
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await user.click(screen.getByText("Unix / Linux (SSH)"));
+      await user.type(screen.getByPlaceholderText("10.0.1.5"), "10.0.1.5");
+      const usernameInput = screen.getByText("Username").parentElement?.querySelector(
+        "input"
+      ) as HTMLInputElement;
+      await user.type(usernameInput, "ubuntu");
+      const passwordInput = screen
+        .getByText("Password", { selector: "label" })
+        .parentElement?.querySelector("input") as HTMLInputElement;
+      await user.type(passwordInput, "s3cret{Enter}");
+
+      await vi.waitFor(() => expect(openRemoteTerminal).toHaveBeenCalledTimes(1));
+      const [, params] = openRemoteTerminal.mock.calls[0];
+      expect(params).toMatchObject({ host: "10.0.1.5", username: "ubuntu", password: "s3cret" });
+      // Mutation check: removing the form's onKeyDown Enter handler (or the
+      // host/username gate inside it) means pressing Enter never dials here.
+    });
+
+    it("pressing Enter in the form does NOT connect when host or username is missing", async () => {
+      const user = userEvent.setup();
+      const onClose = vi.fn();
+      render(<NewTerminalDialog open={true} onClose={onClose} />);
+
+      await user.click(screen.getByText("Unix / Linux (SSH)"));
+      // Host only — username stays blank, so the button's own condition is unmet.
+      await user.type(screen.getByPlaceholderText("10.0.1.5"), "10.0.1.5");
+      const passwordInput = screen
+        .getByText("Password", { selector: "label" })
+        .parentElement?.querySelector("input") as HTMLInputElement;
+      await user.type(passwordInput, "s3cret{Enter}");
+
+      // If the Enter handler ignored the host/username gate it would flip the
+      // button to "Connecting..." synchronously and dial — neither happens.
+      expect(screen.queryByText("Connecting...")).not.toBeInTheDocument();
+      expect(openRemoteTerminal).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      // Mutation check: deleting the `!host || !username` early-return from
+      // handleFormKeyDown makes openRemoteTerminal get called -> fails.
+    });
+
+    it("pressing Enter on a checkbox or the auth select does NOT connect", async () => {
+      const user = userEvent.setup();
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await user.click(screen.getByText("Unix / Linux (SSH)"));
+      await user.type(screen.getByPlaceholderText("10.0.1.5"), "10.0.1.5");
+      const usernameInput = screen.getByText("Username").parentElement?.querySelector(
+        "input"
+      ) as HTMLInputElement;
+      await user.type(usernameInput, "ubuntu");
+
+      // Host + username are both set, so a stray Enter on a non-text control
+      // would connect if the handler didn't exclude them.
+      const authSelect = screen.getByRole("combobox");
+      await user.click(authSelect);
+      await user.keyboard("{Enter}");
+      expect(openRemoteTerminal).not.toHaveBeenCalled();
+
+      const saveBox = screen.getByLabelText("Save Terminal") as HTMLInputElement;
+      await user.click(saveBox);
+      await user.keyboard("{Enter}");
+      expect(openRemoteTerminal).not.toHaveBeenCalled();
+
+      // Mutation check: if Enter from a checkbox or the auth <select> were
+      // allowed through handleFormKeyDown, openRemoteTerminal would fire here.
+    });
+  });
 });
