@@ -902,4 +902,83 @@ describe("NewTerminalDialog", () => {
       expect(screen.queryByText("Host")).not.toBeInTheDocument();
     });
   });
+
+  it("adds a visible focus-visible ring to the checkboxes and Back/Connect buttons (mutation: removing the class fails this test)", async () => {
+    const user = userEvent.setup();
+    render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+    await user.click(screen.getByText("Unix / Linux (SSH)"));
+
+    // The form's Connect and Back buttons carry the keyboard-focus ring.
+    const connectButton = screen.getByText("Connect", { selector: "button" });
+    expect(connectButton.className).toContain("focus-visible:ring-ring/50");
+    expect(connectButton.className).toContain("focus-visible:ring-3");
+    expect(screen.getByText("Back", { selector: "button" }).className).toContain(
+      "focus-visible:ring-ring/50"
+    );
+
+    // So do the checkboxes visible in the default SSH form.
+    const saveCheckbox = screen.getByLabelText("Save Terminal") as HTMLInputElement;
+    expect(saveCheckbox.className).toContain("focus-visible:ring-ring/50");
+  });
+
+  describe("Enter-to-connect", () => {
+    it("pressing Enter in the Password field connects when host + username are set", async () => {
+      const user = userEvent.setup();
+      openRemoteTerminal.mockResolvedValue("ssh:resolved-id");
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await user.click(screen.getByText("Unix / Linux (SSH)"));
+      await user.type(screen.getByPlaceholderText("10.0.1.5"), "10.0.1.5");
+      const usernameInput = screen.getByText("Username").parentElement?.querySelector(
+        "input"
+      ) as HTMLInputElement;
+      await user.type(usernameInput, "ubuntu");
+
+      const passwordInput = screen
+        .getByText("Password", { selector: "label" })
+        .parentElement?.querySelector("input") as HTMLInputElement;
+      await user.click(passwordInput);
+      await user.keyboard("{Enter}");
+
+      await vi.waitFor(() => expect(openRemoteTerminal).toHaveBeenCalledTimes(1));
+      const [, params] = openRemoteTerminal.mock.calls[0];
+      expect(params).toMatchObject({ kind: "ssh", host: "10.0.1.5", username: "ubuntu" });
+    });
+
+    it("pressing Enter does NOT connect when username is missing", async () => {
+      const user = userEvent.setup();
+      openRemoteTerminal.mockResolvedValue("ssh:resolved-id");
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await user.click(screen.getByText("Unix / Linux (SSH)"));
+      // Fill host but leave username empty — Enter must be a no-op.
+      await user.type(screen.getByPlaceholderText("10.0.1.5"), "10.0.1.5");
+      const emptyUsername = screen.getByText("Username").parentElement?.querySelector(
+        "input"
+      ) as HTMLInputElement;
+      await user.click(emptyUsername);
+      await user.keyboard("{Enter}");
+
+      expect(openRemoteTerminal).not.toHaveBeenCalled();
+    });
+
+    it("pressing Enter on a checkbox does NOT trigger connect even when the form is fillable", async () => {
+      const user = userEvent.setup();
+      openRemoteTerminal.mockResolvedValue("ssh:resolved-id");
+      render(<NewTerminalDialog open={true} onClose={vi.fn()} />);
+
+      await user.click(screen.getByText("Unix / Linux (SSH)"));
+      await user.type(screen.getByPlaceholderText("10.0.1.5"), "10.0.1.5");
+      const usernameInput = screen.getByText("Username").parentElement?.querySelector(
+        "input"
+      ) as HTMLInputElement;
+      await user.type(usernameInput, "ubuntu");
+
+      const saveCheckbox = screen.getByLabelText("Save Terminal") as HTMLInputElement;
+      await user.click(saveCheckbox);
+      // Enter on the now-focused checkbox toggles it but must NOT connect.
+      await user.keyboard("{Enter}");
+      expect(openRemoteTerminal).not.toHaveBeenCalled();
+    });
+  });
 });

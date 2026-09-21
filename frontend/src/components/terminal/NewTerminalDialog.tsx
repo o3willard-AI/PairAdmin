@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { wailsErrorMessage } from "@/utils/wailsError";
@@ -23,8 +23,18 @@ const RECENT_ALL_PAGE_SIZE = 20;
 const inputClass =
   "w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none";
 
+// Visible keyboard-focus ring for every interactive element in this dialog
+// that isn't a styled text input. Mirrors the :focus-visible ring pattern the
+// app's shared Button/scroll-bar components already use, so tabbing the
+// checkboxes and Back/Connect buttons is clearly visible in dark mode (the
+// theme `ring` token is a light zinc there). Applied to the checkboxes, the
+// Back/Connect/Accept & Connect/Reject/Prev/Next/Show All buttons, the type
+// cards, and the per-host Connect/forget buttons.
+const focusVisibleClass =
+  "focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:border-ring focus-visible:outline-none";
+
 const typeCardClass =
-  "w-full text-left px-4 py-3 rounded border border-surface-border-strong hover:bg-surface-2 text-sm text-surface-text transition-colors";
+  `w-full text-left px-4 py-3 rounded border border-surface-border-strong hover:bg-surface-2 text-sm text-surface-text transition-colors ${focusVisibleClass}`;
 
 // Mirrors defaultTmuxSessionName in services/remote_ssh.go — shown only as a
 // placeholder hint; the actual default is applied backend-side if left blank.
@@ -472,6 +482,20 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
       name: reconnectHost?.Name || undefined,
     });
 
+  const handleFormKeyDown = (e: KeyboardEvent) => {
+    // Enter-to-connect: only a text/number/… input in the form triggers it —
+    // Enter on a checkbox or the Authentication <select> must NOT connect. The
+    // gate mirrors the Connect button's own disabled condition (host + username
+    // present, not already connecting), so this never dials a half-filled form.
+    if (e.key !== "Enter") return;
+    const el = e.target as HTMLInputElement;
+    if (el.tagName?.toLowerCase() !== "input") return;
+    if (el.type === "checkbox") return;
+    if (connectStatus === "connecting" || !host || !username) return;
+    e.preventDefault();
+    handleConnectRemote();
+  };
+
   const handleReconnect = (h: config.RemoteHost) => {
     applyHostToForm(h);
     maybeConnectToRemote({
@@ -537,7 +561,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <button
-            className="text-xs bg-surface-3 hover:bg-surface-3/80 text-surface-text px-2 py-1 rounded disabled:opacity-50"
+            className={`text-xs bg-surface-3 hover:bg-surface-3/80 text-surface-text px-2 py-1 rounded disabled:opacity-50 ${focusVisibleClass}`}
             disabled={connectStatus === "connecting"}
             onClick={() => {
               if (isLocal) {
@@ -564,7 +588,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
             Connect
           </button>
           <button
-            className="text-xs text-surface-text-muted hover:text-red-400 px-1.5 py-1"
+            className={`text-xs text-surface-text-muted hover:text-red-400 px-1.5 py-1 ${focusVisibleClass}`}
             aria-label={isLocal ? `Forget saved session ${h.Name || h.TmuxSessionName || "local"}` : `Forget saved host ${h.Username}@${h.Host}`}
             onClick={() => handleForget(h.ID)}
           >
@@ -635,7 +659,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                           setRecentPage(0);
                           setStep("recentAll");
                         }}
-                        className="w-full mt-1 text-xs text-surface-text-muted hover:text-surface-text px-3 py-1.5 rounded border border-surface-border hover:bg-surface-2"
+                        className={`w-full mt-1 text-xs text-surface-text-muted hover:text-surface-text px-3 py-1.5 rounded border border-surface-border hover:bg-surface-2 ${focusVisibleClass}`}
                       >
                         Show All ({recentHosts.length})
                       </button>
@@ -676,7 +700,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                 {recentAllPageCount > 1 && (
                   <div className="flex items-center justify-between text-xs text-surface-text-muted">
                     <button
-                      className="px-2 py-1 rounded hover:bg-surface-2 disabled:opacity-40"
+                      className={`px-2 py-1 rounded hover:bg-surface-2 disabled:opacity-40 ${focusVisibleClass}`}
                       disabled={clampedRecentPage === 0}
                       onClick={() => setRecentPage((p) => Math.max(0, p - 1))}
                     >
@@ -686,7 +710,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                       Page {clampedRecentPage + 1} of {recentAllPageCount}
                     </span>
                     <button
-                      className="px-2 py-1 rounded hover:bg-surface-2 disabled:opacity-40"
+                      className={`px-2 py-1 rounded hover:bg-surface-2 disabled:opacity-40 ${focusVisibleClass}`}
                       disabled={clampedRecentPage >= recentAllPageCount - 1}
                       onClick={() => setRecentPage((p) => Math.min(recentAllPageCount - 1, p + 1))}
                     >
@@ -705,7 +729,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                 <div className="flex items-center gap-2 pt-2">
                   <button
                     onClick={() => setStep("type")}
-                    className="bg-surface-2 hover:bg-surface-3 text-surface-text-muted text-xs px-4 py-1.5 rounded"
+                    className={`bg-surface-2 hover:bg-surface-3 text-surface-text-muted text-xs px-4 py-1.5 rounded ${focusVisibleClass}`}
                   >
                     Back
                   </button>
@@ -766,7 +790,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                 <div className="flex items-center gap-2 pt-2">
                   <button
                     onClick={handleRejectHostKey}
-                    className="bg-surface-2 hover:bg-surface-3 text-surface-text-muted text-xs px-4 py-1.5 rounded"
+                    className={`bg-surface-2 hover:bg-surface-3 text-surface-text-muted text-xs px-4 py-1.5 rounded ${focusVisibleClass}`}
                   >
                     {hostKeyConfirm.changed ? "Back" : "Reject"}
                   </button>
@@ -774,7 +798,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                     <button
                       onClick={handleAcceptHostKey}
                       disabled={connectStatus === "connecting"}
-                      className="bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-4 py-1.5 rounded disabled:opacity-50"
+                      className={`bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-4 py-1.5 rounded disabled:opacity-50 ${focusVisibleClass}`}
                     >
                       {connectStatus === "connecting" ? "Connecting..." : "Accept & Connect"}
                     </button>
@@ -784,7 +808,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
             )}
 
             {step === "form" && (
-              <div className="space-y-3">
+              <div className="space-y-3" onKeyDown={handleFormKeyDown}>
                 <div className="space-y-1">
                   <label className="text-xs text-surface-text-muted">Host</label>
                   <input
@@ -875,6 +899,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                     type="checkbox"
                     checked={saveTerminal}
                     onChange={(e) => setSaveTerminal(e.target.checked)}
+                    className={focusVisibleClass}
                   />
                   Save Terminal
                 </label>
@@ -886,6 +911,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                         type="checkbox"
                         checked={useTmux}
                         onChange={(e) => setUseTmux(e.target.checked)}
+                        className={focusVisibleClass}
                       />
                       Use tmux if available
                     </label>
@@ -921,6 +947,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                         type="checkbox"
                         checked={useTls}
                         onChange={(e) => handleUseTlsToggle(e.target.checked)}
+                        className={focusVisibleClass}
                       />
                       Use TLS
                     </label>
@@ -931,6 +958,7 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                             type="checkbox"
                             checked={insecureSkipVerify}
                             onChange={(e) => setInsecureSkipVerify(e.target.checked)}
+                            className={focusVisibleClass}
                           />
                           Skip certificate verification (self-signed)
                         </label>
@@ -965,14 +993,14 @@ export function NewTerminalDialog({ open, onClose }: NewTerminalDialogProps) {
                 <div className="flex items-center gap-2 pt-2">
                   <button
                     onClick={() => setStep("type")}
-                    className="bg-surface-2 hover:bg-surface-3 text-surface-text-muted text-xs px-4 py-1.5 rounded"
+                    className={`bg-surface-2 hover:bg-surface-3 text-surface-text-muted text-xs px-4 py-1.5 rounded ${focusVisibleClass}`}
                   >
                     Back
                   </button>
                   <button
                     onClick={() => handleConnectRemote()}
                     disabled={connectStatus === "connecting" || !host || !username}
-                    className="bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-4 py-1.5 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                    className={`bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-4 py-1.5 rounded disabled:opacity-50 disabled:cursor-not-allowed ${focusVisibleClass}`}
                   >
                     {connectStatus === "connecting" ? "Connecting..." : "Connect"}
                   </button>
