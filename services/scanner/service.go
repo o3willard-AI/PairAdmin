@@ -144,6 +144,14 @@ type ScanService struct {
 	cfg    config.AppConfig
 	emitFn func(ctx context.Context, event string, optionalData ...interface{})
 
+	// liveCfgFn, when set, is the live AppConfig source the Start
+	// enable/disable gate consults. NewScanService captures cfg by value, so
+	// without this a frontend scanner_enabled change (Settings toggle) would
+	// leave the gate stale until restart. Nil (the default) gates on the
+	// construction-time snapshot — tests rely on that; main.go wires the live
+	// getter via SetLiveCfgFn.
+	liveCfgFn func() (*config.AppConfig, error)
+
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
 }
@@ -162,6 +170,29 @@ func NewScanService(cfg config.AppConfig, emitFn func(ctx context.Context, event
 	}
 }
 
+// SetLiveCfgFn wires the live AppConfig source that Start's enable/disable
+// gate consults, so a frontend scanner_enabled change (Settings toggle) takes
+// effect on the next Start WITHOUT restarting the app. main.go passes
+// config.LoadAppConfig. When left unset the gate uses the construction-time
+// snapshot passed to NewScanService — which is what the unit tests rely on.
+func (s *ScanService) SetLiveCfgFn(getter func() (*config.AppConfig, error)) {
+	s.liveCfgFn = getter
+}
+
+// gateCfg returns the config the Start gate consults. It prefers the live
+// getter (set via SetLiveCfgFn) so current settings are honored; when no
+// getter is configured, or it fails to load, it falls back to the
+// construction-time snapshot — a config-read error can never bypass the gate
+// into an unwanted scan.
+func (s *ScanService) gateCfg() config.AppConfig {
+	if s.liveCfgFn != nil {
+		if cfg, err := s.liveCfgFn(); err == nil && cfg != nil {
+			return *cfg
+		}
+	}
+	return s.cfg
+}
+
 // Start launches one Mode-A SSH sweep and returns its scan id immediately.
 //
 // The enable/disable gate is checked FIRST: when scanning is disabled the
@@ -172,7 +203,7 @@ func NewScanService(cfg config.AppConfig, emitFn func(ctx context.Context, event
 // event: scan:done, scan:error, or (after Stop) scan:cancelled.
 func (s *ScanService) Start(req ScanRequest) (string, error) {
 	// Gate — hard requirement: zero network, zero goroutines when disabled.
-	if !scanAllowed(s.cfg) {
+	if !scanAllowed(s.gateCfg()) {
 		return "", ErrScanningDisabled
 	}
 

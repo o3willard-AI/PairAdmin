@@ -229,6 +229,24 @@ export namespace memguard {
 
 }
 
+	export namespace scanner {
+	
+	export class ScanRequest {
+	    targets: Array<string>;
+	    maxProbes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ScanRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.targets = source["Targets"];
+	        this.maxProbes = source["MaxProbes"];
+	    }
+	}
+	
+}
 export namespace services {
 	
 	export class ExportMessage {

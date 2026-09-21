@@ -438,3 +438,53 @@ func TestScanService_LocalNetsDiscoveryFailure_EmitsScanErrorNotPanic(t *testing
 		t.Errorf("failed scan must emit only scan:error, saw %d other terminal events", n)
 	}
 }
+
+// TestScanService_Start_ConsultsLiveConfig verifies the enable/disable gate
+// reflects the LIVE config (SetLiveCfgFn) rather than the value captured at
+// construction — so a frontend scanner_enabled Settings-toggle takes effect
+// on the next Start without restarting the app.
+func TestScanService_Start_ConsultsLiveConfig(t *testing.T) {
+	rec := &emitRecorder{}
+	// Constructed "enabled", but the live config says disabled.
+	svc := NewScanService(config.AppConfig{ScannerEnabled: true}, rec.emit)
+	svc.SetLiveCfgFn(func() (*config.AppConfig, error) {
+		return &config.AppConfig{ScannerEnabled: false}, nil
+	})
+
+	_, err := svc.Start(ScanRequest{MaxProbes: MinMaxProbes})
+	if !errors.Is(err, ErrScanningDisabled) {
+		t.Fatalf("expected ErrScanningDisabled from a live-disabled gate, got %v", err)
+	}
+	// Mutation check: reverting Start's gate to use only the construction-time
+	// snapshot s.cfg (dropping the gateCfg live lookup) makes this test fail —
+	// Start would proceed on the stale enabled config and run a real sweep.
+}
+
+// TestScanService_gateCfg_PrefersLiveGetter verifies gateCfg returns the live
+// getter's value even when it disagrees with the construction snapshot.
+func TestScanService_gateCfg_PrefersLiveGetter(t *testing.T) {
+	svc := NewScanService(config.AppConfig{ScannerEnabled: true}, nil)
+	svc.SetLiveCfgFn(func() (*config.AppConfig, error) {
+		return &config.AppConfig{ScannerEnabled: false}, nil
+	})
+	if got := svc.gateCfg(); got.ScannerEnabled {
+		t.Fatal("gateCfg() = enabled, want the live getter's disabled value")
+	}
+}
+
+// TestScanService_gateCfg_FallsBackToSnapshotOnLoadError verifies a failing
+// live load cannot bypass the gate: gateCfg falls back to the construction
+// snapshot, never a zero-value (which would disable scanning silently).
+func TestScanService_gateCfg_FallsBackToSnapshotOnLoadError(t *testing.T) {
+	svc := NewScanService(config.AppConfig{ScannerEnabled: true}, nil)
+	svc.SetLiveCfgFn(func() (*config.AppConfig, error) {
+		return nil, errors.New("config read failed")
+	})
+	got := svc.gateCfg()
+	if !got.ScannerEnabled {
+		t.Fatal("gateCfg() = disabled on a load error; want fallback to the enabled snapshot")
+	}
+	// Mutation check: returning a zero-value AppConfig instead of the snapshot
+	// on a load error would silently disable scanning; this test pins the
+	// fallback-to-snapshot behavior.
+}
