@@ -51,21 +51,21 @@ export namespace capture {
 export namespace config {
 	
 	export class PinnedCommand {
-    Command: string;
-    OriginalQuestion: string;
-    Name: string;
-
-    static createFrom(source: any = {}) {
-        return new PinnedCommand(source);
-    }
-
-    constructor(source: any = {}) {
-        if ('string' === typeof source) source = JSON.parse(source);
-        this.Command = source["Command"];
-        this.OriginalQuestion = source["OriginalQuestion"];
-        this.Name = source["Name"];
-    }
-}
+	    Command: string;
+	    OriginalQuestion: string;
+	    Name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PinnedCommand(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Command = source["Command"];
+	        this.OriginalQuestion = source["OriginalQuestion"];
+	        this.Name = source["Name"];
+	    }
+	}
 	export class RemoteHost {
 	    ID: string;
 	    Kind: string;
@@ -80,11 +80,11 @@ export namespace config {
 	    TmuxSessionName: string;
 	    UseTLS: boolean;
 	    InsecureSkipVerify: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new RemoteHost(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.ID = source["ID"];
@@ -129,8 +129,8 @@ export namespace config {
 	    HotkeyFocusWindow: string;
 	    HotkeyAddClipboardCommand: string;
 	    HotkeyNewTerminal: string;
-	    HotkeyAddCommand: string;
 	    HotkeyQuickSelect: string;
+	    HotkeyAddCommand: string;
 	    Theme: string;
 	    FontSize: number;
 	    ContextLines: number;
@@ -159,8 +159,8 @@ export namespace config {
 	        this.HotkeyFocusWindow = source["HotkeyFocusWindow"];
 	        this.HotkeyAddClipboardCommand = source["HotkeyAddClipboardCommand"];
 	        this.HotkeyNewTerminal = source["HotkeyNewTerminal"];
-	        this.HotkeyAddCommand = source["HotkeyAddCommand"];
 	        this.HotkeyQuickSelect = source["HotkeyQuickSelect"];
+	        this.HotkeyAddCommand = source["HotkeyAddCommand"];
 	        this.Theme = source["Theme"];
 	        this.FontSize = source["FontSize"];
 	        this.ContextLines = source["ContextLines"];
@@ -231,12 +231,12 @@ export namespace memguard {
 
 }
 
-	export namespace scanner {
+export namespace scanner {
 	
 	export class ScanRequest {
-	    targets: Array<string>;
+	    targets: string[];
 	    maxProbes: number;
-	    ports: Array<number>;
+	    ports: number[];
 	
 	    static createFrom(source: any = {}) {
 	        return new ScanRequest(source);
@@ -244,13 +244,14 @@ export namespace memguard {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.targets = source["Targets"];
-	        this.maxProbes = source["MaxProbes"];
-	        this.ports = source["Ports"];
+	        this.targets = source["targets"];
+	        this.maxProbes = source["maxProbes"];
+	        this.ports = source["ports"];
 	    }
 	}
-	
+
 }
+
 export namespace services {
 	
 	export class CatalogModelView {
@@ -270,14 +271,14 @@ export namespace services {
 	        this.name = source["name"];
 	        this.context = source["context"];
 	        this.reasoning = source["reasoning"];
-	        this.toolCall = source["tool_call"];
+	        this.toolCall = source["toolCall"];
 	    }
 	}
 	export class CatalogProviderView {
 	    id: string;
 	    name: string;
 	    adapter: string;
-	    models: Array<CatalogModelView>;
+	    models: CatalogModelView[];
 	
 	    static createFrom(source: any = {}) {
 	        return new CatalogProviderView(source);
@@ -288,8 +289,26 @@ export namespace services {
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.adapter = source["adapter"];
-	        this.models = source["models"];
+	        this.models = this.convertValues(source["models"], CatalogModelView);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class ExportMessage {
 	    role: string;
@@ -349,13 +368,13 @@ export namespace services {
 	    useTmux: boolean;
 	    tmuxSessionName?: string;
 	    useTls: boolean;
-	    insecureSkipVerify?: boolean;
+	    insecureSkipVerify: boolean;
 	    trustNewHostKey?: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new RemoteConnectParams(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.kind = source["kind"];

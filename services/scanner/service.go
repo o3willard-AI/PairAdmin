@@ -117,15 +117,15 @@ type ScanRequest struct {
 	// "start-end" IP range strings (e.g. "192.168.1.1-192.168.1.9"). An
 	// empty list means "discover the local /24 networks" via
 	// LocalNetsFeeder.
-	Targets []string
+	Targets []string `json:"targets"`
 	// MaxProbes bounds probes in flight. Zero (or negative) selects the
 	// default of 64; the value is clamped to [16, 256].
-	MaxProbes int
+	MaxProbes int `json:"maxProbes"`
 	// Ports is the SSH probe-port list for the sweep. Empty/nil means the
 	// default [22]; duplicates are dropped (order preserved). Hosts behind a
 	// NAT/port-forward layer answer SSH on non-standard ports (e.g.
 	// <host>:22241), so this makes the sweep customizable beyond :22.
-	Ports []int
+	Ports []int `json:"ports"`
 }
 
 // ErrScanningDisabled is returned by Start when the scanner is disabled in

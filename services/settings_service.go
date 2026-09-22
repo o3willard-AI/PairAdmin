@@ -47,7 +47,7 @@ type CatalogModelView struct {
 	Name      string `json:"name"`
 	Context   int    `json:"context"`
 	Reasoning bool   `json:"reasoning"`
-	ToolCall  bool   `json:"tool_call"`
+	ToolCall  bool   `json:"toolCall"`
 }
 
 type CatalogProviderView struct {
