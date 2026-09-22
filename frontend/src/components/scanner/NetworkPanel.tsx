@@ -51,10 +51,11 @@ export function NetworkPanel() {
   useEffect(() => {
     import(/* @vite-ignore */ "../../../wailsjs/go/services/SettingsService")
       .then(({ GetSettings }) => GetSettings())
-      // scanner_enabled defaults to true in services/config/config.go — treat an
-      // absent value as enabled so the panel isn't spuriously hidden.
+      // scanner_enabled defaults to false in services/config/config.go — a fresh
+      // install opts OUT until the user enables it in Settings → Terminals →
+      // "Network scanner". Treat an absent value as disabled (fail-closed).
       .then((cfg) => setEnabled(!!cfg?.ScannerEnabled))
-      .catch(() => setEnabled(true));
+      .catch(() => setEnabled(false));
   }, []);
 
   // Disabled in Settings → "Network scanner" off. HIDE the panel AND its entry
@@ -86,7 +87,11 @@ export function NetworkPanel() {
 
       {expanded && (
         <div className="px-2 pt-0.5 space-y-2">
-          <div className="flex items-center gap-1.5">
+          {/* Stacked scan inputs: targets get their own full-width line so the
+              field has a usable typing area in the narrow sidebar; ports + Scan
+              share the second line. (Was a single horizontal row that left the
+              targets input almost no width.) */}
+          <div className="flex flex-col gap-1.5">
             <input
               className={inputClass}
               value={target}
@@ -94,21 +99,23 @@ export function NetworkPanel() {
               placeholder="Targets (blank = local /24s)"
               aria-label="Scan target CIDR(s)"
             />
-            <input
-              className="w-32 bg-surface-2 border border-surface-border-strong rounded px-2 py-1 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
-              value={portsRaw}
-              onChange={(e) => setPortsRaw(e.target.value)}
-              placeholder="Ports (22)"
-              aria-label="SSH ports to scan"
-              title="Comma/space-separated ports and ranges, e.g. 22,2222 or 22241-22250. Blank = default (22)."
-            />
-            <button
-              onClick={() => startScan(parseTargets(target), parsePorts(portsRaw), 16)}
-              disabled={scanning}
-              className={`bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-3 py-1.5 rounded disabled:opacity-50 ${focusRingClass}`}
-            >
-              {scanning ? "Scanning…" : "Scan"}
-            </button>
+            <div className="flex items-center gap-1.5">
+              <input
+                className="min-w-0 flex-1 bg-surface-2 border border-surface-border-strong rounded px-2 py-1 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
+                value={portsRaw}
+                onChange={(e) => setPortsRaw(e.target.value)}
+                placeholder="Ports (22)"
+                aria-label="SSH ports to scan"
+                title="Comma/space-separated ports and ranges, e.g. 22,2222 or 22241-22250. Blank = default (22)."
+              />
+              <button
+                onClick={() => startScan(parseTargets(target), parsePorts(portsRaw), 16)}
+                disabled={scanning}
+                className={`bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-3 py-1.5 rounded disabled:opacity-50 ${focusRingClass}`}
+              >
+                {scanning ? "Scanning…" : "Scan"}
+              </button>
+            </div>
           </div>
 
           {scanning && (

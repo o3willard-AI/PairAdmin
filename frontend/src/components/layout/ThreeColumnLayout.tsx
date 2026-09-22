@@ -8,6 +8,7 @@ import { useAddClipboardCommandHotkey } from "@/hooks/useAddClipboardCommandHotk
 import { useNewTerminalHotkey } from "@/hooks/useNewTerminalHotkey";
 import { useAddCommandHotkey } from "@/hooks/useAddCommandHotkey";
 import { TerminalTabList } from "@/components/terminal/TerminalTabList";
+import { NewTerminalDialog } from "@/components/terminal/NewTerminalDialog";
 import { TerminalPreview } from "@/components/terminal/TerminalPreview";
 import { NetworkPanel } from "@/components/scanner/NetworkPanel";
 import { QuickSelectOverlay } from "@/components/QuickSelectOverlay";
@@ -38,6 +39,8 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
 
   const activeTabId = useTerminalStore((state) => state.activeTabId);
   const tabs = useTerminalStore((state) => state.tabs);
+  const dialogOpen = useTerminalStore((state) => state.newTerminalDialogOpen);
+  const setDialogOpen = useTerminalStore((state) => state.setNewTerminalDialogOpen);
   const settingsOpen = useSettingsStore((s) => s.settingsOpen);
   const setSettingsOpen = useSettingsStore((s) => s.setSettingsOpen);
   const setActiveModel = useSettingsStore((s) => s.setActiveModel);
@@ -144,15 +147,42 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden">
       <div className="flex flex-1 overflow-hidden bg-surface-0 text-surface-text">
-        {/* Left column: terminal tab list */}
+        {/* Left column: terminal tab list + network scanner + connect. */}
         <aside
-          className="flex-none border-r border-surface-border overflow-y-auto"
+          className="flex-none flex flex-col border-r border-surface-border overflow-hidden"
           style={{ width: `${terminalsSidebarWidthCh}ch` }}
         >
+          {/* Tab list: flex-1 min-h-0 — the ONLY scroll container in the
+              aside. It scrolls its own tab overflow; the aside itself is
+              overflow-hidden so an empty sidebar never shows a scrollbar. */}
           <TerminalTabList />
           {/* Scanner UI. When "Network scanner" is off in Settings, this renders
-              nothing (no panel, no entry point). */}
+              nothing (no panel, no entry point). Sits BELOW the tab list and
+              ABOVE "+ Connect" as a fixed-height sibling. */}
           <NetworkPanel />
+          <button
+            onClick={() => setDialogOpen(true)}
+            className="w-full px-3 py-1.5 text-xs text-surface-text-muted hover:text-surface-text transition-colors"
+          >
+            + Connect
+          </button>
+          <NewTerminalDialog
+            open={dialogOpen}
+            onClose={() => {
+              setDialogOpen(false);
+              // base-ui's Dialog returns focus to its trigger ("+ Connect") on
+              // close — without this, the very next keystroke (e.g. the user
+              // typing into their freshly-connected terminal) would re-trigger
+              // "+ Connect" instead, opening an unwanted duplicate dialog. Deferring
+              // to the next frame lets that built-in restoration finish first,
+              // then wins the race back to the terminal (same pattern as
+              // CommandCard.tsx/TerminalTab.tsx's rename-input focus race).
+              requestAnimationFrame(() => {
+                const { activeTabId, getTermRef } = useTerminalStore.getState();
+                getTermRef(activeTabId)?.focus();
+              });
+            }}
+          />
         </aside>
 
         {/* Center column: terminal preview + chat area, top to bottom.

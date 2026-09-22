@@ -309,9 +309,9 @@ func TestSaveAppConfig_Merge(t *testing.T) {
 	}
 }
 
-// TestLoadAppConfig_DefaultsScannerEnabled verifies a fresh install ships with
-// the network scanner enabled by default (ScannerEnabled defaults to true).
-func TestLoadAppConfig_DefaultsScannerEnabled(t *testing.T) {
+// TestLoadAppConfig_DefaultsScannerDisabled verifies a fresh install ships with
+// the network scanner DISABLED by default (ScannerEnabled defaults to false).
+func TestLoadAppConfig_DefaultsScannerDisabled(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
 	t.Setenv("USERPROFILE", tmpDir)
@@ -320,8 +320,8 @@ func TestLoadAppConfig_DefaultsScannerEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
 	}
-	if !cfg.ScannerEnabled {
-		t.Errorf("ScannerEnabled: expected default true, got false")
+	if cfg.ScannerEnabled {
+		t.Errorf("ScannerEnabled: expected default false, got true")
 	}
 }
 
@@ -329,10 +329,12 @@ func TestLoadAppConfig_DefaultsScannerEnabled(t *testing.T) {
 // survives a save/reload cycle — so a user or Enterprise policy that disables
 // the scanner keeps it disabled across app restarts.
 //
-// Mutation check: removing the `v.Set("scanner_enabled", …)` line in
-// SaveAppConfig (or the ScannerEnabled field / its mapstructure+yaml tags)
-// makes this test red — the false spike is silently dropped and the reload
-// returns the "true" default instead of the persisted false.
+// NOTE: the scanner now DEFAULTS to false (see
+// TestLoadAppConfig_DefaultsScannerDisabled), so this false case can no longer
+// distinguish a persisted false from the default — the mutation check for the
+// `v.Set("scanner_enabled", …)` write lives in the TRUE round-trip below,
+// where false is not the default. This test still pins that an explicit-false
+// save/reload round-trips cleanly (no error, stays false).
 func TestSaveAndLoadAppConfig_ScannerEnabledRoundTrip(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)

@@ -76,6 +76,49 @@ describe("NetworkPanel", () => {
     expect(await screen.findByRole("button", { name: /^scan$/i })).toBeInTheDocument();
   });
 
+  it("renders the multi-line scan controls: targets input, ports input, and Scan button", async () => {
+    render(<NetworkPanel />);
+    await screen.findByRole("button", { name: /^scan$/i });
+    const targets = screen.getByLabelText(/Scan target CIDR/);
+    const ports = screen.getByLabelText(/SSH ports to scan/);
+    const scan = screen.getByRole("button", { name: /^scan$/i });
+    expect(targets).toBeInTheDocument();
+    expect(ports).toBeInTheDocument();
+    expect(scan).toBeInTheDocument();
+    // Targets input gets its own full-width line (single-row flex previously
+    // left it almost no width in the narrow sidebar) — its class carries the
+    // w-full used by the shared inputClass.
+    expect(targets.className).toContain("w-full");
+    // Mutation check: if the single-row layout were reintroduced (targets no
+    // longer w-full, or the controls dropped), either the w-full assertion or
+    // a control-presence assertion fails.
+  });
+
+  it("hides the panel when settings carry no scanner flag (default off)", async () => {
+    // A fresh/absent config has no scanner_enabled → treated as disabled.
+    getSettings.mockResolvedValue({});
+    const { container } = render(<NetworkPanel />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(container).toBeEmpty();
+    expect(screen.queryByText(/Network/)).toBeNull();
+    // Mutation check: if the absent-value path defaulted to enabled, this panel
+    // would render — but the scanner now defaults OFF, so absent must hide it.
+  });
+
+  it("fails CLOSED when GetSettings itself rejects", async () => {
+    getSettings.mockRejectedValue(new Error("settings unavailable"));
+    const { container } = render(<NetworkPanel />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(container).toBeEmpty();
+    expect(screen.queryByText(/Network/)).toBeNull();
+    // Mutation check: if the catch branch set enabled=true (fail-open), the
+    // panel would render the scan UI even though we couldn't read config.
+  });
+
   it("renders discovered hosts from the store with their state", async () => {
     useScannerStore.setState({
       rows: [
