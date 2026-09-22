@@ -12,6 +12,7 @@ vi.mock("../../../../wailsjs/go/services/SettingsService", () => ({
   SaveAPIKey: vi.fn().mockResolvedValue(undefined),
   TestConnection: vi.fn().mockResolvedValue("Connected"),
   SetModel: vi.fn().mockResolvedValue(""),
+  GetVersion: vi.fn().mockResolvedValue("v2.6.2"),
 }));
 
 // Mock useTheme for AppearanceTab
@@ -29,13 +30,15 @@ describe("SettingsDialog", () => {
     expect(screen.getByText("Settings")).toBeInTheDocument();
   });
 
-  it("renders all 5 tab labels when open=true", () => {
+  it("renders all 7 tab labels when open=true", () => {
     render(<SettingsDialog open={true} onClose={vi.fn()} />);
     expect(screen.getByText("LLM Config")).toBeInTheDocument();
     expect(screen.getByText("Prompts")).toBeInTheDocument();
     expect(screen.getByText("Terminals")).toBeInTheDocument();
     expect(screen.getByText("Hotkeys")).toBeInTheDocument();
     expect(screen.getByText("Appearance")).toBeInTheDocument();
+    expect(screen.getByText("Security")).toBeInTheDocument();
+    expect(screen.getByText("About")).toBeInTheDocument();
   });
 
   it("does not render dialog content when open=false", () => {
@@ -74,6 +77,19 @@ describe("SettingsDialog", () => {
 
     expect(screen.getByText("Dark")).toBeInTheDocument();
     expect(screen.getByText("Light")).toBeInTheDocument();
+  });
+
+  it("clicking About tab shows the app version", async () => {
+    const user = userEvent.setup();
+    render(<SettingsDialog open={true} onClose={vi.fn()} />);
+
+    await user.click(screen.getByText("About"));
+
+    expect(await screen.findByText("PairAdmin")).toBeInTheDocument();
+    // Mutation check: if the About panel were wired to a tab value that doesn't
+    // match AboutTab (or AboutTab weren't mounted), this version would never
+    // appear — the About tab must surface the GetVersion() result.
+    expect(await screen.findByText("v2.6.2")).toBeInTheDocument();
   });
 
   it("calls onClose when the dialog is dismissed via Escape", async () => {
