@@ -153,6 +153,29 @@ describe("NetworkPanel", () => {
     // though they arrived in the store — the streaming table would be empty.
   });
 
+  it("caps the results list height with an internal scroll so a sweep can't push '+ Connect' off", async () => {
+    useScannerStore.setState({
+      rows: [
+        { ip: "10.0.0.10", port: 22, state: "ssh", ssh: { port: 22, banner: "SSH-2.0-x", software: "OpenSSH 9.6", hostKeyType: "ssh-ed25519", hostKeyFingerprint: "SHA256:x" } },
+        { ip: "10.0.0.11", port: 22, state: "filtered" },
+        { ip: "10.0.0.12", port: 22, state: "closed" },
+      ],
+    });
+    const { container } = render(<NetworkPanel />);
+    await screen.findByRole("button", { name: /^scan$/i });
+
+    const results = container.querySelector(".max-h-64");
+    if (!results) {
+      // Mutation check: if the max-height/scroll classes were dropped from the
+      // results container, a large sweep would grow the panel unbounded and push
+      // "+ Connect" below the bottom of the overflow-hidden aside — this fails.
+      throw new Error("results container (.max-h-64) is missing");
+    }
+    expect(results.className).toContain("space-y-1");
+    expect(results.className).toContain("max-h-64");
+    expect(results.className).toContain("overflow-y-auto");
+  });
+
   it("Stop calls the Stop binding for the active scan", async () => {
     useScannerStore.setState({
       status: "scanning",
