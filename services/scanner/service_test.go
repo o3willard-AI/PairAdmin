@@ -672,3 +672,84 @@ func TestScanService_StartupCtxFlowsToEveryEmittedEvent(t *testing.T) {
 
 // contextKey mirrors the Wails runtime's ctx key type for the sentinel test.
 type contextKey string
+
+// ---------- human-friendly target forms (SCAN-T10) ----------
+
+func TestBuildTargets_SingleIPYieldsExactlyOneHost(t *testing.T) {
+	// UAT bug: entering a single IP demanded CIDR notation and failed with
+	// `parse CIDR "192.168.101.7": invalid CIDR address`.
+	ips, err := buildTargets([]string{"192.168.101.7"})
+	if err != nil {
+		t.Fatalf("single IP must parse without CIDR notation: %v", err)
+	}
+	if len(ips) != 1 || ips[0].String() != "192.168.101.7" {
+		t.Errorf("expected exactly [192.168.101.7], got %v", ips)
+	}
+	// Mutation check: removing the single-IP branch from buildTargets'
+	// switch lets the spec fall through to the CIDR feeder and fails this.
+}
+
+func TestBuildTargets_ShorthandRangeCompletesBareEnd(t *testing.T) {
+	// UAT bug: 192.168.51.110-130 failed because "130" is not a full IP.
+	ips, err := buildTargets([]string{"192.168.51.110-130"})
+	if err != nil {
+		t.Fatalf("shorthand range must parse: %v", err)
+	}
+	if len(ips) != 21 {
+		t.Fatalf("expected 21 hosts (110..130), got %d", len(ips))
+	}
+	if first, last := ips[0].String(), ips[len(ips)-1].String(); first != "192.168.51.110" || last != "192.168.51.130" {
+		t.Errorf("expected 192.168.51.110..192.168.51.130, got %s..%s", first, last)
+	}
+	// Mutation check: removing the shorthand completion (passing the bare
+	// end straight to NewRangeFeeder) makes this fail with a parse error.
+}
+
+func TestBuildTargets_FullRangeAndCIDRUnchanged(t *testing.T) {
+	ips, err := buildTargets([]string{"192.168.101.5-192.168.101.15"})
+	if err != nil {
+		t.Fatalf("full range must keep working: %v", err)
+	}
+	if len(ips) != 11 || ips[0].String() != "192.168.101.5" || ips[10].String() != "192.168.101.15" {
+		t.Errorf("unexpected full-range expansion: %v", ips)
+	}
+
+	ips, err = buildTargets([]string{"192.168.1.0/30"})
+	if err != nil {
+		t.Fatalf("CIDR must keep working: %v", err)
+	}
+	if len(ips) != 4 {
+		t.Errorf("expected 4 hosts from /30, got %d", len(ips))
+	}
+}
+
+func TestBuildTargets_MixedForms(t *testing.T) {
+	ips, err := buildTargets([]string{"192.168.101.7", "192.168.51.110-112", "192.168.1.0/30"})
+	if err != nil {
+		t.Fatalf("mixed forms must parse together: %v", err)
+	}
+	if len(ips) != 1+3+4 {
+		t.Errorf("expected 1+3+4 hosts, got %d (%v)", len(ips), ips)
+	}
+}
+
+func TestBuildTargets_BadSpecsError(t *testing.T) {
+	for _, spec := range []string{"not-a-cidr", "192.168.1.5-300", "192.168.1.a-5"} {
+		if _, err := buildTargets([]string{spec}); err == nil {
+			t.Errorf("spec %q must be rejected", spec)
+		}
+	}
+	// Mutation check: dropping the default "invalid target" branch (or the
+	// shorthand octet validation) lets these through and fails this.
+}
+
+func TestBuildTargets_IPv6StillRejected(t *testing.T) {
+	if _, err := buildTargets([]string{"::1"}); err == nil {
+		t.Fatal("IPv6 single-IP targets must stay rejected")
+	}
+	if _, err := buildTargets([]string{"fe80::1"}); err == nil {
+		t.Fatal("IPv6 single-IP targets must stay rejected")
+	}
+	// The IPv6 rejection contract (targets.go) must survive the new
+	// single-IP branch.
+}

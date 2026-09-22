@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -412,14 +413,29 @@ func buildTargets(specs []string) ([]net.IP, error) {
 		var f IPFeeder
 		var err error
 		switch {
-		case strings.Contains(spec, "-"):
-			start, end, ok := strings.Cut(spec, "-")
-			if !ok {
-				return nil, fmt.Errorf("invalid target %q", spec)
-			}
-			f, err = NewRangeFeeder(start, end, false)
-		default:
+		case strings.Contains(spec, "/"):
+			// CIDR — the explicit form, unchanged.
 			f, err = NewCIDRFeeder(spec, false)
+		case net.ParseIP(spec) != nil:
+			// Single IP — users enter hosts, not CIDR blocks. Exactly one
+			// host via the degenerate range start==end. IPv6 stays
+			// rejected per the v1 contract (targets.go).
+			if net.ParseIP(spec).To4() == nil {
+				return nil, fmt.Errorf("target %q: %w", spec, ErrIPv6Unsupported)
+			}
+			f, err = NewRangeFeeder(spec, spec, false)
+		case strings.Contains(spec, "-"):
+			start, end, _ := strings.Cut(spec, "-")
+			// Shorthand range: a bare end ("192.168.51.110-130") is
+			// completed onto the start IP's first three octets. Full-IP
+			// ends ("192.168.101.5-192.168.101.15") pass through unchanged.
+			completed, cerr := completeRangeEnd(start, end)
+			if cerr != nil {
+				return nil, cerr
+			}
+			f, err = NewRangeFeeder(start, completed, false)
+		default:
+			return nil, fmt.Errorf("invalid target %q", spec)
 		}
 		if err != nil {
 			return nil, err
@@ -431,6 +447,29 @@ func buildTargets(specs []string) ([]net.IP, error) {
 		out = append(out, ips...)
 	}
 	return out, nil
+}
+
+// completeRangeEnd normalizes a range's end side: a full IP passes through
+// unchanged; a bare last octet ("130") is spliced onto the start IP's first
+// three octets ("192.168.51.110" -> "192.168.51.130"). Anything else is an
+// error — the octet must be a valid 0..255 value.
+func completeRangeEnd(start, end string) (string, error) {
+	if net.ParseIP(end) != nil {
+		return end, nil
+	}
+	startIP := net.ParseIP(start)
+	if startIP == nil {
+		return "", fmt.Errorf("invalid range start %q", start)
+	}
+	octets := strings.Split(startIP.To4().String(), ".")
+	if len(octets) != 4 {
+		return "", fmt.Errorf("invalid range start %q", start)
+	}
+	last, err := strconv.Atoi(end)
+	if err != nil || last < 0 || last > 255 {
+		return "", fmt.Errorf("invalid shorthand range end %q (want a bare octet 0-255)", end)
+	}
+	return fmt.Sprintf("%s.%s.%s.%d", octets[0], octets[1], octets[2], last), nil
 }
 
 // rowFromProbe maps one probe outcome to the pinned result-row shape.
