@@ -213,13 +213,13 @@ func (s *LLMService) SendMessage(tabId, userInput, terminalContext string) error
 	if s.auditLogger != nil {
 		filteredPrompt, _ := pipeline.Apply(userInput)
 		s.auditLogger.Write(audit.AuditEntry{
-			Event:         "user_message",
-			SessionID:     s.sessionID,
-			TerminalID:    tabId,
-			Content:       filteredPrompt,
-			ContextLines:  contextLines,
-			ContextBytes:  contextBytes,
-			Redactions:    credCounts,
+			Event:        "user_message",
+			SessionID:    s.sessionID,
+			TerminalID:   tabId,
+			Content:      filteredPrompt,
+			ContextLines: contextLines,
+			ContextBytes: contextBytes,
+			Redactions:   credCounts,
 		})
 	}
 
@@ -405,68 +405,19 @@ func (s *LLMService) FilterCommand(command string) (string, error) {
 // When keyFn returns a non-empty string it takes precedence over the corresponding Config field.
 // Returns nil for unknown or empty providers rather than panicking.
 func buildProvider(cfg Config, keyFn func(string) string) llm.Provider {
-	switch cfg.Provider {
-	case "openai":
-		key := ""
-		if keyFn != nil {
-			key = keyFn("openai")
-		}
-		if key == "" {
-			key = cfg.OpenAIKey
-		}
-		return llm.NewOpenAIProvider(key, "", cfg.Model)
-	case "openrouter":
-		key := ""
-		if keyFn != nil {
-			key = keyFn("openrouter")
-		}
-		if key == "" {
-			key = cfg.OpenRouterKey
-		}
-		if key == "" {
-			key = cfg.OpenAIKey // fallback
-		}
-		return llm.NewOpenAIProvider(key, "https://openrouter.ai/api/v1", cfg.Model)
-	case "lmstudio":
-		baseURL := cfg.LMStudioHost
-		if baseURL == "" {
-			baseURL = "http://localhost:1234/v1"
-		}
-		return llm.NewOpenAIProvider("", baseURL, cfg.Model)
-	case "anthropic":
-		key := ""
-		if keyFn != nil {
-			key = keyFn("anthropic")
-		}
-		if key == "" {
-			key = cfg.AnthropicKey
-		}
-		return llm.NewAnthropicProvider(key, cfg.Model)
-	case "ollama":
-		// Same key-resolution order as openai/anthropic: keychain Enclave
-		// first, then the env-var fallback. The key is optional — local
-		// Ollama instances don't require one.
-		key := ""
-		if keyFn != nil {
-			key = keyFn("ollama")
-		}
-		if key == "" {
-			key = cfg.OllamaKey
-		}
-		p, err := llm.NewOllamaProvider(key, cfg.OllamaHost, cfg.Model)
-		if err != nil {
-			// Log as runtime issue; return nil so SendMessage returns descriptive error
-			return nil
-		}
-		return p
-	case "disabled":
-		// Explicit opt-out (Settings → LLM Config "Disable Pair LLM"): never
-		// construct a provider, so SendMessage can never attempt any
-		// connection. Returning nil here (same as the default case, but with
-		// the intent spelled out) makes SendMessage reject with a descriptive
-		// error instead of reaching out to any LLM endpoint.
-		return nil
-	default:
-		return nil
-	}
+	// Catalog-driven resolution (services/llm/registry.go): every top-11
+	// provider id resolves through the same path, and the original five +
+	// "disabled" keep their exact legacy semantics (key order, baseURL
+	// handling, nil-on-unknown). Any behavior change to a legacy provider
+	// is a regression.
+	return llm.ResolveProvider(llm.ResolveConfig{
+		Provider:      cfg.Provider,
+		Model:         cfg.Model,
+		OpenAIKey:     cfg.OpenAIKey,
+		AnthropicKey:  cfg.AnthropicKey,
+		OpenRouterKey: cfg.OpenRouterKey,
+		OllamaKey:     cfg.OllamaKey,
+		OllamaHost:    cfg.OllamaHost,
+		LMStudioHost:  cfg.LMStudioHost,
+	}, keyFn)
 }
