@@ -156,7 +156,7 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
               aside. It scrolls its own tab overflow; the aside itself is
               overflow-hidden so an empty sidebar never shows a scrollbar. */}
           <TerminalTabList />
-          {/* Scanner UI. When "Network scanner" is off in Settings, this renders
+          {/* Scanner UI. When "Network Finder" is off in Settings, this renders
               nothing (no panel, no entry point). Sits BELOW the tab list and
               ABOVE "+ Connect" as a fixed-height sibling. */}
           <NetworkPanel />

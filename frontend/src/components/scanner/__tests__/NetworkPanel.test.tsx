@@ -71,27 +71,45 @@ describe("NetworkPanel", () => {
     // sidebar even with "Network scanner" off in Settings.
   });
 
-  it("shows the Scan control when the scanner is enabled", async () => {
+  it("shows the Search control when the scanner is enabled", async () => {
     render(<NetworkPanel />);
-    expect(await screen.findByRole("button", { name: /^scan$/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^search$/i })).toBeInTheDocument();
   });
 
-  it("renders the multi-line scan controls: targets input, ports input, and Scan button", async () => {
+  it("renders the three-row search layout: targets (row 1), ports (row 2), Search button (row 3)", async () => {
     render(<NetworkPanel />);
-    await screen.findByRole("button", { name: /^scan$/i });
+    await screen.findByRole("button", { name: /^search$/i });
     const targets = screen.getByLabelText(/Scan target CIDR/);
     const ports = screen.getByLabelText(/SSH ports to scan/);
-    const scan = screen.getByRole("button", { name: /^scan$/i });
+    const search = screen.getByRole("button", { name: /^search$/i });
     expect(targets).toBeInTheDocument();
     expect(ports).toBeInTheDocument();
-    expect(scan).toBeInTheDocument();
-    // Targets input gets its own full-width line (single-row flex previously
-    // left it almost no width in the narrow sidebar) — its class carries the
-    // w-full used by the shared inputClass.
+    expect(search).toBeInTheDocument();
+    // Targets AND ports each get a full-width line (w-full from the shared
+    // inputClass), so the Search button sits on its own row — the ports input
+    // no longer shares a row with the button.
     expect(targets.className).toContain("w-full");
-    // Mutation check: if the single-row layout were reintroduced (targets no
-    // longer w-full, or the controls dropped), either the w-full assertion or
-    // a control-presence assertion fails.
+    expect(ports.className).toContain("w-full");
+    // Mutation check: if the single-row / two-row layouts were reintroduced
+    // (ports no longer w-full, or the Search button tucked beside it), the
+    // w-full assertion on ports fails.
+  });
+
+  it("labels the ports input with the 'SSH Ports (22)' placeholder", async () => {
+    render(<NetworkPanel />);
+    await screen.findByRole("button", { name: /^search$/i });
+    expect(screen.getByPlaceholderText(/SSH Ports \(22\)/)).toBeInTheDocument();
+    // Mutation check: reverting the placeholder to "Ports (22)" makes this
+    // fail — the input must read as SSH-specific, not a generic port scanner.
+  });
+
+  it("renders the panel header as 'Network Finder'", async () => {
+    render(<NetworkPanel />);
+    expect(await screen.findByRole("button", { name: /Network Finder/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^network$/i })).toBeNull();
+    // Mutation check: if the header said just "Network", the anchored
+    // /^network$/i query would find it — this fails (we're a host finder, not
+    // a port scanner).
   });
 
   it("hides the panel when settings carry no scanner flag (default off)", async () => {
@@ -119,7 +137,7 @@ describe("NetworkPanel", () => {
     // panel would render the scan UI even though we couldn't read config.
   });
 
-  it("renders discovered hosts from the store with their state", async () => {
+  it("renders ssh hosts but HIDES non-actionable (filtered/closed) IPs", async () => {
     useScannerStore.setState({
       rows: [
         {
@@ -139,18 +157,20 @@ describe("NetworkPanel", () => {
       ],
     });
     render(<NetworkPanel />);
-    await screen.findByRole("button", { name: /^scan$/i });
+    await screen.findByRole("button", { name: /^search$/i });
+    // Actionable ssh row renders its IP + software line.
     expect(screen.getByText("10.0.0.3")).toBeInTheDocument();
     expect(screen.getByText("OpenSSH_8.9p1 · 22")).toBeInTheDocument();
-    expect(screen.getByText("10.0.0.4")).toBeInTheDocument();
-    expect(screen.getByText("filtered")).toBeInTheDocument();
-    expect(screen.getByText("10.0.0.5")).toBeInTheDocument();
-    // The top-level row port must render for NON-ssh rows (ssh rows already
-    // show ssh.port) — with multi-port sweeps a filtered/closed row is
-    // attributable to its exact port.
-    expect(screen.getByText("Port 22241")).toBeInTheDocument();
-    // Mutation check: removing the rows.map render leaves rows invisible even
-    // though they arrived in the store — the streaming table would be empty.
+    // Non-actionable rows contribute to the summary counts ONLY — their
+    // individual IPs / states / ports are NOT rendered as rows.
+    expect(screen.queryByText("10.0.0.4")).toBeNull();
+    expect(screen.queryByText("10.0.0.5")).toBeNull();
+    expect(screen.queryByText("filtered")).toBeNull();
+    expect(screen.queryByText("closed")).toBeNull();
+    expect(screen.queryByText("Port 22241")).toBeNull();
+    // Mutation check: if every row were rendered again (filtered/closed shown
+    // as their own IP lines), 10.0.0.4 / "filtered" / "Port 22241" would
+    // appear — this fails. Only actionable ssh/ssh-known rows render.
   });
 
   it("caps the results list height with an internal scroll so a sweep can't push '+ Connect' off", async () => {
@@ -162,7 +182,7 @@ describe("NetworkPanel", () => {
       ],
     });
     const { container } = render(<NetworkPanel />);
-    await screen.findByRole("button", { name: /^scan$/i });
+    await screen.findByRole("button", { name: /^search$/i });
 
     const results = container.querySelector(".max-h-64");
     if (!results) {
@@ -194,9 +214,9 @@ describe("NetworkPanel", () => {
   it("Scan starts a scan with the parsed CIDR targets and default ports", async () => {
     const user = userEvent.setup();
     render(<NetworkPanel />);
-    await screen.findByRole("button", { name: /^scan$/i });
+    await screen.findByRole("button", { name: /^search$/i });
     await user.type(screen.getByLabelText(/Scan target CIDR/), "10.0.1.0/24,10.0.2.0/24");
-    await user.click(screen.getByRole("button", { name: /^scan$/i }));
+    await user.click(screen.getByRole("button", { name: /^search$/i }));
     expect(scanStart).toHaveBeenCalledWith({
       targets: ["10.0.1.0/24", "10.0.2.0/24"],
       ports: [],
@@ -209,9 +229,9 @@ describe("NetworkPanel", () => {
   it("Scan parses the Ports input (list + ranges) into the port array", async () => {
     const user = userEvent.setup();
     render(<NetworkPanel />);
-    await screen.findByRole("button", { name: /^scan$/i });
+    await screen.findByRole("button", { name: /^search$/i });
     await user.type(screen.getByLabelText(/SSH ports to scan/), "22241-22242,22");
-    await user.click(screen.getByRole("button", { name: /^scan$/i }));
+    await user.click(screen.getByRole("button", { name: /^search$/i }));
     expect(scanStart).toHaveBeenCalledWith({
       targets: [],
       ports: [22241, 22242, 22],
@@ -225,12 +245,32 @@ describe("NetworkPanel", () => {
   it("an empty Scan target scans the local /24 networks", async () => {
     const user = userEvent.setup();
     render(<NetworkPanel />);
-    await screen.findByRole("button", { name: /^scan$/i });
-    await user.click(screen.getByRole("button", { name: /^scan$/i }));
+    await screen.findByRole("button", { name: /^search$/i });
+    await user.click(screen.getByRole("button", { name: /^search$/i }));
     expect(scanStart).toHaveBeenCalledWith({ targets: [], ports: [], maxProbes: 16 });
     // Mutation check: if parseTargets replaced the empty result with some
     // non-empty default, the local-/24 sweep the backend performs on an empty
     // targets array would never run.
+  });
+
+  it("collapses spaces around a dash so a spaced target range parses as one token", async () => {
+    const user = userEvent.setup();
+    render(<NetworkPanel />);
+    await screen.findByRole("button", { name: /^search$/i });
+    await user.type(
+      screen.getByLabelText(/Scan target CIDR/),
+      "192.168.5 - 192.168.15",
+    );
+    await user.click(screen.getByRole("button", { name: /^search$/i }));
+    // "192.168.5 - 192.168.15" must reach the backend as the single range
+    // token "192.168.5-192.168.15" — never a junk lone "-" token.
+    expect(scanStart).toHaveBeenCalledWith({
+      targets: ["192.168.5-192.168.15"],
+      ports: [],
+      maxProbes: 16,
+    });
+    // Mutation check: without dash-space normalization the input splits into
+    // ["192.168.5", "-", "192.168.15"] and this toHaveBeenCalledWith fails.
   });
 
   it("Add to hosts pre-fills the terminal dialog and never connects directly", async () => {

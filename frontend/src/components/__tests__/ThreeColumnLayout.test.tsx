@@ -131,7 +131,7 @@ describe("ThreeColumnLayout", () => {
     // Mutation check (reorder): visual order is Terminals → Network → Connect.
     const html = aside.innerHTML;
     const terminalsIdx = html.indexOf(">Terminals<");
-    const networkIdx = html.indexOf(">Network<");
+    const networkIdx = html.indexOf(">Network Finder<");
     const connectIdx = html.indexOf("+ Connect");
     expect(terminalsIdx).toBeGreaterThan(-1);
     expect(networkIdx).toBeGreaterThan(-1);

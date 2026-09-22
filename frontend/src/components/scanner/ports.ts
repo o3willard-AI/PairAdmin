@@ -10,7 +10,10 @@
 // tokenizer.
 export const parsePorts = (raw: string): number[] => {
   const out: number[] = [];
-  for (const token of raw.split(/[\s,]+/)) {
+  // Collapse spaces adjacent to a dash so a spaced range ("22240 - 22249")
+  // parses as one range instead of separate "22240", "-", "22249" tokens.
+  const src = raw.replace(/\s*-\s*/g, "-");
+  for (const token of src.split(/[\s,]+/)) {
     if (!token) continue;
     if (token.includes("-")) {
       const parts = token.split("-");
