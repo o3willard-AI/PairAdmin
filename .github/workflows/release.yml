@@ -18,7 +18,7 @@ env:
   # `wails build`/`wails dev` still uses — otherwise a QA session's dev
   # binary and the properly-installed release binary silently share the
   # exact same storage, and QA data leaks into what should be a fresh install.
-  RELEASE_LDFLAGS: "-X pairadmin/services/config.releaseBuild=true"
+  RELEASE_LDFLAGS: "-X pairadmin/services/config.releaseBuild=true -X pairadmin/services/version.appVersion=${GITHUB_REF_NAME}"
 
 jobs:
   # Gate every build on the pushed tag matching wails.json's productVersion, so

@@ -11,6 +11,7 @@ import (
 	"pairadmin/services/config"
 	"pairadmin/services/keychain"
 	"pairadmin/services/llm"
+	"pairadmin/services/version"
 
 	"github.com/99designs/keyring"
 )
@@ -896,5 +897,24 @@ func TestGetLLMCatalog_LocalProvidersExposeNoModels(t *testing.T) {
 	}
 	if oi := indexOf("lmstudio"); oi >= 0 && len(views[oi].Models) != 0 {
 		t.Errorf("lmstudio should expose no catalog models, got %d", len(views[oi].Models))
+	}
+}
+
+func TestSettingsServiceGetVersion(t *testing.T) {
+	// The About tab's Wails binding: SettingsService.GetVersion must delegate
+	// to services/version (which release.yml overrides via -ldflags on every
+	// tagged release). Mutation check: hardcoding a stale constant here (or
+	// returning "") drifts from services/version.GetVersion and fails the
+	// equality assertion.
+	s := NewSettingsService(nil)
+	got := s.GetVersion()
+	if got == "" {
+		t.Fatal("GetVersion() must never return an empty string")
+	}
+	if got != version.GetVersion() {
+		t.Errorf("SettingsService.GetVersion() = %q, want services/version.GetVersion() = %q", got, version.GetVersion())
+	}
+	if version.GetVersion() != "dev" {
+		t.Errorf("default must be %q (release builds override it via -ldflags), got %q", "dev", version.GetVersion())
 	}
 }
