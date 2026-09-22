@@ -145,7 +145,11 @@ export function NetworkPanel() {
           )}
 
           {rows.length > 0 && (
-            <div className="space-y-1">
+            // Cap the results list so a large sweep can't grow the panel tall
+            // and push "+ Connect" off the bottom of the overflow-hidden aside
+            // (SCAN-T8). ~6 rows ≈ 256px; for a handful of results this is a
+            // no-op — no scrollbar appears.
+            <div className="space-y-1 max-h-64 overflow-y-auto">
               {rows.map((row) => (
                 <div
                   key={row.ip}
