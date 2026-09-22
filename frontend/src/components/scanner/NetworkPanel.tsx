@@ -23,11 +23,16 @@ const stateClass = (state: HostRow["state"]) =>
 
 // Splits the target input into individual CIDRs/hosts. Empty input means
 // "scan the local /24 networks" (the backend treats an empty targets array
-// exactly that way), so an empty string maps to an empty array.
+// exactly that way), so an empty string maps to an empty array. Spaces
+// adjacent to a dash are collapsed (normalizeDashes) so a spaced range like
+// "192.168.5 - 192.168.15" still parses as one range token, and a stray lone
+// "-" token (from an un-normalized "a - b") can't reach the backend.
+const normalizeDashes = (raw: string): string => raw.replace(/\s*-\s*/g, "-");
+
 const parseTargets = (raw: string): string[] => {
   const t = raw.trim();
   if (!t) return [];
-  return t.split(/[\s,]+/).filter(Boolean);
+  return normalizeDashes(t).split(/[\s,]+/).filter(Boolean);
 };
 
 export function NetworkPanel() {
@@ -53,17 +58,25 @@ export function NetworkPanel() {
       .then(({ GetSettings }) => GetSettings())
       // scanner_enabled defaults to false in services/config/config.go — a fresh
       // install opts OUT until the user enables it in Settings → Terminals →
-      // "Network scanner". Treat an absent value as disabled (fail-closed).
+      // "Network Finder". Treat an absent value as disabled (fail-closed).
       .then((cfg) => setEnabled(!!cfg?.ScannerEnabled))
       .catch(() => setEnabled(false));
   }, []);
 
-  // Disabled in Settings → "Network scanner" off. HIDE the panel AND its entry
+  // Disabled in Settings → "Network Finder" off. HIDE the panel AND its entry
   // point entirely rather than rendering a disabled shell.
   if (enabled === null) return null; // still loading — avoid a flash
   if (!enabled) return null;
 
   const scanning = status === "scanning";
+
+  // Only ssh/ssh-known rows are actionable (they offer "Add to hosts"). The
+  // rest (filtered/closed/alive/dead) contribute to the summary counts ONLY —
+  // rendering their individual IPs reads like a port scanner, not SSH
+  // discovery, so they're filtered out of the results list.
+  const actionableRows = rows.filter(
+    (row) => row.state === "ssh" || row.state === "ssh-known",
+  );
 
   const handleAddToHosts = (row: HostRow) => {
     // Route the discovered host through the EXISTING NewTerminalDialog trust
@@ -82,15 +95,14 @@ export function NetworkPanel() {
         className={`w-full px-3 py-1.5 flex items-center gap-1.5 text-xs font-semibold text-surface-text-muted uppercase tracking-wider hover:text-surface-text ${focusRingClass}`}
       >
         <span className="inline-block w-3 text-center">{expanded ? "▾" : "▸"}</span>
-        Network
+        Network Finder
       </button>
 
       {expanded && (
         <div className="px-2 pt-0.5 space-y-2">
-          {/* Stacked scan inputs: targets get their own full-width line so the
-              field has a usable typing area in the narrow sidebar; ports + Scan
-              share the second line. (Was a single horizontal row that left the
-              targets input almost no width.) */}
+          {/* Stacked search inputs: targets (row 1), ports (row 2), and the Search
+              button on its OWN row (row 3) so the ports input gets full width.
+              (The reorder is UI-only — scan semantics are untouched.) */}
           <div className="flex flex-col gap-1.5">
             <input
               className={inputClass}
@@ -99,23 +111,21 @@ export function NetworkPanel() {
               placeholder="Targets (blank = local /24s)"
               aria-label="Scan target CIDR(s)"
             />
-            <div className="flex items-center gap-1.5">
-              <input
-                className="min-w-0 flex-1 bg-surface-2 border border-surface-border-strong rounded px-2 py-1 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
-                value={portsRaw}
-                onChange={(e) => setPortsRaw(e.target.value)}
-                placeholder="Ports (22)"
-                aria-label="SSH ports to scan"
-                title="Comma/space-separated ports and ranges, e.g. 22,2222 or 22241-22250. Blank = default (22)."
-              />
-              <button
-                onClick={() => startScan(parseTargets(target), parsePorts(portsRaw), 16)}
-                disabled={scanning}
-                className={`bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-3 py-1.5 rounded disabled:opacity-50 ${focusRingClass}`}
-              >
-                {scanning ? "Scanning…" : "Scan"}
-              </button>
-            </div>
+            <input
+              className={inputClass}
+              value={portsRaw}
+              onChange={(e) => setPortsRaw(e.target.value)}
+              placeholder="SSH Ports (22)"
+              aria-label="SSH ports to scan"
+              title="Comma/space-separated ports and ranges, e.g. 22,2222 or 22241-22250. Blank = default (22)."
+            />
+            <button
+              onClick={() => startScan(parseTargets(target), parsePorts(portsRaw), 16)}
+              disabled={scanning}
+              className={`w-full bg-surface-3 hover:bg-surface-3/80 text-surface-text text-xs px-3 py-1.5 rounded disabled:opacity-50 ${focusRingClass}`}
+            >
+              {scanning ? "Searching…" : "Search"}
+            </button>
           </div>
 
           {scanning && (
@@ -144,13 +154,13 @@ export function NetworkPanel() {
             </p>
           )}
 
-          {rows.length > 0 && (
+          {actionableRows.length > 0 && (
             // Cap the results list so a large sweep can't grow the panel tall
             // and push "+ Connect" off the bottom of the overflow-hidden aside
             // (SCAN-T8). ~6 rows ≈ 256px; for a handful of results this is a
             // no-op — no scrollbar appears.
             <div className="space-y-1 max-h-64 overflow-y-auto">
-              {rows.map((row) => (
+              {actionableRows.map((row) => (
                 <div
                   key={row.ip}
                   className="rounded border border-surface-border px-2 py-1"

@@ -65,18 +65,18 @@ describe("TerminalsTab", () => {
     expect(input).toHaveValue(80);
   });
 
-  it("reflects the saved Network scanner toggle setting", async () => {
+  it("reflects the saved Network Finder toggle setting", async () => {
     getSettings.mockResolvedValue({ ScannerEnabled: false });
     render(<TerminalsTab />);
-    const toggle = await screen.findByRole("checkbox", { name: /Network scanner/ });
+    const toggle = await screen.findByRole("checkbox", { name: /Network Finder/ });
     expect(toggle).not.toBeChecked();
   });
 
-  it("saves the Network scanner toggle through the settings save path", async () => {
+  it("saves the Network Finder toggle through the settings save path", async () => {
     const user = userEvent.setup();
     render(<TerminalsTab />);
-    const toggle = await screen.findByRole("checkbox", { name: /Network scanner/ });
-    expect(toggle).toBeChecked(); // "on" by default
+    const toggle = await screen.findByRole("checkbox", { name: /Network Finder/ });
+    expect(toggle).toBeChecked(); // tab UI defaults the checkbox on when silent
 
     await user.click(toggle); // turn it off
     await user.click(screen.getByRole("button", { name: /^save$/i }));
@@ -87,5 +87,20 @@ describe("TerminalsTab", () => {
     // Mutation check: dropping ScannerEnabled from handleSave's merge (or from
     // the toggle's wiring) makes this fail — turning the toggle off would never
     // persist, so the Network panel could not be hidden.
+  });
+
+  it("describes the feature as a host finder, not a port scanner defaults claim", async () => {
+    render(<TerminalsTab />);
+    await screen.findByRole("checkbox", { name: /Network Finder/ });
+    // Feature name + discoverable-SSH framing.
+    expect(screen.getByText("Network Finder")).toBeInTheDocument();
+    expect(screen.getByText(/search local networks for SSH hosts/i)).toBeInTheDocument();
+    // The stale "On by default" claim (it's OFF by default since v2.6.1) is gone.
+    expect(screen.queryByText(/On by default/i)).toBeNull();
+    // Availability is gated on the checkbox being enabled.
+    expect(screen.getByText(/displayed\/available when this checkbox is enabled/i)).toBeInTheDocument();
+    // Mutation check: reverting the description to the old port-scanner /
+    // "On by default" copy makes the queryByText(/On by default/) assertion
+    // find text — this fails.
   });
 });

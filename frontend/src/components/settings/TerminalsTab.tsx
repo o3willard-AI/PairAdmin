@@ -163,11 +163,11 @@ export function TerminalsTab() {
           onChange={(e) => setScannerEnabled(e.target.checked)}
         />
         <span>
-          Network scanner
+          Network Finder
           <span className="block text-surface-text-muted/80">
-            On by default: shows the Network panel in the terminal sidebar,
-            where PairAdmin can sweep the local /24 networks for SSH hosts.
-            Turn this off to hide the panel and its entry point entirely.
+            PairAdmin can search local networks for SSH hosts. Turn this off
+            to hide the panel and its entry point entirely. Only
+            displayed/available when this checkbox is enabled.
           </span>
         </span>
       </label>

@@ -24,6 +24,15 @@ describe("parsePorts", () => {
     expect(parsePorts("22, 2222")).toEqual([22, 2222]);
   });
 
+  it('expands a spaced range "22241 - 22250"', () => {
+    expect(parsePorts("22241 - 22250")).toEqual([
+      22241, 22242, 22243, 22244, 22245, 22246, 22247, 22248, 22249, 22250,
+    ]);
+    // Mutation check: without dash-space normalization the spaced range splits
+    // into ["22241", "-", "22250"] — the lone "-" token is garbage and the
+    // output would be [] — this fails.
+  });
+
   it("returns [] for a blank input (backend default [22])", () => {
     expect(parsePorts("")).toEqual([]);
     expect(parsePorts("   ")).toEqual([]);
