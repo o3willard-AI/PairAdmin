@@ -11,6 +11,32 @@ const saveAPIKey = vi.fn();
 const setModel = vi.fn();
 const testConnection = vi.fn();
 const getApiKeyStatus = vi.fn();
+const getLLMCatalog = vi.fn();
+
+// Default catalog returned by the mocked GetLLMCatalog. Mirrors the backend's
+// curated top-11: names for display, per-provider model lists (local providers
+// expose none — they discover models at runtime).
+const defaultCatalog = () => [
+  {
+    id: "openai",
+    name: "OpenAI",
+    adapter: "openai",
+    models: [
+      { id: "gpt-4o", name: "gpt-4o", context: 0, reasoning: true, toolCall: true },
+      { id: "gpt-5.6-luna", name: "gpt-5.6-luna", context: 400000, reasoning: true, toolCall: true },
+    ],
+  },
+  { id: "anthropic", name: "Anthropic", adapter: "anthropic", models: [] },
+  { id: "google", name: "Google Gemini", adapter: "gemini", models: [] },
+  { id: "deepseek", name: "DeepSeek", adapter: "openai", models: [] },
+  { id: "xai", name: "xAI (Grok)", adapter: "openai", models: [] },
+  { id: "openrouter", name: "OpenRouter", adapter: "openai", models: [] },
+  { id: "mistral", name: "Mistral", adapter: "openai", models: [] },
+  { id: "groq", name: "Groq", adapter: "openai", models: [] },
+  { id: "glm", name: "Z-AI (GLM)", adapter: "openai", models: [] },
+  { id: "ollama", name: "Ollama", adapter: "ollama", models: [] },
+  { id: "lmstudio", name: "LM Studio", adapter: "openai", models: [] },
+];
 
 // Resolves (from frontend/src/components/settings/) to
 // frontend/wailsjs/go/services/SettingsService. From this test file
@@ -24,7 +50,28 @@ vi.mock("../../../../wailsjs/go/services/SettingsService", () => ({
   SaveAPIKey: (...args: unknown[]) => saveAPIKey(...args),
   TestConnection: (...args: unknown[]) => testConnection(...args),
   SetModel: (...args: unknown[]) => setModel(...args),
+  GetLLMCatalog: (...args: unknown[]) => getLLMCatalog(...args),
 }));
+
+beforeEach(() => {
+  // Every describe renders LLMConfigTab, which loads the catalog on mount —
+  // give it the same default catalog unless a test overrides it.
+  getLLMCatalog.mockReset().mockResolvedValue(defaultCatalog());
+});
+
+// selectProvider waits for the catalog to populate the provider dropdown
+// (findByRole resolves once the option appears), THEN selects by id. Catalog
+// options render asynchronously from GetLLMCatalog, so a bare selectOptions
+// right after render races the catalog and fails with "value not found".
+const selectProvider = async (
+  user: ReturnType<typeof userEvent.setup>,
+  value: string
+) => {
+  const optionName =
+    value === "ollama" ? "Ollama" : value === "lmstudio" ? "LM Studio" : value;
+  await screen.findByRole("option", { name: optionName });
+  await user.selectOptions(screen.getByRole("combobox"), value);
+};
 
 describe("LLMConfigTab — Disable Pair LLM", () => {
   beforeEach(() => {
@@ -118,7 +165,7 @@ describe("LLMConfigTab — Ollama API key (remote servers)", () => {
     const user = userEvent.setup();
     render(<LLMConfigTab onClose={vi.fn()} />);
 
-    await user.selectOptions(screen.getByRole("combobox"), "ollama");
+    await selectProvider(user, "ollama");
 
     expect(await screen.findByText("Ollama API key")).toBeInTheDocument();
   });
@@ -127,7 +174,7 @@ describe("LLMConfigTab — Ollama API key (remote servers)", () => {
     const user = userEvent.setup();
     render(<LLMConfigTab onClose={vi.fn()} />);
 
-    await user.selectOptions(screen.getByRole("combobox"), "ollama");
+    await selectProvider(user, "ollama");
     await user.type(
       screen.getByLabelText("Ollama API key"),
       "sk-remote-ollama-key"
@@ -141,7 +188,7 @@ describe("LLMConfigTab — Ollama API key (remote servers)", () => {
     const user = userEvent.setup();
     render(<LLMConfigTab onClose={vi.fn()} />);
 
-    await user.selectOptions(screen.getByRole("combobox"), "ollama");
+    await selectProvider(user, "ollama");
     await user.click(screen.getByRole("button", { name: /^save$/i }));
 
     expect(saveAPIKey).not.toHaveBeenCalled();
@@ -185,7 +232,7 @@ describe("LLMConfigTab — remote Ollama privacy warning", () => {
     const user = userEvent.setup();
     render(<LLMConfigTab onClose={vi.fn()} />);
 
-    await user.selectOptions(screen.getByRole("combobox"), "ollama");
+    await selectProvider(user, "ollama");
     await user.type(
       screen.getByLabelText("Server URL"),
       "http://team-gpu-box.lan:11434"
@@ -200,7 +247,7 @@ describe("LLMConfigTab — remote Ollama privacy warning", () => {
     const user = userEvent.setup();
     render(<LLMConfigTab onClose={vi.fn()} />);
 
-    await user.selectOptions(screen.getByRole("combobox"), "ollama");
+    await selectProvider(user, "ollama");
     // Placeholder default (localhost) — leave the field untouched.
     expect(
       screen.queryByText(/terminal output will be sent to a remote ollama server/i)
@@ -216,7 +263,7 @@ describe("LLMConfigTab — remote Ollama privacy warning", () => {
     const user = userEvent.setup();
     render(<LLMConfigTab onClose={vi.fn()} />);
 
-    await user.selectOptions(screen.getByRole("combobox"), "ollama");
+    await selectProvider(user, "ollama");
     // userEvent.type chokes on ':' key-descriptor parsing, so set ::1 via a
     // paste-style change instead of typing it character by character.
     const input = screen.getByLabelText("Server URL");
@@ -232,7 +279,7 @@ describe("LLMConfigTab — remote Ollama privacy warning", () => {
     const user = userEvent.setup();
     render(<LLMConfigTab onClose={vi.fn()} />);
 
-    await user.selectOptions(screen.getByRole("combobox"), "lmstudio");
+    await selectProvider(user, "lmstudio");
     await user.type(
       screen.getByLabelText("Server URL"),
       "http://some-lmstudio-box:1234/v1"
@@ -295,5 +342,92 @@ describe("LLMConfigTab — Test Connection", () => {
 
     // wailsErrorMessage surfaces the backend Error's own message verbatim.
     expect(await screen.findByText(/✗ connection refused/i)).toBeInTheDocument();
+  });
+});
+
+describe("LLMConfigTab — catalog-driven provider/model picker", () => {
+  beforeEach(() => {
+    getSettings.mockReset().mockResolvedValue({});
+    saveSettings.mockReset().mockResolvedValue(undefined);
+    saveAPIKey.mockReset().mockResolvedValue(undefined);
+    setModel.mockReset().mockResolvedValue("Model set to openai:gpt-4o");
+    getApiKeyStatus.mockReset().mockResolvedValue("");
+    testConnection.mockReset().mockResolvedValue("Connected");
+    useSettingsStore.setState({
+      activeModel: "",
+      settingsOpen: false,
+      connectionStatus: "connected",
+    });
+  });
+
+  it("renders the 11 catalog providers by name plus the Disable Pair LLM opt-out", async () => {
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await screen.findByRole("option", { name: "OpenAI" });
+    for (const name of ["OpenAI", "Anthropic", "Google Gemini", "OpenRouter", "Ollama", "LM Studio"]) {
+      expect(screen.getByRole("option", { name })).toBeInTheDocument();
+    }
+    expect(screen.getByRole("option", { name: "Disable Pair LLM" })).toHaveValue("disabled");
+    // 11 catalog providers + the disabled opt-out
+    expect(screen.getAllByRole("option")).toHaveLength(12);
+    // Mutation check: reverting to a hardcoded provider array (or failing to
+    // surface the catalog) would omit e.g. "Google Gemini" — this fails.
+  });
+
+  it("selecting a provider with catalog models shows suggestions with capability badges that fill the model", async () => {
+    const user = userEvent.setup();
+    render(<LLMConfigTab onClose={vi.fn()} />);
+    await screen.findByRole("option", { name: "OpenAI" });
+    await user.selectOptions(screen.getByRole("combobox"), "openai");
+
+    // Focus the model input to open the suggestion listbox.
+    await user.click(screen.getByLabelText("Model"));
+    const suggestion = await screen.findByRole("option", { name: /gpt-5.6-luna/ });
+    expect(suggestion).toBeInTheDocument();
+    // Capability badges: Reasoning, Tool-call, and the context window.
+    expect(screen.getAllByText("Reasoning").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Tool-call").length).toBeGreaterThan(0);
+    expect(screen.getByText("391k context")).toBeInTheDocument();
+
+    // Clicking the gpt-4o suggestion fills the model field.
+    await user.click(screen.getByRole("option", { name: /gpt-4o/ }));
+    expect(screen.getByDisplayValue("gpt-4o")).toBeInTheDocument();
+    // Mutation check: dropping the suggestion list (or the onMouseDown fill)
+    // would leave the model field empty after this click — this fails.
+  });
+
+  it("a provider with no catalog models (ollama) falls back to free-text with no suggestions", async () => {
+    const user = userEvent.setup();
+    render(<LLMConfigTab onClose={vi.fn()} />);
+    await screen.findByRole("option", { name: "OpenAI" });
+    await selectProvider(user, "ollama");
+
+    await user.click(screen.getByLabelText("Model"));
+    // No suggestion listbox for a provider with no curated models.
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(screen.queryByText(/Suggestions from the curated catalog/)).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Model"), "llama3");
+    expect(screen.getByDisplayValue("llama3")).toBeInTheDocument();
+    // Mutation check: if selecting ollama pulled in another provider's model
+    // list (leaving suggestions up), this test fails on the listbox.
+  });
+
+  it("free-text model entry still saves (custom model id round-trips)", async () => {
+    const user = userEvent.setup();
+    render(<LLMConfigTab onClose={vi.fn()} />);
+    await screen.findByRole("option", { name: "OpenAI" });
+
+    await user.type(screen.getByLabelText("Model"), "my-custom-123");
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ Model: "my-custom-123" })
+    );
+    // The provider:model SetModel format is unchanged by the combobox.
+    expect(setModel).toHaveBeenCalledWith("openai:my-custom-123");
+    // Mutation check: if the combobox only allowed catalog ids (rejecting
+    // free text), the typed custom model would not reach SaveSettings — this
+    // fails, since OpenRouter/Ollama/LM Studio have an open-ended model space.
   });
 });

@@ -253,6 +253,44 @@ export namespace memguard {
 }
 export namespace services {
 	
+	export class CatalogModelView {
+	    id: string;
+	    name: string;
+	    context: number;
+	    reasoning: boolean;
+	    toolCall: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new CatalogModelView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.context = source["context"];
+	        this.reasoning = source["reasoning"];
+	        this.toolCall = source["tool_call"];
+	    }
+	}
+	export class CatalogProviderView {
+	    id: string;
+	    name: string;
+	    adapter: string;
+	    models: Array<CatalogModelView>;
+	
+	    static createFrom(source: any = {}) {
+	        return new CatalogProviderView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.adapter = source["adapter"];
+	        this.models = source["models"];
+	    }
+	}
 	export class ExportMessage {
 	    role: string;
 	    content: string;

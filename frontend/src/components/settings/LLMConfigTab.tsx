@@ -3,21 +3,37 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { mergeAndSaveSettings } from "@/utils/settingsSync";
 import { wailsErrorMessage } from "@/utils/wailsError";
 
-const PROVIDERS = ["openai", "anthropic", "ollama", "openrouter", "lmstudio", "disabled"] as const;
-type Provider = (typeof PROVIDERS)[number];
+// CatalogProvider/CatalogModel mirror the camelCase views SettingsService
+// exposes via GetLLMCatalog (services.CatalogProviderView) — a provider/model
+// picker needs id/name/adapter and per-model id/name/context/reasoning/
+// tool_call; EnvKey and costs never leave the backend.
+export interface CatalogModel {
+  id: string;
+  name: string;
+  context: number;
+  reasoning: boolean;
+  toolCall: boolean;
+}
+export interface CatalogProvider {
+  id: string;
+  name: string;
+  adapter: string;
+  models: CatalogModel[];
+}
 
-// "disabled" renders as the user-facing "Disable Pair LLM" option; the other
-// providers keep their bare IDs as labels.
-const PROVIDER_LABELS: Record<Provider, string> = {
-  openai: "openai",
-  anthropic: "anthropic",
-  ollama: "ollama",
-  openrouter: "openrouter",
-  lmstudio: "lmstudio",
-  disabled: "Disable Pair LLM",
-};
+// NO_KEY_PROVIDERS: local providers that get no API key — the provider->key
+// logic keyed off the id is preserved from the original hardcoded set.
+const NO_KEY_PROVIDERS: string[] = ["ollama", "lmstudio"];
 
-const NO_KEY_PROVIDERS: Provider[] = ["ollama", "lmstudio"];
+// modelBadges returns the capability badges shown on a catalog-model
+// suggestion: Reasoning, Tool-call, and the context window when known.
+function modelBadges(m: CatalogModel): string[] {
+  const b: string[] = [];
+  if (m.reasoning) b.push("Reasoning");
+  if (m.toolCall) b.push("Tool-call");
+  if (m.context && m.context > 0) b.push(`${Math.max(1, Math.round(m.context / 1024))}k context`);
+  return b;
+}
 
 // isLoopbackHost reports whether an Ollama/LM Studio server URL points at
 // this machine: localhost, a 127.x.y.z address, or [::1] / ::1. Used to
@@ -54,7 +70,9 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
   const setActiveModel = useSettingsStore((s) => s.setActiveModel);
   const setConnectionStatus = useSettingsStore((s) => s.setConnectionStatus);
 
-  const [provider, setProvider] = useState<Provider>("openai");
+  const [providers, setProviders] = useState<CatalogProvider[]>([]);
+  const [modelOpen, setModelOpen] = useState(false);
+  const [provider, setProvider] = useState<string>("openai");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [keyPlaceholder, setKeyPlaceholder] = useState("");
@@ -66,9 +84,9 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
 
   useEffect(() => {
     import(/* @vite-ignore */ "../../../wailsjs/go/services/SettingsService")
-      .then(({ GetSettings, GetAPIKeyStatus }) => {
+      .then(({ GetSettings, GetAPIKeyStatus, GetLLMCatalog }) => {
         GetSettings().then((cfg) => {
-          if (cfg.Provider) setProvider(cfg.Provider as Provider);
+          if (cfg.Provider) setProvider(cfg.Provider);
           if (cfg.Model) setModel(cfg.Model as string);
           if (cfg.OllamaHost) setOllamaHost(cfg.OllamaHost);
           if (cfg.LMStudioHost) setLmstudioHost(cfg.LMStudioHost);
@@ -76,6 +94,10 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
         GetAPIKeyStatus(provider).then((status: string) => {
           setKeyPlaceholder(status ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (stored)" : "");
         });
+        // Populate the provider/model picker from the backend catalog. If the
+        // catalog binding is unavailable the tab degrades (provider select
+        // falls back to just the "disabled" opt-out) rather than crashing.
+        GetLLMCatalog().then((catalog: CatalogProvider[]) => setProviders(catalog)).catch(() => {});
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,6 +216,15 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
   // only call it when the user actually typed something).
   const showOllamaKeyField = provider === "ollama";
 
+  // Catalog-driven picker state. A provider with no catalog models
+  // (ollama/lmstudio discover models at runtime) yields no suggestions, so
+  // the model combobox degrades to a plain free-text input.
+  const activeProvider = providers.find((p) => p.id === provider);
+  const catalogModels = activeProvider?.models ?? [];
+  const modelSuggestions = modelOpen
+    ? catalogModels.filter((m) => m.id.toLowerCase().includes(model.trim().toLowerCase()))
+    : [];
+
   return (
     <div className="space-y-4 p-6">
       <div className="space-y-1">
@@ -201,14 +232,20 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
         <div className="relative">
           <select
             value={provider}
-            onChange={(e) => setProvider(e.target.value as Provider)}
+            onChange={(e) => {
+              setProvider(e.target.value);
+              setModelOpen(false);
+            }}
             className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
           >
-            {PROVIDERS.map((p) => (
-              <option key={p} value={p} className="bg-surface-2 text-surface-text">
-                {PROVIDER_LABELS[p]}
+            {providers.map((p) => (
+              <option key={p.id} value={p.id} className="bg-surface-2 text-surface-text">
+                {p.name}
               </option>
             ))}
+            <option value="disabled" className="bg-surface-2 text-surface-text">
+              Disable Pair LLM
+            </option>
           </select>
         </div>
       </div>
@@ -216,13 +253,59 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
       {!isDisabledProvider && (
         <div className="space-y-1">
           <label className="text-xs text-surface-text-muted">Model</label>
-          <input
-            type="text"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder="e.g. gpt-4o, claude-3-5-sonnet-20241022"
-            className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
-          />
+          <div className="relative">
+            <input
+              type="text"
+              value={model}
+              onChange={(e) => {
+                setModel(e.target.value);
+                setModelOpen(true);
+              }}
+              onFocus={() => setModelOpen(true)}
+              onBlur={() => setTimeout(() => setModelOpen(false), 120)}
+              placeholder="e.g. gpt-4o, claude-3-5-sonnet-20241022"
+              aria-label="Model"
+              className="w-full bg-surface-2 border border-surface-border-strong rounded px-3 py-1.5 text-sm text-surface-text focus:border-surface-text-muted focus:outline-none"
+            />
+            {modelSuggestions.length > 0 && (
+              <ul
+                role="listbox"
+                className="absolute z-20 mt-1 w-full max-h-56 overflow-auto bg-surface-2 border border-surface-border-strong rounded text-sm text-surface-text shadow-lg"
+              >
+                {modelSuggestions.map((m) => (
+                  <li key={m.id}>
+                    <button
+                      type="button"
+                      role="option"
+                      onMouseDown={(e) => {
+                        e.preventDefault(); // keep the input focused; select below
+                        setModel(m.id);
+                        setModelOpen(false);
+                      }}
+                      className="w-full text-left px-2 py-1.5 hover:bg-surface-3/50 text-xs text-surface-text flex items-center justify-between gap-1.5"
+                    >
+                      <span className="font-mono truncate">{m.id}</span>
+                      <span className="flex items-center gap-1 text-[10px] text-surface-text-muted">
+                        {modelBadges(m).map((badge) => (
+                          <span
+                            key={badge}
+                            className="rounded bg-surface-3 px-1.5 py-0.5 uppercase"
+                          >
+                            {badge}
+                          </span>
+                        ))}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          {catalogModels.length > 0 && (
+            <p className="text-xs text-surface-text-muted">
+              Suggestions from the curated catalog — you can still type any model id.
+            </p>
+          )}
         </div>
       )}
 

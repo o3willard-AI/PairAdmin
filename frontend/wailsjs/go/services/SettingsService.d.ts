@@ -14,6 +14,8 @@ export function GetAPIKeyStatus(arg1:string):Promise<string>;
 
 export function GetCurrentUsername():Promise<string>;
 
+export function GetLLMCatalog():Promise<Array<services.CatalogProviderView>>;
+
 export function GetSettings():Promise<config.AppConfig>;
 
 export function HasMasterPassword():Promise<boolean>;
