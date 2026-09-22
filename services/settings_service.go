@@ -15,6 +15,7 @@ import (
 	"pairadmin/services/config"
 	"pairadmin/services/keychain"
 	"pairadmin/services/llm"
+	"pairadmin/services/llm/catalog"
 
 	"github.com/awnumar/memguard"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -33,6 +34,27 @@ type captureManagerForceCapture interface {
 type ExportMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+}
+
+// CatalogModelView and CatalogProviderView are the JSON-serializable,
+// camelCase views of the LLM provider catalog exposed to the frontend
+// picker. They carry exactly what a provider/model picker needs
+// (id/name/adapter, and per-model id/name/context/reasoning/tool_call) and
+// deliberately NOT EnvKey, BaseURL, NeedsKey, or costs — those are backend
+// concerns that must never leave the process to the UI.
+type CatalogModelView struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Context   int    `json:"context"`
+	Reasoning bool   `json:"reasoning"`
+	ToolCall  bool   `json:"tool_call"`
+}
+
+type CatalogProviderView struct {
+	ID      string             `json:"id"`
+	Name    string             `json:"name"`
+	Adapter string             `json:"adapter"`
+	Models  []CatalogModelView `json:"models"`
 }
 
 // SettingsService is the Wails-bound service for reading and writing application settings.
@@ -68,6 +90,32 @@ func (s *SettingsService) SetLLMService(svc *LLMService) {
 // GetSettings returns the current application configuration from disk.
 func (s *SettingsService) GetSettings() (*config.AppConfig, error) {
 	return config.LoadAppConfig()
+}
+
+// GetLLMCatalog returns the curated top-11 provider catalog as a
+// JSON-serializable list for the frontend provider/model picker. EnvKey and
+// costs are never exposed (see CatalogProviderView/CatalogModelView).
+func (s *SettingsService) GetLLMCatalog() []CatalogProviderView {
+	var out []CatalogProviderView
+	for _, p := range catalog.ListProviders() {
+		var models []CatalogModelView
+		for _, m := range p.Models {
+			models = append(models, CatalogModelView{
+				ID:        m.ID,
+				Name:      m.Name,
+				Context:   m.Context,
+				Reasoning: m.Reasoning,
+				ToolCall:  m.ToolCall,
+			})
+		}
+		out = append(out, CatalogProviderView{
+			ID:      p.ID,
+			Name:    p.Name,
+			Adapter: p.Adapter,
+			Models:  models,
+		})
+	}
+	return out
 }
 
 // SaveSettings persists the given configuration to disk, rebuilds the LLM provider,

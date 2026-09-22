@@ -22,6 +22,10 @@ export function GetCurrentUsername() {
   return window['go']['services']['SettingsService']['GetCurrentUsername']();
 }
 
+export function GetLLMCatalog() {
+  return window['go']['services']['SettingsService']['GetLLMCatalog']();
+}
+
 export function GetSettings() {
   return window['go']['services']['SettingsService']['GetSettings']();
 }

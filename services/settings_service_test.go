@@ -823,3 +823,78 @@ func TestSettingsService_GetCurrentUsername(t *testing.T) {
 		t.Errorf("GetCurrentUsername() = %q, want %q", got, expected)
 	}
 }
+
+// TestGetLLMCatalog_ReturnsAllElevenInCatalogOrder verifies GetLLMCatalog
+// exposes every catalog provider, in catalog order, with the picker fields.
+// Mutation check: dropping GetLLMCatalog's mapping loop (or trimming the
+// provider list) makes this test fail — a stale/partial catalog would omit a
+// provider from the Settings picker.
+func TestGetLLMCatalog_ReturnsAllElevenInCatalogOrder(t *testing.T) {
+	svc := NewSettingsService(nil)
+	views := svc.GetLLMCatalog()
+	if len(views) != 11 {
+		t.Fatalf("expected 11 catalog providers, got %d", len(views))
+	}
+	if views[0].ID != "openai" || views[0].Name == "" || views[0].Adapter == "" {
+		t.Errorf("first provider should be openai with a name+adapter, got %q/%q/%q",
+			views[0].ID, views[0].Name, views[0].Adapter)
+	}
+	last := views[len(views)-1]
+	if last.ID != "lmstudio" {
+		t.Errorf("last provider should be lmstudio (catalog order), got %q", last.ID)
+	}
+	for i := 0; i < len(views); i++ {
+		if views[i].ID == "" {
+			t.Errorf("provider %d has an empty id", i)
+		}
+	}
+}
+
+// TestGetLLMCatalog_MapsModelsPinned verifies the model view carries the
+// picker fields (id/name/context/reasoning/tool_call) and NEVER EnvKey/costs.
+// Mutation check: eliding the model-mapping loop (or leaking cost/EnvKey
+// fields into the view) makes this test fail — openai must expose its 5
+// catalog models with their capability flags, nothing more.
+func TestGetLLMCatalog_MapsModelsPinned(t *testing.T) {
+	svc := NewSettingsService(nil)
+	views := svc.GetLLMCatalog()
+	openai := views[0]
+	if len(openai.Models) != 5 {
+		t.Fatalf("openai should expose 5 catalog models, got %d", len(openai.Models))
+	}
+	m := openai.Models[0]
+	if m.ID != "gpt-5.6-luna" || m.Name != "gpt-5.6-luna" {
+		t.Errorf("first openai model mismatch: %q/%q", m.ID, m.Name)
+	}
+	if !m.Reasoning || !m.ToolCall {
+		t.Errorf("gpt-5.6-luna should flag Reasoning+ToolCall, got %v/%v", m.Reasoning, m.ToolCall)
+	}
+	// Context window is unknown (0) for gpt-5.6-luna in the catalog.
+	if m.Context != 0 {
+		t.Errorf("gpt-5.6-luna context should be 0 (unknown), got %d", m.Context)
+	}
+}
+
+// TestGetLLMCatalog_LocalProvidersExposeNoModels verifies ollama/lmstudio
+// surface an EMPTY models list (their models are discovered at runtime, not
+// cataloged) — so the picker falls back to free-text for them.
+func TestGetLLMCatalog_LocalProvidersExposeNoModels(t *testing.T) {
+	svc := NewSettingsService(nil)
+	views := svc.GetLLMCatalog()
+
+	indexOf := func(id string) int {
+		for i := 0; i < len(views); i++ {
+			if views[i].ID == id {
+				return i
+			}
+		}
+		return -1
+	}
+
+	if oi := indexOf("ollama"); oi >= 0 && len(views[oi].Models) != 0 {
+		t.Errorf("ollama should expose no catalog models, got %d", len(views[oi].Models))
+	}
+	if oi := indexOf("lmstudio"); oi >= 0 && len(views[oi].Models) != 0 {
+		t.Errorf("lmstudio should expose no catalog models, got %d", len(views[oi].Models))
+	}
+}
