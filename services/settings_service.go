@@ -134,7 +134,13 @@ func (s *SettingsService) SaveAPIKey(provider, key string) error {
 
 // apiKeysProviders lists the LLM providers whose API keys are loaded from the
 // keychain by LoadAPIKeys (mirrors the previous startup loop in main.go).
-var apiKeysProviders = []string{"openai", "anthropic", "openrouter", "ollama"}
+var apiKeysProviders = []string{
+	// The legacy four.
+	"openai", "anthropic", "openrouter", "ollama",
+	// The six new keyed providers from the catalog. lmstudio is NOT here:
+	// it is keyless (NeedsKey=false) and its keychain key would never exist.
+	"google", "deepseek", "xai", "mistral", "groq", "glm",
+}
 
 // LoadAPIKeys reads every provider's API key from the keychain, seals each
 // into a memguard Enclave on LLMService, and rebuilds the provider.
