@@ -643,3 +643,32 @@ func TestScanService_gateCfg_FallsBackToSnapshotOnLoadError(t *testing.T) {
 	// on a load error would silently disable scanning; this test pins the
 	// fallback-to-snapshot behavior.
 }
+
+func TestScanService_StartupCtxFlowsToEveryEmittedEvent(t *testing.T) {
+	// The shipped crash: scan events were emitted on a ctx derived from
+	// context.Background(), which carries no Wails app values —
+	// runtime.EventsEmit → getEvents(ctx) → log.Fatalf → os.Exit(1) on the
+	// FIRST scan event. This pins the fix: after Startup(ctx), every event
+	// must flow on a ctx carrying the Wails values.
+	//
+	// Mutation check: reverting Start's context.WithCancel(s.ctx) back to
+	// context.WithCancel(context.Background()) makes the recorded ctx carry
+	// NO "events" value and fails this — the app would crash on emit.
+	wailsCtx := context.WithValue(context.Background(), contextKey("events"), "dummy")
+	rec := &emitRecorder{}
+	svc := NewScanService(config.AppConfig{ScannerEnabled: true}, rec.emit)
+	svc.Startup(wailsCtx)
+
+	// A bad target makes buildTargets fail fast; the scan:error event must
+	// arrive on the Startup ctx (carrying the Wails "events" value).
+	if _, err := svc.Start(ScanRequest{Targets: []string{"not-a-cidr"}}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	errEv := rec.waitFor(t, "scan:error", 5*time.Second)
+	if got := errEv.ctx.Value(contextKey("events")); got != "dummy" {
+		t.Fatalf("emitted ctx must carry the Startup ctx's Wails values, got %v (nil means context.Background lineage — the os.Exit crash)", got)
+	}
+}
+
+// contextKey mirrors the Wails runtime's ctx key type for the sentinel test.
+type contextKey string
