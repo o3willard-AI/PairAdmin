@@ -116,7 +116,7 @@ type AppConfig struct {
 	// actual MITM defense and isn't affected by this setting.
 	PromptNewHostKeys bool `mapstructure:"prompt_new_host_keys" yaml:"prompt_new_host_keys"`
 	// ScannerEnabled turns the network-scanner feature on or off. Defaults to
-	// true. The scanner's entry points consult services/scanner's scanAllowed
+	// false. The scanner's entry points consult services/scanner's scanAllowed
 	// seam, which honors this field for the default (non-forked) build — see that
 	// seam for how an Enterprise fork force-disables scanning.
 	ScannerEnabled bool `mapstructure:"scanner_enabled" yaml:"scanner_enabled"`
@@ -252,7 +252,7 @@ func LoadAppConfig() (*AppConfig, error) {
 	v.SetDefault("terminals_sidebar_width_ch", DefaultTerminalsSidebarWidthCh)
 	v.SetDefault("commands_sidebar_width_ch", DefaultCommandsSidebarWidthCh)
 	v.SetDefault("prompt_new_host_keys", false)
-	v.SetDefault("scanner_enabled", true)
+	v.SetDefault("scanner_enabled", false)
 	// Missing config file is not an error — returns defaults.
 	_ = v.ReadInConfig()
 	var cfg AppConfig

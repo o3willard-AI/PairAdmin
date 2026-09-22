@@ -111,6 +111,39 @@ describe("ThreeColumnLayout", () => {
     expect(screen.getByText("Terminals")).toBeInTheDocument();
   });
 
+  it("orders the left aside Terminals → Network scan → '+ Connect', and makes it a no-scroll flex column", async () => {
+    // Enable the scanner so NetworkPanel actually renders inside the aside.
+    getSettings.mockResolvedValue({ ScannerEnabled: true });
+    const { container } = render(
+      <ThreeColumnLayout sidebar={<div>Commands</div>}>
+        <div>Chat</div>
+      </ThreeColumnLayout>
+    );
+    await screen.findByRole("button", { name: /network/i });
+
+    const aside = container.querySelectorAll("aside")[0];
+    // Mutation check (no-scrollbar): the aside must be an overflow-hidden flex
+    // column — the terminal list (flex-1 min-h-0) is the ONLY scroll
+    // container, so an empty sidebar never shows an aside-level scrollbar.
+    expect(aside.className).toContain("flex-col");
+    expect(aside.className).toContain("overflow-hidden");
+
+    // Mutation check (reorder): visual order is Terminals → Network → Connect.
+    const html = aside.innerHTML;
+    const terminalsIdx = html.indexOf(">Terminals<");
+    const networkIdx = html.indexOf(">Network<");
+    const connectIdx = html.indexOf("+ Connect");
+    expect(terminalsIdx).toBeGreaterThan(-1);
+    expect(networkIdx).toBeGreaterThan(-1);
+    expect(connectIdx).toBeGreaterThan(-1);
+    expect(terminalsIdx).toBeLessThan(networkIdx);
+    expect(networkIdx).toBeLessThan(connectIdx);
+    // Mutation check: if + Connect were still inside TerminalTabList (above the
+    // scanner), or the tab list hard-filled the aside (h-full causing the
+    // combined height to overflow), one of these ordering/overflow assertions
+    // fails.
+  });
+
   it("renders status bar with No model text", () => {
     render(
       <ThreeColumnLayout>
