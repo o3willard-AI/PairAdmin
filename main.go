@@ -134,6 +134,7 @@ func main() {
 			settingsService.Startup(ctx)
 			ptyService.Startup(ctx)
 			remoteService.Startup(ctx)
+			scanService.Startup(ctx)
 		},
 		OnBeforeClose: func(ctx context.Context) bool {
 			if auditLogger != nil {

@@ -152,6 +152,14 @@ type ScanService struct {
 	cfg    config.AppConfig
 	emitFn func(ctx context.Context, event string, optionalData ...interface{})
 
+	// ctx is the Wails app context Startup stores. Every scan derives its
+	// cancellation ctx from it so events emit on a context carrying the
+	// Wails app values — runtime.EventsEmit fatals (os.Exit) on a ctx
+	// without them. Defaults to context.Background() so tests and
+	// non-Wails embeds keep working (with an injected emitFn they never
+	// hit runtime.EventsEmit).
+	ctx context.Context
+
 	// liveCfgFn, when set, is the live AppConfig source the Start
 	// enable/disable gate consults. NewScanService captures cfg by value, so
 	// without this a frontend scanner_enabled change (Settings toggle) would
@@ -174,8 +182,17 @@ func NewScanService(cfg config.AppConfig, emitFn func(ctx context.Context, event
 	return &ScanService{
 		cfg:     cfg,
 		emitFn:  emitFn,
+		ctx:     context.Background(),
 		cancels: make(map[string]context.CancelFunc),
 	}
+}
+
+// Startup stores the Wails app context, mirroring LLMService.Startup exactly.
+// main.go's OnStartup hook calls it so every emitted scan event flows on a
+// ctx carrying the Wails app values (runtime.EventsEmit needs them; a
+// context.Background() lineage makes it log.Fatalf → os.Exit(1)).
+func (s *ScanService) Startup(ctx context.Context) {
+	s.ctx = ctx
 }
 
 // SetLiveCfgFn wires the live AppConfig source that Start's enable/disable
@@ -220,7 +237,7 @@ func (s *ScanService) Start(req ScanRequest) (string, error) {
 		return "", fmt.Errorf("generate scan id: %w", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(s.ctx)
 	s.mu.Lock()
 	s.cancels[scanID] = cancel
 	s.mu.Unlock()
