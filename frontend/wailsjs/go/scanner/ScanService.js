@@ -10,6 +10,10 @@ export function Start(arg1) {
   return window['go']['scanner']['ScanService']['Start'](arg1);
 }
 
+export function Startup(arg1) {
+  return window['go']['scanner']['ScanService']['Startup'](arg1);
+}
+
 export function Stop(arg1) {
   return window['go']['scanner']['ScanService']['Stop'](arg1);
 }
