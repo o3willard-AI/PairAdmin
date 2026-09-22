@@ -16,6 +16,7 @@ import (
 	"pairadmin/services/keychain"
 	"pairadmin/services/llm"
 	"pairadmin/services/llm/catalog"
+	"pairadmin/services/version"
 
 	"github.com/awnumar/memguard"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -75,6 +76,15 @@ func NewSettingsService(kc *keychain.Client) *SettingsService {
 		keychainClient: kc,
 		emitFn:         runtime.EventsEmit,
 	}
+}
+
+// GetVersion returns the application version for the About tab. Delegates to
+// services/version — the release workflow injects the real version there via
+// -ldflags (-X pairadmin/services/version.appVersion=<tag>), so this binding
+// always matches the release tag with zero manual per-release edits. Local
+// builds report "dev".
+func (s *SettingsService) GetVersion() string {
+	return version.GetVersion()
 }
 
 // Startup is called by Wails after the application context is available.

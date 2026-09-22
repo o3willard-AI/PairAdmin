@@ -18,6 +18,8 @@ export function GetLLMCatalog():Promise<Array<services.CatalogProviderView>>;
 
 export function GetSettings():Promise<config.AppConfig>;
 
+export function GetVersion():Promise<string>;
+
 export function HasMasterPassword():Promise<boolean>;
 
 export function LoadAPIKeys():Promise<void>;

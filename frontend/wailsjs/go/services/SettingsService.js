@@ -30,6 +30,10 @@ export function GetSettings() {
   return window['go']['services']['SettingsService']['GetSettings']();
 }
 
+export function GetVersion() {
+  return window['go']['services']['SettingsService']['GetVersion']();
+}
+
 export function HasMasterPassword() {
   return window['go']['services']['SettingsService']['HasMasterPassword']();
 }
