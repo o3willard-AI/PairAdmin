@@ -400,7 +400,7 @@ The `/security` page (§5.7) is the linkable asset. Secondary: a plainly written
 
 **Both agents: read, do not publish specifics.**
 
-Centralized configuration lockdown and auto-populated connections from a database or file are **deliberately reserved** for a future licensed build (name undecided; "Enterprise" is preferred over "Pro" because both features are bought by central IT rather than by an individual operator). The private repository does not yet exist. **Do not announce, name, date, or price this tier.**
+Centralized configuration lockdown and auto-populated connections from a database or file are **deliberately reserved** for a future licensed build (name undecided; "Enterprise" is preferred over "Pro" because both features are bought by central IT rather than by an individual operator). Planning for it happens in a private repository that is not public and must not be referenced, linked, or described in any public surface of this repo. **Do not announce, name, date, or price this tier.**
 
 ### 8.1 The open-core line holds
 
