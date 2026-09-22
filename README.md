@@ -153,15 +153,9 @@ sudo rpm -Uvh pairadmin_linux_amd64.rpm
    <img src="assets/windows-smartscreen-run-anyway.jpg" alt="Windows SmartScreen warning — click Run anyway" width="460" />
 3. Requires the WebView2 Runtime (preinstalled on Windows 11; the installer fetches it on Windows 10). Windows 10 1809+ supported.
 
-**macOS (alpha — unsigned)**
+**macOS**
 
-macOS builds ship **unsigned** during the alpha. Download `PairAdmin-universal.dmg` from the [latest release](https://github.com/o3willard-AI/PairAdmin/releases/latest), mount it, and drag PairAdmin to Applications. Gatekeeper will block the app on first launch, so approve it once with:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/PairAdmin.app
-```
-
-…or via **System Settings → Privacy & Security → "Open Anyway"**. Re-run this on every update (each new download re-triggers Gatekeeper). Apple code signing + notarization is planned for the stable release. Requires **macOS 12+**.
+macOS builds are **signed and notarized** (Apple Developer ID, hardened runtime). Download `PairAdmin-universal.dmg` from the [latest release](https://github.com/o3willard-AI/PairAdmin/releases/latest), mount it, and drag PairAdmin to Applications — it opens normally, with no Gatekeeper override. Requires **macOS 12+**.
 
 > **AppImage:** coming in a future release.
 
