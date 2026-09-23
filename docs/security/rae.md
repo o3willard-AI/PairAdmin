@@ -3,6 +3,7 @@
 The canonical definition of RAE lives in a standalone, versioned specification:
 
 - **Specification:** <https://github.com/o3willard-AI/RAE>
+- **Conformance statement (voluntary, L0):** [RAE-CONFORMANCE.md](../../RAE-CONFORMANCE.md) at the repository root — the claim boundary, clause status, and proof locations in the conventional §4 form.
 
 ## PairAdmin implementation
 
