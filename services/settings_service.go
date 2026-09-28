@@ -105,9 +105,15 @@ func (s *SettingsService) GetSettings() (*config.AppConfig, error) {
 // GetLLMCatalog returns the curated top-11 provider catalog as a
 // JSON-serializable list for the frontend provider/model picker. EnvKey and
 // costs are never exposed (see CatalogProviderView/CatalogModelView).
+//
+// This is enforcement point 1 of the LLM policy: the list is filtered through
+// llm.FilterCatalog on the way out, so a provider or model the local policy
+// denies is never offered to the user in the first place. The request-time
+// re-check in llm_service.SendMessage is the second point and does not trust
+// this one.
 func (s *SettingsService) GetLLMCatalog() []CatalogProviderView {
 	var out []CatalogProviderView
-	for _, p := range catalog.ListProviders() {
+	for _, p := range llm.FilterCatalog(catalog.ListProviders()) {
 		var models []CatalogModelView
 		for _, m := range p.Models {
 			models = append(models, CatalogModelView{
