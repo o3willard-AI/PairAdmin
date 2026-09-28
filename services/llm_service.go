@@ -172,6 +172,32 @@ func (s *LLMService) SendMessage(tabId, userInput, terminalContext string) error
 		return fmt.Errorf("no LLM provider configured; set PAIRADMIN_PROVIDER environment variable")
 	}
 
+	// Enforcement point 2 of the LLM policy: re-evaluate the configured
+	// provider and model against the effective policy on EVERY outbound call
+	// rather than trusting the catalog filter in GetLLMCatalog. The catalog is
+	// read once per settings view, so a hand-edited config.yaml, a stale
+	// picker, or a model typed straight into the UI would otherwise reach the
+	// provider with no policy check at all. The effective bundle is rebuilt
+	// per call for exactly that reason.
+	//
+	// This runs before the filter pipeline and before any prompt is
+	// assembled: a denied request must not be able to reach the network, and
+	// must not put user text into an audit entry as if it had been sent.
+	if err := llm.CheckRequest(s.cfg.Provider, s.cfg.Model); err != nil {
+		if s.auditLogger != nil {
+			// Audit the denial. Content names the provider/model resource
+			// that was refused — those are catalog ids, never credentials —
+			// so the entry is actionable without carrying anything sensitive.
+			s.auditLogger.Write(audit.AuditEntry{
+				Event:      "llm_policy_denied",
+				SessionID:  s.sessionID,
+				TerminalID: tabId,
+				Content:    err.Error(),
+			})
+		}
+		return err
+	}
+
 	// Apply filter pipeline: ANSI stripping + credential redaction, plus any
 	// user-configured custom patterns (/filter add) — before LLM. Custom
 	// patterns previously only applied to the legacy tmux/AT-SPI2 capture

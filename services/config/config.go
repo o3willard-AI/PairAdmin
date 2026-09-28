@@ -120,6 +120,23 @@ type AppConfig struct {
 	// seam, which honors this field for the default (non-forked) build — see that
 	// seam for how an Enterprise fork force-disables scanning.
 	ScannerEnabled bool `mapstructure:"scanner_enabled" yaml:"scanner_enabled"`
+	// EnabledProviders and DisabledProviders are the OSS LLM policy: a
+	// user-settable, UNSIGNED, self-imposed allow/deny list applied through
+	// the same evaluation engine as everything else
+	// (services/llm/policy). Both are optional; empty means unrestricted.
+	//
+	// EnabledProviders non-empty makes the list an ALLOWLIST: every provider
+	// not named is denied. DisabledProviders denies only the named ones. If a
+	// provider appears in both, the deny wins.
+	//
+	// These may only NARROW what is usable. They are user input, so the
+	// bundle builder (policy.LocalBundle) is written so that no combination of
+	// values can produce a bundle that permits more than an unrestricted
+	// install. The enterprise fork overrides the enforcement seam
+	// (services/llm's enforcePolicy) to add signed bundles; these two fields
+	// stay as the OSS self-restriction.
+	EnabledProviders  []string `mapstructure:"enabled_providers" yaml:"enabled_providers"`
+	DisabledProviders []string `mapstructure:"disabled_providers" yaml:"disabled_providers"`
 }
 
 // DefaultHotkeyAddClipboardCommand is the out-of-the-box binding for
@@ -296,5 +313,7 @@ func SaveAppConfig(cfg *AppConfig) error {
 	v.Set("pinned_commands", cfg.PinnedCommands)
 	v.Set("prompt_new_host_keys", cfg.PromptNewHostKeys)
 	v.Set("scanner_enabled", cfg.ScannerEnabled)
+	v.Set("enabled_providers", cfg.EnabledProviders)
+	v.Set("disabled_providers", cfg.DisabledProviders)
 	return v.WriteConfigAs(configPath())
 }
