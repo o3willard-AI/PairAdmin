@@ -24,6 +24,26 @@ import (
 var assets embed.FS
 
 func main() {
+	// Uninstaller cleanup mode: purge PairAdmin-scoped credentials and exit.
+	//
+	// This MUST be the first thing in main(), before wails.Run() and before any
+	// other setup, for three reasons:
+	//   - it must never open a window or initialise the GUI;
+	//   - it must never prompt for the master password (the file backend needs
+	//     it, and there is no one to answer in an uninstall context — RemoveAll
+	//     treats an unopenable backend as a no-op for exactly that reason);
+	//   - it must exit quickly, so a hiccup purging one credential can never
+	//     stall or fail the uninstall.
+	//
+	// It prints nothing: the uninstaller runs this with nsExec and has no use
+	// for the output, and AGENTS.md §3 requires credential-related paths to stay
+	// silent. It always exits 0 — a partial wipe must not be reported as a
+	// failed uninstall, which would leave the user with the app half-removed.
+	if len(os.Args) > 1 && os.Args[1] == "--uninstall-cleanup" {
+		_ = keychain.New().RemoveAll()
+		os.Exit(0)
+	}
+
 	// Full software-rendering stack for systems without reliable GPU support
 	// (VMs with VirtIO/Virtio GPU, no-dGPU desktops, headless).
 	// All vars must be set before wails.Run() so GTK/WebKit pick them up at init.

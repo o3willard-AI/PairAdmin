@@ -108,17 +108,68 @@ Section "uninstall"
     nsExec::Exec 'taskkill /F /T /IM "msedgewebview2.exe"'
     Sleep 1000 # brief delay for processes to release file handles
 
+    # --- User data: ask first, default to KEEPING it. ---
+    #
+    # Removing user data is a choice, not a consequence of uninstalling. The
+    # default is No so a user who clicks through the wizard cannot lose their
+    # saved connections and API keys by accident — reinstalling after a crash
+    # or a "this app is broken" report should not require re-entering them.
+    #
+    # Wording names "credentials" explicitly because the secrets are NOT in the
+    # data dir: with an OS backend they are `pairadmin:*` entries in the Windows
+    # Credential Manager, so "delete everything" has to promise clearing those
+    # too or it is not doing what it says.
+    MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 \
+        "Also permanently delete all PairAdmin settings, saved connections, saved credentials, and logs?$\n$\nThis cannot be undone. Choose No to keep them (e.g. if you plan to reinstall later)." \
+        IDYES wipe_user_data
+    Goto user_data_choice_done
+
+wipe_user_data:
+        # Clear the OS keychain/Credential Manager entries BEFORE the executable
+        # is deleted below — this is the only chance to run it.
+        #
+        # --uninstall-cleanup is a headless, GUI-free path that always exits 0 and
+        # prints nothing: a hiccup purging one credential must not fail or hang
+        # the uninstall. The app is already killed by the taskkill above, so it
+        # cannot be holding a lock on the Credential Manager.
+        #
+        # This must stay INSIDE the wipe_user_data block. Run unconditionally it
+        # would purge every credential even when the user chose to keep their
+        # data, which is the opposite of what the dialog promises.
+        DetailPrint "Purging saved credentials..."
+        nsExec::Exec '"$INSTDIR\${PRODUCT_EXECUTABLE}" --uninstall-cleanup'
+
+        # Delete the release per-user data dir: config.yaml, known_hosts.yaml and
+        # logs/audit-*.jsonl (see services/config/config.go ConfigDir(); release
+        # builds resolve to %LOCALAPPDATA%\PairAdmin).
+        #
+        # The context switch here is the actual fix for a silent no-op that has
+        # shipped since v2.4.0. REQUEST_EXECUTION_LEVEL defaults to "admin" (we
+        # install into Program Files), so !insertmacro wails.setShellContext ran
+        # `SetShellVarContext all` above, under which $LocalAppData resolves to
+        # the ALL-USERS variant — a different folder from the one the app uses.
+        # The app resolves its data dir from os.UserHomeDir()
+        # (services/config/config.go releaseDataDir), i.e. the real invoking
+        # user's %LOCALAPPDATA%\PairAdmin, so the RMDir was deleting a directory
+        # the app never wrote to and leaving the real one untouched.
+        #
+        # Elevation raises privilege but does NOT switch user accounts, so
+        # `current` resolves back to the invoking user's profile. The switch is
+        # scoped to this one command on purpose: the `all` context is still
+        # correct for the Start Menu/Desktop shortcuts and the $PROGRAMFILES64
+        # cleanup below, which are genuinely per-machine.
+        SetShellVarContext current
+        RMDir /r "$LocalAppData\PairAdmin"
+        SetShellVarContext all
+
+    user_data_choice_done:
+
     RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the WebView2 DataPath
     # Surface (not swallow) a failure to fully clear the WebView2 cache.
     IfErrors WebViewCacheError WebViewCacheDone
     WebViewCacheError:
         DetailPrint "Warning: could not fully remove WebView2 cache (files may be locked): $AppData\${PRODUCT_EXECUTABLE}"
     WebViewCacheDone:
-
-    # Remove the release per-user data dir: config.yaml, known_hosts.yaml and
-    # logs/audit-*.jsonl (see services/config/config.go ConfigDir(); release
-    # builds resolve to %LOCALAPPDATA%\PairAdmin).
-    RMDir /r "$LocalAppData\PairAdmin"
 
     RMDir /r $INSTDIR
 

@@ -264,6 +264,57 @@ func (c *Client) Remove(provider string) error {
 	return kr.Remove(sanitizeKey(provider))
 }
 
+// RemoveAll deletes every PairAdmin-scoped credential from whichever backend
+// Get/Set currently resolve to (see ring()) — used only by the uninstaller's
+// opt-in full-wipe path (main.go --uninstall-cleanup).
+//
+// The wipe is opt-in and the uninstaller defaults to KEEPING user data, because
+// the secrets are not in the per-user data dir at all: with an OS backend they
+// are `pairadmin:*` entries in the Windows Credential Manager, so a "full wipe"
+// that only removed ConfigDir() would leave every SSH password and LLM API key
+// on the machine. The file backend's on-disk store lives under ConfigDir() and
+// is removed by the uninstaller's RMDir, not here.
+//
+// Scoped by construction: every backend's Keys() is already filtered to this
+// client's ServiceName prefix (wincred matches the target-name prefix,
+// keychain/secret-service key by service), and Remove() re-applies the same
+// prefix, so this can only ever touch `pairadmin` entries — never another
+// application's credentials.
+//
+// Best-effort by design, and deliberately so. A backend that cannot be opened
+// (e.g. the file backend with no master password in memory, which is the case
+// in the uninstaller's headless context) has nothing left to purge here anyway,
+// and returning an error for it would only make the uninstaller report a
+// failure it can do nothing about. Individual Remove failures are still
+// collected and joined, so a partial wipe is visible to the caller.
+//
+// Known limitation: 99designs/keyring's wincred Keys() discards the error from
+// wincred.List() and returns an empty slice, so on Windows a failed enumeration
+// is indistinguishable from "no credentials stored" and this reports success
+// having deleted nothing. That is a property of the backend, not something this
+// method can detect; the uninstaller treats the result as best-effort for the
+// same reason.
+func (c *Client) RemoveAll() error {
+	kr, err := c.ring()
+	if err != nil {
+		return nil
+	}
+	keys, err := kr.Keys()
+	if err != nil {
+		return nil
+	}
+	var errs []error
+	for _, k := range keys {
+		if err := kr.Remove(k); err != nil {
+			// Never include the key: these are provider identifiers, and
+			// AGENTS.md §3 requires credential-related output to stay
+			// generic. The uninstaller prints nothing on this path anyway.
+			errs = append(errs, fmt.Errorf("remove a stored credential: %w", err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // HasMasterPassword reports whether a master password hash file exists —
 // i.e. the user has configured a master password at some point. It says
 // nothing about whether the password is currently held in memory.
