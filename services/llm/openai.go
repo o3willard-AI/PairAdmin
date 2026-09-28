@@ -103,10 +103,29 @@ func (p *OpenAIProvider) Stream(ctx context.Context, messages []Message) (<-chan
 	return ch, nil
 }
 
-// TestConnection verifies the API key and connectivity by listing models.
+// TestConnection verifies the API key and connectivity by making a minimal
+// real chat completion — the inference endpoint, not the model catalog.
+//
+// This deliberately does NOT use the /models catalog. OpenRouter's
+// GET /api/v1/models requires no authentication and returns 200 OK for no key,
+// a garbage key, or a revoked one, so a catalog probe cannot fail and reports
+// "Connected" for credentials that are worthless. The bug is generic: every
+// provider on the `openai` adapter (openai, deepseek, xai, openrouter, mistral,
+// groq, glm, and the keyed part of lmstudio) shares this one implementation, so
+// all of them inherited the false positive. Only POST /chat/completions is
+// gated behind a valid key, so that is what the test exercises.
+//
+// Mirrors AnthropicProvider.TestConnection, which already tested the inference
+// path. Non-streaming on purpose: a single token is not worth a stream.
 func (p *OpenAIProvider) TestConnection(ctx context.Context) error {
 	client := p.newClient()
-	_, err := client.Models.List(ctx)
+	_, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model:               openai.ChatModel(p.model),
+		MaxCompletionTokens: openai.Int(1),
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.UserMessage("hi"),
+		},
+	})
 	if err != nil {
 		return fmt.Errorf("openai connection test failed: %w", err)
 	}
