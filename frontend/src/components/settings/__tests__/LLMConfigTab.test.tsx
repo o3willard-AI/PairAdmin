@@ -320,16 +320,43 @@ describe("LLMConfigTab — isLoopbackHost", () => {
   });
 });
 
+// Types a model into the model field, because the connection test is gated on
+// a non-empty model for every provider except Ollama (PA-01). The two tests
+// below used to click Test Connection with the field empty, which was only
+// possible while the probe hit the /models catalog; they now fill the model so
+// they still exercise the success and failure RENDERING paths.
+const typeModel = async (
+  user: ReturnType<typeof userEvent.setup>,
+  value: string
+) => {
+  await user.type(screen.getByLabelText("Model"), value);
+};
+
 describe("LLMConfigTab — Test Connection", () => {
+  beforeEach(() => {
+    getSettings.mockReset().mockResolvedValue({});
+    saveSettings.mockReset().mockResolvedValue(undefined);
+    saveAPIKey.mockReset().mockResolvedValue(undefined);
+    setModel.mockReset().mockResolvedValue("Model set to openai:gpt-4o");
+    getApiKeyStatus.mockReset().mockResolvedValue("");
+    testConnection.mockReset().mockResolvedValue("Connected");
+    useSettingsStore.setState({
+      activeModel: "",
+      settingsOpen: false,
+      connectionStatus: "connected",
+    });
+  });
+
   it("shows a success message when the connection test resolves", async () => {
     const user = userEvent.setup();
-    testConnection.mockResolvedValue("Connected to Ollama on http://localhost:11434");
+    testConnection.mockResolvedValue("Connected to OpenRouter");
     render(<LLMConfigTab onClose={vi.fn()} />);
 
+    await typeModel(user, "openai/gpt-4o");
     await user.click(screen.getByRole("button", { name: /test connection/i }));
 
     expect(
-      await screen.findByText(/✓ Connected to Ollama/i)
+      await screen.findByText(/✓ Connected to OpenRouter/i)
     ).toBeInTheDocument();
   });
 
@@ -338,10 +365,79 @@ describe("LLMConfigTab — Test Connection", () => {
     testConnection.mockRejectedValue(new Error("connection refused"));
     render(<LLMConfigTab onClose={vi.fn()} />);
 
+    await typeModel(user, "openai/gpt-4o");
     await user.click(screen.getByRole("button", { name: /test connection/i }));
 
     // wailsErrorMessage surfaces the backend Error's own message verbatim.
     expect(await screen.findByText(/✗ connection refused/i)).toBeInTheDocument();
+  });
+});
+
+describe("LLMConfigTab — Test Connection empty-model guard (PA-01)", () => {
+  beforeEach(() => {
+    getSettings.mockReset().mockResolvedValue({});
+    saveSettings.mockReset().mockResolvedValue(undefined);
+    saveAPIKey.mockReset().mockResolvedValue(undefined);
+    setModel.mockReset().mockResolvedValue("Model set to openai:gpt-4o");
+    getApiKeyStatus.mockReset().mockResolvedValue("");
+    testConnection.mockReset().mockResolvedValue("Connected");
+    useSettingsStore.setState({
+      activeModel: "",
+      settingsOpen: false,
+      connectionStatus: "connected",
+    });
+  });
+
+  // Mutation check: deleting the `if (model.trim() === "" && provider !==
+  // "ollama")` guard in handleTestConnection makes this test fail — the
+  // backend TestConnection binding is called and the guard's specific message
+  // never renders. Without the guard an empty `model` is sent to the chat
+  // completion endpoint and comes back as an opaque parameter error.
+  it("blocks the test and never calls the backend when the model is empty", async () => {
+    const user = userEvent.setup();
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    // Model field is intentionally left empty.
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+
+    expect(
+      await screen.findByText(/✗ Enter or select a model before testing the connection/i)
+    ).toBeInTheDocument();
+    expect(testConnection).not.toHaveBeenCalled();
+  });
+
+  // Whitespace-only must be treated as empty — a stray space is not a model,
+  // and `model.trim() === ""` is what makes that true. Asserting the message
+  // alone would also pass with a naive `model === ""` guard.
+  it("treats a whitespace-only model as empty", async () => {
+    const user = userEvent.setup();
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await typeModel(user, "   ");
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+
+    expect(
+      await screen.findByText(/✗ Enter or select a model before testing the connection/i)
+    ).toBeInTheDocument();
+    expect(testConnection).not.toHaveBeenCalled();
+  });
+
+  // Mutation check: removing the `provider !== "ollama"` exemption from the
+  // same guard makes this test fail — Ollama's test probes GET {host}/api/tags
+  // and never looks at the model, so blocking it there would break a flow that
+  // legitimately has no model entered yet.
+  it("still allows the test with an empty model for Ollama", async () => {
+    const user = userEvent.setup();
+    testConnection.mockResolvedValue("Connected to Ollama on http://localhost:11434");
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await selectProvider(user, "ollama");
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+
+    expect(
+      await screen.findByText(/✓ Connected to Ollama on http:\/\/localhost:11434/i)
+    ).toBeInTheDocument();
+    expect(testConnection).toHaveBeenCalled();
   });
 });
 

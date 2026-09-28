@@ -121,6 +121,20 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
       setTestMessage('Model ID contains a backslash — use a forward slash (e.g. google/gemma-3-27b-it)');
       return;
     }
+    // A real chat completion needs a real model, and the connection test now
+    // goes through that path for every `openai`-adapter provider (PA-01). An
+    // empty model would otherwise reach the API as an empty `model` field and
+    // come back as an opaque 400 about a parameter the user never filled in, so
+    // reject it up front where the message can be specific.
+    //
+    // Ollama is exempt: its test probes GET {host}/api/tags to see whether the
+    // server is reachable and never looks at the model, so an empty field is a
+    // legitimate state there and blocking it would break a working flow.
+    if (model.trim() === "" && provider !== "ollama") {
+      setTestStatus("error");
+      setTestMessage("Enter or select a model before testing the connection");
+      return;
+    }
     setTestStatus("testing");
     setTestMessage("");
     try {
