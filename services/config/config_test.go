@@ -689,3 +689,67 @@ func TestSaveAndLoadAppConfig_PinnedCommandsRoundTrip(t *testing.T) {
 		t.Errorf("Command: expected 'kubectl get pods', got %q", loaded.PinnedCommands[0].Command)
 	}
 }
+
+// TestLoadAppConfig_DefaultsHotkeyCopyMode verifies a fresh install ships with a
+// working default Copy Mode binding rather than an empty/unset one.
+//
+// Mutation check: deleting the
+// `v.SetDefault("hotkey_copy_mode", DefaultHotkeyCopyMode)` line in
+// LoadAppConfig makes cfg.HotkeyCopyMode come back empty and this fails. Without
+// the SetDefault, the frontend hook would fall back to its own hardcoded default
+// while Settings showed an empty box — the field would be configured-but-broken,
+// which is exactly how HotkeyCopyLast and HotkeyFocusWindow ended up dead.
+func TestLoadAppConfig_DefaultsHotkeyCopyMode(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	cfg, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
+	}
+	if cfg.HotkeyCopyMode != DefaultHotkeyCopyMode {
+		t.Errorf("HotkeyCopyMode: expected default %q, got %q",
+			DefaultHotkeyCopyMode, cfg.HotkeyCopyMode)
+	}
+}
+
+// TestSaveAndLoadAppConfig_HotkeyCopyModeRoundTrip verifies a user-customized
+// binding overrides the default and survives a save/load cycle.
+//
+// Mutation check: deleting the `v.Set("hotkey_copy_mode", cfg.HotkeyCopyMode)`
+// line in SaveAppConfig means the value is never persisted, so the loaded config
+// falls back to the default and this fails. Without the v.Set the Settings UI
+// would appear to save and silently lose the user's binding on every restart.
+func TestSaveAndLoadAppConfig_HotkeyCopyModeRoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	original := &AppConfig{HotkeyCopyMode: "Ctrl+Alt+K"}
+	if err := SaveAppConfig(original); err != nil {
+		t.Fatalf("SaveAppConfig() unexpected error: %v", err)
+	}
+
+	loaded, err := LoadAppConfig()
+	if err != nil {
+		t.Fatalf("LoadAppConfig() unexpected error: %v", err)
+	}
+	if loaded.HotkeyCopyMode != "Ctrl+Alt+K" {
+		t.Errorf("HotkeyCopyMode: expected 'Ctrl+Alt+K', got %q", loaded.HotkeyCopyMode)
+	}
+}
+
+// TestDefaultHotkeyCopyModeIsNotPlainCtrlC pins the one property that must not
+// regress: plain Ctrl+C is SIGINT and has to keep reaching the shell. Binding
+// Copy Mode to bare Ctrl+C would break interrupt for every user.
+//
+// Mutation check: changing DefaultHotkeyCopyMode to "Ctrl+C" fails this.
+func TestDefaultHotkeyCopyModeIsNotPlainCtrlC(t *testing.T) {
+	if DefaultHotkeyCopyMode == "Ctrl+C" {
+		t.Error("DefaultHotkeyCopyMode must not be plain Ctrl+C — that is SIGINT")
+	}
+	if DefaultHotkeyCopyMode != "Ctrl+Shift+C" {
+		t.Errorf("DefaultHotkeyCopyMode: expected \"Ctrl+Shift+C\", got %q", DefaultHotkeyCopyMode)
+	}
+}

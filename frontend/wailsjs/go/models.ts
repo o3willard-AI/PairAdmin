@@ -130,6 +130,7 @@ export namespace config {
 	    HotkeyAddClipboardCommand: string;
 	    HotkeyNewTerminal: string;
 	    HotkeyQuickSelect: string;
+	    HotkeyCopyMode: string;
 	    HotkeyAddCommand: string;
 	    Theme: string;
 	    FontSize: number;
@@ -160,6 +161,7 @@ export namespace config {
 	        this.HotkeyAddClipboardCommand = source["HotkeyAddClipboardCommand"];
 	        this.HotkeyNewTerminal = source["HotkeyNewTerminal"];
 	        this.HotkeyQuickSelect = source["HotkeyQuickSelect"];
+	        this.HotkeyCopyMode = source["HotkeyCopyMode"];
 	        this.HotkeyAddCommand = source["HotkeyAddCommand"];
 	        this.Theme = source["Theme"];
 	        this.FontSize = source["FontSize"];
