@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { mergeAndSaveSettings } from "@/utils/settingsSync";
 import { DEFAULT_ADD_CLIPBOARD_COMMAND_HOTKEY } from "@/hooks/useAddClipboardCommandHotkey";
 import { DEFAULT_NEW_TERMINAL_HOTKEY } from "@/hooks/useNewTerminalHotkey";
+import { DEFAULT_COPY_MODE_HOTKEY } from "@/hooks/useCopyModeHotkey";
 import { DEFAULT_ADD_COMMAND_HOTKEY } from "@/hooks/useAddCommandHotkey";
 import { DEFAULT_QUICK_SELECT_CHORD } from "@/hooks/useQuickSelect";
 
@@ -74,6 +75,7 @@ export function HotkeysTab() {
   const [hotkeyNewTerminal, setHotkeyNewTerminal] = useState(DEFAULT_NEW_TERMINAL_HOTKEY);
   const [hotkeyAddCommand, setHotkeyAddCommand] = useState(DEFAULT_ADD_COMMAND_HOTKEY);
   const [hotkeyQuickSelect, setHotkeyQuickSelect] = useState(DEFAULT_QUICK_SELECT_CHORD);
+  const [hotkeyCopyMode, setHotkeyCopyMode] = useState(DEFAULT_COPY_MODE_HOTKEY);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
@@ -86,6 +88,7 @@ export function HotkeysTab() {
         if (cfg.HotkeyNewTerminal) setHotkeyNewTerminal(cfg.HotkeyNewTerminal);
         if (cfg.HotkeyAddCommand) setHotkeyAddCommand(cfg.HotkeyAddCommand);
         if (cfg.HotkeyQuickSelect) setHotkeyQuickSelect(cfg.HotkeyQuickSelect);
+        if (cfg.HotkeyCopyMode) setHotkeyCopyMode(cfg.HotkeyCopyMode);
       })
       .catch(() => {});
   }, []);
@@ -100,6 +103,7 @@ export function HotkeysTab() {
         HotkeyNewTerminal: hotkeyNewTerminal,
         HotkeyAddCommand: hotkeyAddCommand,
         HotkeyQuickSelect: hotkeyQuickSelect,
+        HotkeyCopyMode: hotkeyCopyMode,
       });
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
@@ -169,6 +173,18 @@ export function HotkeysTab() {
         />
         <p className="text-xs text-surface-text-muted">
           Hold this chord, then press F1–F12
+        </p>
+      </div>
+
+      <div className="space-y-1">
+        <HotkeyInput
+          label="Copy Mode"
+          value={hotkeyCopyMode}
+          onChange={setHotkeyCopyMode}
+        />
+        <p className="text-xs text-surface-text-muted">
+          Opens a frozen, selectable copy of the terminal — for full-screen TUI apps (vim, htop,
+          opencode) that disable normal text selection. Not Ctrl+C, which stays SIGINT.
         </p>
       </div>
 

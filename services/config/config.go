@@ -78,6 +78,10 @@ type AppConfig struct {
 	HotkeyNewTerminal string `mapstructure:"hotkey_new_terminal" yaml:"hotkey_new_terminal"`
 	// HotkeyQuickSelect is the held modifier chord that arms quick-select
 	// (F1..F12 over pinned commands and terminals) — see DefaultHotkeyQuickSelect.
+	// HotkeyCopyMode opens the Copy Mode overlay — a frozen, selectable mirror
+	// of the active terminal's buffer, for TUI apps that take over the screen
+	// and turn the mouse off for text selection. See DefaultHotkeyCopyMode.
+	HotkeyCopyMode    string `mapstructure:"hotkey_copy_mode" yaml:"hotkey_copy_mode"`
 	HotkeyQuickSelect string `mapstructure:"hotkey_quick_select" yaml:"hotkey_quick_select"`
 	// HotkeyAddCommand opens the "Add Command" dialog in the Commands sidebar
 	// — for a user who already knows the interface, saving a command shouldn't
@@ -160,6 +164,22 @@ const DefaultHotkeyNewTerminal = "Ctrl+Shift+N"
 // HotkeyQuickSelect: the held chord that arms F1..F12 quick-select.
 // Modifier-only by design — a bare chord must not consume a letter key.
 const DefaultHotkeyQuickSelect = "Ctrl+Alt"
+
+// DefaultHotkeyCopyMode is the out-of-the-box binding for HotkeyCopyMode.
+//
+// Ctrl+Shift+C is the conventional terminal copy override in gnome-terminal,
+// Windows Terminal and iTerm2 precisely because plain Ctrl+C is SIGINT and
+// must keep meaning "interrupt the foreground process". A TUI that owns the
+// screen disables that native selection path (it forwards mouse events to
+// itself), which is what Copy Mode exists to work around.
+//
+// A Chrome DevTools "Inspect Element" collision on the same combo is almost
+// certainly moot here — DevTools only opens when the devtools bundle is
+// present, and a packaged WebView2/Wails build does not ship one — but that
+// was NOT verified on a packaged build (AGENTS.md §8 says verify, don't
+// assume). Chosen over a Ctrl+Alt combo for the same AltGr composition
+// reason as DefaultHotkeyAddClipboardCommand.
+const DefaultHotkeyCopyMode = "Ctrl+Shift+C"
 
 // DefaultHotkeyAddCommand is the out-of-the-box binding for
 // HotkeyAddCommand. Opens the "Add Command" dialog in the Commands sidebar —
@@ -266,6 +286,7 @@ func LoadAppConfig() (*AppConfig, error) {
 	v.SetDefault("hotkey_new_terminal", DefaultHotkeyNewTerminal)
 	v.SetDefault("hotkey_add_command", DefaultHotkeyAddCommand)
 	v.SetDefault("hotkey_quick_select", DefaultHotkeyQuickSelect)
+	v.SetDefault("hotkey_copy_mode", DefaultHotkeyCopyMode)
 	v.SetDefault("terminals_sidebar_width_ch", DefaultTerminalsSidebarWidthCh)
 	v.SetDefault("commands_sidebar_width_ch", DefaultCommandsSidebarWidthCh)
 	v.SetDefault("prompt_new_host_keys", false)
@@ -302,6 +323,7 @@ func SaveAppConfig(cfg *AppConfig) error {
 	v.Set("hotkey_new_terminal", cfg.HotkeyNewTerminal)
 	v.Set("hotkey_add_command", cfg.HotkeyAddCommand)
 	v.Set("hotkey_quick_select", cfg.HotkeyQuickSelect)
+	v.Set("hotkey_copy_mode", cfg.HotkeyCopyMode)
 	v.Set("theme", cfg.Theme)
 	v.Set("font_size", cfg.FontSize)
 	v.Set("context_lines", cfg.ContextLines)

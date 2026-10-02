@@ -191,4 +191,21 @@ describe("terminalStore", () => {
     expect(useTerminalStore.getState().getTermRef("%0")).toBeUndefined();
     expect(useTerminalStore.getState().getTermRef("%1")).toBeUndefined();
   });
+
+  // --- Copy Mode flag (PA-CM) --------------------------------------------
+  // Mutation check: defaulting `copyModeOpen: true` makes the overlay open over
+  // the app at launch. Nothing else in the suite would catch that.
+  it("initial state has Copy Mode closed", () => {
+    expect(useTerminalStore.getState().copyModeOpen).toBe(false);
+  });
+
+  // Mutation check: a setCopyModeOpen that always writes false (or ignores its
+  // argument) fails this.
+  it("setCopyModeOpen opens and closes the overlay", () => {
+    useTerminalStore.getState().setCopyModeOpen(true);
+    expect(useTerminalStore.getState().copyModeOpen).toBe(true);
+    useTerminalStore.getState().setCopyModeOpen(false);
+    expect(useTerminalStore.getState().copyModeOpen).toBe(false);
+  });
+
 });

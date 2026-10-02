@@ -45,6 +45,11 @@ interface TerminalState {
    * local state so useNewTerminalHotkey.ts can open it from anywhere. */
   newTerminalDialogOpen: boolean;
   setNewTerminalDialogOpen: (open: boolean) => void;
+  /** Copy Mode overlay visibility. Lives here (not in local component state)
+   * so useCopyModeHotkey.ts can open it from anywhere, exactly as
+   * newTerminalDialogOpen does for the "+ Connect" dialog. */
+  copyModeOpen: boolean;
+  setCopyModeOpen: (open: boolean) => void;
   setActiveTab: (tabId: string) => void;
   addTab: (
     id: string,
@@ -83,6 +88,12 @@ export const useTerminalStore = create<TerminalState>()(
       activeTabId: "",
       nextTabNumber: 1,
       newTerminalDialogOpen: false,
+      copyModeOpen: false,
+      setCopyModeOpen: (open) => {
+        set((state) => {
+          state.copyModeOpen = open;
+        });
+      },
       setNewTerminalDialogOpen: (open) => {
         set((state) => {
           state.newTerminalDialogOpen = open;

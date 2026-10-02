@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 import { ThreeColumnLayout } from "@/components/layout/ThreeColumnLayout";
+import { useTerminalStore } from "@/stores/terminalStore";
 
 // xterm.js uses DOM APIs not available in jsdom — mock the whole module
 vi.mock("@xterm/xterm", () => {
@@ -302,4 +303,62 @@ describe("ThreeColumnLayout", () => {
     // But the container should still render without errors
     expect(container).toBeInTheDocument();
   });
+
+  // --- Copy Mode wiring (PA-CM) ------------------------------------------
+  // These assert the LAYOUT-level wiring, which the CopyModeDialog unit test
+  // cannot see: that the hook is registered at all, that the dialog is bound to
+  // the store flag, and that its onClose actually clears that flag.
+  //
+  // Mutation check: deleting the `useCopyModeHotkey()` call from the layout
+  // leaves the overlay unreachable in the real app while every dialog unit test
+  // still passes.
+  it("opens Copy Mode from the Ctrl+Shift+C hotkey wired at the layout level", async () => {
+    // No tabs: Copy Mode must open even with no active terminal (hotkey before
+    // any session exists). The layout suite mocks xterm without onResize, so
+    // adding a tab would mount TerminalPreview and fail for unrelated reasons.
+    useTerminalStore.setState({ tabs: [], activeTabId: "", copyModeOpen: false });
+
+    render(
+      <ThreeColumnLayout sidebar={<div>Commands</div>}>
+        <div>Chat</div>
+      </ThreeColumnLayout>
+    );
+
+    expect(screen.queryByLabelText("Terminal output (copy mode)")).not.toBeInTheDocument();
+
+    await act(async () => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "C", ctrlKey: true, shiftKey: true, bubbles: true })
+      );
+    });
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Terminal output (copy mode)")).toBeInTheDocument()
+    );
+  });
+
+  // Mutation check: hard-coding `open={false}` on the dialog (or removing the
+  // CopyModeDialog mount entirely) leaves the overlay unopenable here.
+  it("closing Copy Mode from the dialog clears copyModeOpen in the store", async () => {
+    useTerminalStore.setState({ tabs: [], activeTabId: "", copyModeOpen: true });
+
+    const user = userEvent.setup();
+    render(
+      <ThreeColumnLayout sidebar={<div>Commands</div>}>
+        <div>Chat</div>
+      </ThreeColumnLayout>
+    );
+
+    expect(await screen.findByLabelText("Terminal output (copy mode)")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+
+    // The store flag is the assertion that matters (it is what the wiring mutates);
+    // the popup's disappearance is an exit transition, so wait for it rather than
+    // asserting synchronously after the click.
+    await waitFor(() => expect(useTerminalStore.getState().copyModeOpen).toBe(false));
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Terminal output (copy mode)")).not.toBeInTheDocument()
+    );
+  });
+
 });

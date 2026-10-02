@@ -159,4 +159,46 @@ describe("HotkeysTab — key capture (buildKeyCombo)", () => {
 
     expect(input).toHaveValue("Shift");
   });
+
+  // --- Copy Mode (PA-CM) -------------------------------------------------
+  // Without these, deleting the HotkeyCopyMode row/load/save from HotkeysTab
+  // leaves every other test green and the setting silently becomes dead --
+  // exactly how HotkeyCopyLast and HotkeyFocusWindow ended up unimplemented.
+
+  // Mutation check: dropping `useState(DEFAULT_COPY_MODE_HOTKEY)` in favor of ""
+  // makes this fail.
+  it("shows the Copy Mode default (Ctrl+Shift+C) when unset", async () => {
+    render(<HotkeysTab />);
+    expect(await screen.findByDisplayValue("Ctrl+Shift+C")).toBeInTheDocument();
+  });
+
+  // Mutation check: deleting the `if (cfg.HotkeyCopyMode) setHotkeyCopyMode(...)`
+  // load line leaves the box showing the default instead of the saved value.
+  it("loads a previously saved Copy Mode combo instead of the default", async () => {
+    getSettings.mockResolvedValue({ HotkeyCopyMode: "Ctrl+Alt+M" });
+    render(<HotkeysTab />);
+    expect(await screen.findByDisplayValue("Ctrl+Alt+M")).toBeInTheDocument();
+  });
+
+  // Mutation check: removing `HotkeyCopyMode: hotkeyCopyMode` from the
+  // SaveSettings payload means the user's binding is never written.
+  it("saves the current Copy Mode value via the Save button", async () => {
+    const user = userEvent.setup();
+    render(<HotkeysTab />);
+    await screen.findByDisplayValue("Ctrl+Shift+C");
+
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ HotkeyCopyMode: "Ctrl+Shift+C" })
+    );
+  });
+
+  // The hint has to tell the user this is not Ctrl+C, since Ctrl+C is SIGINT
+  // and users will otherwise assume the obvious binding.
+  it("explains that Copy Mode is not Ctrl+C", async () => {
+    render(<HotkeysTab />);
+    expect(await screen.findByText(/SIGINT/)).toBeInTheDocument();
+  });
+
 });

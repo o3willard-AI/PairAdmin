@@ -7,8 +7,10 @@ import { useDefaultTerminalFocus } from "@/hooks/useDefaultTerminalFocus";
 import { useAddClipboardCommandHotkey } from "@/hooks/useAddClipboardCommandHotkey";
 import { useNewTerminalHotkey } from "@/hooks/useNewTerminalHotkey";
 import { useAddCommandHotkey } from "@/hooks/useAddCommandHotkey";
+import { useCopyModeHotkey } from "@/hooks/useCopyModeHotkey";
 import { TerminalTabList } from "@/components/terminal/TerminalTabList";
 import { NewTerminalDialog } from "@/components/terminal/NewTerminalDialog";
+import { CopyModeDialog } from "@/components/terminal/CopyModeDialog";
 import { TerminalPreview } from "@/components/terminal/TerminalPreview";
 import { NetworkPanel } from "@/components/scanner/NetworkPanel";
 import { QuickSelectOverlay } from "@/components/QuickSelectOverlay";
@@ -36,11 +38,14 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
   useAddClipboardCommandHotkey(); // Ctrl+Shift+A (configurable): clipboard -> new sidebar command
   useNewTerminalHotkey(); // Ctrl+Shift+N (configurable): opens the "+ Connect" terminal dialog
   useAddCommandHotkey(); // Ctrl+Shift+P (configurable): opens the "Add Command" dialog
+  useCopyModeHotkey(); // Ctrl+Shift+C (configurable): opens the Copy Mode overlay
 
   const activeTabId = useTerminalStore((state) => state.activeTabId);
   const tabs = useTerminalStore((state) => state.tabs);
   const dialogOpen = useTerminalStore((state) => state.newTerminalDialogOpen);
   const setDialogOpen = useTerminalStore((state) => state.setNewTerminalDialogOpen);
+  const copyModeOpen = useTerminalStore((state) => state.copyModeOpen);
+  const setCopyModeOpen = useTerminalStore((state) => state.setCopyModeOpen);
   const settingsOpen = useSettingsStore((s) => s.settingsOpen);
   const setSettingsOpen = useSettingsStore((s) => s.setSettingsOpen);
   const setActiveModel = useSettingsStore((s) => s.setActiveModel);
@@ -184,6 +189,17 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
             }}
           />
         </aside>
+
+        {/* Copy Mode overlay — opened by the Ctrl+Shift+C hotkey from anywhere
+            in the app, so it lives at the layout level rather than inside the
+            terminal pane. No focus-restore race here (unlike NewTerminalDialog):
+            it has no trigger element for base-ui to restore focus TO, and the
+            snapshot textarea autofocuses itself on open, which is what the user
+            wants — to immediately select and copy. */}
+        <CopyModeDialog
+          open={copyModeOpen}
+          onClose={() => setCopyModeOpen(false)}
+        />
 
         {/* Center column: terminal preview + chat area, top to bottom.
             The two are flex-basis-0 so they split the available height evenly
