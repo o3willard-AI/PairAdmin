@@ -129,8 +129,8 @@ export namespace config {
 	    HotkeyFocusWindow: string;
 	    HotkeyAddClipboardCommand: string;
 	    HotkeyNewTerminal: string;
-	    HotkeyQuickSelect: string;
 	    HotkeyCopyMode: string;
+	    HotkeyQuickSelect: string;
 	    HotkeyAddCommand: string;
 	    Theme: string;
 	    FontSize: number;
@@ -143,6 +143,8 @@ export namespace config {
 	    PinnedCommands: PinnedCommand[];
 	    PromptNewHostKeys: boolean;
 	    ScannerEnabled: boolean;
+	    EnabledProviders: string[];
+	    DisabledProviders: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new AppConfig(source);
@@ -160,8 +162,8 @@ export namespace config {
 	        this.HotkeyFocusWindow = source["HotkeyFocusWindow"];
 	        this.HotkeyAddClipboardCommand = source["HotkeyAddClipboardCommand"];
 	        this.HotkeyNewTerminal = source["HotkeyNewTerminal"];
-	        this.HotkeyQuickSelect = source["HotkeyQuickSelect"];
 	        this.HotkeyCopyMode = source["HotkeyCopyMode"];
+	        this.HotkeyQuickSelect = source["HotkeyQuickSelect"];
 	        this.HotkeyAddCommand = source["HotkeyAddCommand"];
 	        this.Theme = source["Theme"];
 	        this.FontSize = source["FontSize"];
@@ -174,6 +176,8 @@ export namespace config {
 	        this.PinnedCommands = this.convertValues(source["PinnedCommands"], PinnedCommand);
 	        this.PromptNewHostKeys = source["PromptNewHostKeys"];
 	        this.ScannerEnabled = source["ScannerEnabled"];
+	        this.EnabledProviders = source["EnabledProviders"];
+	        this.DisabledProviders = source["DisabledProviders"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
