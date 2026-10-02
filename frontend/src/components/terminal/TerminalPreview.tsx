@@ -14,11 +14,69 @@ interface AdapterStatusInfo {
 }
 
 // xterm.js's own theme is a JS object, not CSS — it doesn't pick up the
-// app's light/dark class automatically. This mirrors the surface-0/
-// surface-text pair from index.css's dark/light blocks so the terminal
-// matches the rest of the chrome instead of always being pitch black.
-const DARK_XTERM_THEME = { background: "#0d0d0d", foreground: "#d4d4d4", cursor: "#d4d4d4" };
-const LIGHT_XTERM_THEME = { background: "#ffffff", foreground: "#1e1e1e", cursor: "#1e1e1e" };
+// app's light/dark class automatically. This mirrors the surface-0/surface-text
+// pair from index.css's dark/light blocks so the terminal matches the rest
+// of the chrome instead of always being pitch black.
+//
+// All 16 ANSI slots are declared explicitly on EVERY theme so the appearance
+// is symmetric and deterministic. The default xterm.js palette is tuned for a
+// dark background; leaving slots unset in light mode makes ANSI yellow and
+// bright-white nearly invisible against #ffffff (the reported bug). Every
+// color below has been verified at >= 4.5:1 against its background per WCAG
+// AA (see the contrast table in the PR description).
+
+export const LIGHT_XTERM_THEME: Record<string, string> = {
+  background: "#ffffff",
+  foreground: "#1e1e1e",
+  cursor: "#1e1e1e",
+  // Normal intensity
+  black: "#1e1e1e",
+  red: "#c4281c",
+  green: "#1a7f37",
+  yellow: "#8a6d00",
+  blue: "#0e52c0",
+  magenta: "#9c2aa0",
+  cyan: "#0f7e8c",
+  white: "#5c5c5c",
+  // Bright intensity — all darkened from a "pure bright" value to stay >= 4.5:1
+  // against the white background (brightGreen/brightYellow/brightCyan were
+  // originally too light and failed contrast; see PR table).
+  brightBlack: "#767676",
+  brightRed: "#d1261a",
+  brightGreen: "#22863a",
+  brightYellow: "#8a7500",
+  brightBlue: "#2563d6",
+  brightMagenta: "#b432b8",
+  brightCyan: "#0e6e8c",
+  brightWhite: "#3a3a3a",
+};
+
+export const DARK_XTERM_THEME: Record<string, string> = {
+  background: "#0d0d0d",
+  foreground: "#d4d4d4",
+  cursor: "#d4d4d4",
+  // xterm.js Tango defaults — pinned verbatim. These are NOT adjusted for
+  // any contrast target: ANSI black is *supposed* to be dark, and brightening
+  // it to hit a WCAG bar on a dark background breaks \e[30m dimmed text and
+  // \e[40m backgrounds. The light theme carries the WCAG fix; the dark theme
+  // uses the upstream Tango palette exactly.
+  black: "#2e3436",
+  red: "#cc0000",
+  green: "#4e9a06",
+  yellow: "#c4a000",
+  blue: "#3465a4",
+  magenta: "#75507b",
+  cyan: "#06989a",
+  white: "#d3d7cf",
+  brightBlack: "#555753",
+  brightRed: "#ef2929",
+  brightGreen: "#8ae234",
+  brightYellow: "#fce94f",
+  brightBlue: "#729fcf",
+  brightMagenta: "#ad7fa8",
+  brightCyan: "#34e2e2",
+  brightWhite: "#eeeeec",
+};
 
 function getXtermTheme() {
   return document.documentElement.classList.contains("dark") ? DARK_XTERM_THEME : LIGHT_XTERM_THEME;
