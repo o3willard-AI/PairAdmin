@@ -86,8 +86,8 @@ export function Startup(arg1) {
   return window['go']['services']['SettingsService']['Startup'](arg1);
 }
 
-export function TestConnection(arg1, arg2, arg3) {
-  return window['go']['services']['SettingsService']['TestConnection'](arg1, arg2, arg3);
+export function TestConnection(arg1, arg2, arg3, arg4) {
+  return window['go']['services']['SettingsService']['TestConnection'](arg1, arg2, arg3, arg4);
 }
 
 export function VerifyMasterPassword(arg1) {

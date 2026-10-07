@@ -9,6 +9,7 @@ import { useNewTerminalHotkey } from "@/hooks/useNewTerminalHotkey";
 import { useAddCommandHotkey } from "@/hooks/useAddCommandHotkey";
 import { useCopyModeHotkey } from "@/hooks/useCopyModeHotkey";
 import { TerminalTabList } from "@/components/terminal/TerminalTabList";
+import { probeLLMConnection } from "@/utils/connectionProbe";
 import { NewTerminalDialog } from "@/components/terminal/NewTerminalDialog";
 import { CopyModeDialog } from "@/components/terminal/CopyModeDialog";
 import { TerminalPreview } from "@/components/terminal/TerminalPreview";
@@ -94,15 +95,14 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
   // The status bar previously showed "No model" / "Disconnected" forever —
   // both were hardcoded/never-populated. Fetch the actually configured
   // provider+model on startup and verify connectivity against it.
+  //
+  // The connection check itself lives in probeLLMConnection() so that a
+  // successful Save in Settings → LLM Config re-runs the exact same logic
+  // instead of carrying a second, drifting copy of it.
   useEffect(() => {
     import(/* @vite-ignore */ "../../../wailsjs/go/services/SettingsService")
-      .then(async ({ GetSettings, TestConnection }) => {
+      .then(async ({ GetSettings }) => {
         const cfg = await GetSettings();
-        const provider = cfg?.Provider;
-        const model = cfg?.Model;
-        if (provider && model) {
-          setActiveModel(`${provider}:${model}`);
-        }
         if (cfg?.TerminalsSidebarWidthCh) setTerminalsSidebarWidthCh(cfg.TerminalsSidebarWidthCh);
         if (cfg?.CommandsSidebarWidthCh) setCommandsSidebarWidthCh(cfg.CommandsSidebarWidthCh);
         // Restore commands the user explicitly saved via "Save Pinned" so
@@ -119,34 +119,10 @@ export function ThreeColumnLayout({ children, sidebar }: ThreeColumnLayoutProps)
             });
           }
         }
-        if (!provider) {
-          setConnectionStatus("disconnected");
-          return;
-        }
-        // "Disable Pair LLM" (Settings → LLM Config) is an explicit opt-out:
-        // never probe, never show Connected/Disconnected — show Disabled and
-        // surface it in the chat input too.
-        if (provider === "disabled") {
-          setConnectionStatus("disabled");
-          return;
-        }
-        try {
-          await TestConnection(provider, model ?? "", "");
-          // The probe must only fill in the answer while it's still the
-          // newest authority: if the status has moved on while this network
-          // call was in flight — most importantly the user saving "Disable
-          // Pair LLM" mid-probe — their choice wins and this stale result is
-          // discarded rather than flipping "disabled" back to connected.
-          if (useSettingsStore.getState().connectionStatus === "checking") {
-            setConnectionStatus("connected");
-          }
-        } catch {
-          if (useSettingsStore.getState().connectionStatus === "checking") {
-            setConnectionStatus("disconnected");
-          }
-        }
       })
       .catch(() => {}); // Wails runtime unavailable in test/dev environments
+
+    probeLLMConnection();
   }, [setActiveModel, setConnectionStatus]);
 
   return (

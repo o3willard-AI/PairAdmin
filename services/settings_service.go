@@ -309,14 +309,31 @@ func (s *SettingsService) ChangeMasterPassword(oldPW, newPW string) error {
 	return s.keychainClient.ChangeMasterPassword(oldPW, newPW)
 }
 
-// TestConnection tests the LLM connection for the given provider, model, and host URL.
+// TestConnection tests the LLM connection for the given provider, model, host
+// URL and API key.
+//
 // hostURL may be empty to fall back to persisted config or environment variables.
+//
+// typedKey is the contents of the Settings → LLM Config "API Key" field. When
+// it is non-empty the connection is tested against THAT key, held in memory for
+// the duration of the call only — it is never persisted, cached, or handed to
+// an enclave here (persisting is SaveAPIKey's job, on the user's explicit Save).
+// When it is empty the keychain key is used, which is what the startup probe
+// relies on. The APIKey parameter exists because testing the stored key while
+// the user stares at a different one they just typed is how a good key gets
+// reported as unauthorized.
+//
 // Returns "Connected" on success, or a descriptive error string on failure.
-func (s *SettingsService) TestConnection(provider, model, hostURL string) (string, error) {
-	// Load keychain key for the given provider.
-	apiKey, err := s.keychainClient.Get(provider)
-	if err != nil {
-		return "", fmt.Errorf("failed to retrieve API key: %w", err)
+func (s *SettingsService) TestConnection(provider, model, hostURL, typedKey string) (string, error) {
+	// Resolve the key once. A typed key wins over the stored one; an empty
+	// field falls back to the keychain, preserving the pre-existing behavior.
+	apiKey := typedKey
+	if apiKey == "" {
+		stored, err := s.keychainClient.Get(provider)
+		if err != nil {
+			return "", fmt.Errorf("failed to retrieve API key: %w", err)
+		}
+		apiKey = stored
 	}
 
 	// Build a temporary config using the keychain key, persisted AppConfig, and env var fallback.
@@ -351,29 +368,31 @@ func (s *SettingsService) TestConnection(provider, model, hostURL string) (strin
 		}
 	}
 
-	// Inject the keychain key for the specified provider.
-	switch provider {
-	case "openai":
-		if apiKey != "" {
-			cfg.OpenAIKey = apiKey
-		}
-	case "anthropic":
-		if apiKey != "" {
-			cfg.AnthropicKey = apiKey
-		}
-	case "openrouter":
-		if apiKey != "" {
-			cfg.OpenRouterKey = apiKey
-		}
-	case "ollama":
-		// Authenticated remote Ollama servers carry a bearer key like the
-		// hosted providers do.
-		if apiKey != "" {
-			cfg.OllamaKey = apiKey
+	// A keyed provider with no key anywhere — not typed, not stored, and no
+	// matching environment variable — cannot authenticate, so say so plainly
+	// rather than letting it surface as a provider-specific 401 the user has to
+	// decode. Gated on NeedsKey so keyless ollama/lmstudio still test, and on
+	// the env var being unset so the documented env fallback is unchanged.
+	if apiKey == "" {
+		if cat, ok := catalog.GetProvider(provider); ok && cat.NeedsKey && os.Getenv(cat.EnvKey) == "" {
+			return "", fmt.Errorf("No API key saved for %s — enter one to test it", provider)
 		}
 	}
 
-	p := buildProviderFn(cfg, nil)
+	// Hand the resolved key to the provider builder through the keyFn argument
+	// it already accepts. resolveKey consults keyFn before any per-provider
+	// config field or env var, and every adapter branch is built from that one
+	// value, so this single path covers all catalog providers.
+	//
+	// It replaces a switch that injected the keychain key for openai, anthropic,
+	// openrouter and ollama only. For the other six (google, deepseek, xai,
+	// mistral, groq, glm) the fetched key was dropped, buildProvider received a
+	// nil keyFn, and the test fell through to os.Getenv — so Test Connection
+	// failed for those providers unless a matching env var happened to be set,
+	// even though chat worked off the in-memory key from LoadAPIKeys.
+	keyFn := func(string) string { return apiKey }
+
+	p := buildProviderFn(cfg, keyFn)
 	if p == nil {
 		return "", fmt.Errorf("unsupported or unconfigured provider: %s", provider)
 	}
@@ -384,9 +403,23 @@ func (s *SettingsService) TestConnection(provider, model, hostURL string) (strin
 	}
 
 	if err := p.TestConnection(ctx); err != nil {
-		return "", err
+		return "", redactAPIKey(err, apiKey)
 	}
 	return "Connected", nil
+}
+
+// redactAPIKey replaces every occurrence of key in err's message with
+// "[redacted]", so a credential can never reach the UI inside an error string.
+//
+// Provider/SDK errors do not normally echo the key back, but this is a value
+// the user just typed into a field and the error text is rendered verbatim, so
+// the guarantee is worth enforcing rather than assuming. A nil error, an empty
+// key, or a message that does not contain the key is returned unchanged.
+func redactAPIKey(err error, key string) error {
+	if err == nil || key == "" || !strings.Contains(err.Error(), key) {
+		return err
+	}
+	return errors.New(strings.ReplaceAll(err.Error(), key, "[redacted]"))
 }
 
 // SetCaptureManager wires the CaptureManager so ForceRefresh can trigger an immediate capture.

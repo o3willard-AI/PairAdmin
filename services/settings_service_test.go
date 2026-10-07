@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/user"
 	"strings"
@@ -358,7 +359,7 @@ func TestSettingsService_TestConnection_Success(t *testing.T) {
 		return &mockProvider{name: "mock", connErr: nil}
 	}
 
-	result, err := svc.TestConnection("mock", "mock-model", "")
+	result, err := svc.TestConnection("mock", "mock-model", "", "")
 	if err != nil {
 		t.Fatalf("TestConnection() unexpected error: %v", err)
 	}
@@ -368,9 +369,15 @@ func TestSettingsService_TestConnection_Success(t *testing.T) {
 }
 
 // TestSettingsService_TestConnection_InjectsOllamaKeyFromKeychain verifies
-// that TestConnection resolves the "ollama" keychain entry into cfg.OllamaKey
-// (mirroring the openai/anthropic cases) so buildProvider receives it for
-// authenticated remote Ollama servers.
+// that TestConnection resolves the "ollama" keychain entry into the keyFn
+// handed to buildProvider, so authenticated remote Ollama servers (which carry
+// an optional bearer token) still receive their key.
+//
+// Mutation check: restoring the pre-PA-TC per-provider switch — or passing a
+// nil keyFn — makes keyFn("ollama") return "" and this test fails. It asserts
+// on the keyFn argument rather than cfg.OllamaKey because the key no longer
+// travels through per-provider Config fields (they only dropped it for the six
+// providers the switch did not list).
 func TestSettingsService_TestConnection_InjectsOllamaKeyFromKeychain(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
@@ -387,14 +394,16 @@ func TestSettingsService_TestConnection_InjectsOllamaKeyFromKeychain(t *testing.
 
 	orig := buildProviderFn
 	defer func() { buildProviderFn = orig }()
-	buildProviderFn = func(cfg Config, _ func(string) string) llm.Provider {
-		if cfg.OllamaKey != "sk-remote-ollama" {
-			t.Errorf("expected cfg.OllamaKey injected from the keychain, got %q", cfg.OllamaKey)
+	buildProviderFn = func(_ Config, keyFn func(string) string) llm.Provider {
+		if keyFn == nil {
+			t.Error("buildProvider received a nil keyFn, so the keychain key is unreachable")
+		} else if got := keyFn("ollama"); got != "sk-remote-ollama" {
+			t.Errorf("expected keyFn(\"ollama\") to return the keychain key, got %q", got)
 		}
 		return &mockProvider{name: "ollama", connErr: nil}
 	}
 
-	if _, err := svc.TestConnection("ollama", "llama3", ""); err != nil {
+	if _, err := svc.TestConnection("ollama", "llama3", "", ""); err != nil {
 		t.Fatalf("TestConnection() unexpected error: %v", err)
 	}
 }
@@ -417,7 +426,7 @@ func TestSettingsService_TestConnection_Failure(t *testing.T) {
 		return &mockProvider{name: "mock", connErr: connErr}
 	}
 
-	_, err := svc.TestConnection("mock", "mock-model", "")
+	_, err := svc.TestConnection("mock", "mock-model", "", "")
 	if err == nil {
 		t.Fatal("TestConnection() expected error for failing provider, got nil")
 	}
@@ -440,9 +449,335 @@ func TestSettingsService_TestConnection_NilProvider(t *testing.T) {
 		return nil
 	}
 
-	_, err := svc.TestConnection("unknown-provider", "", "")
+	_, err := svc.TestConnection("unknown-provider", "", "", "")
 	if err == nil {
 		t.Fatal("TestConnection() expected error for nil provider, got nil")
+	}
+}
+
+// --- TestConnection: typed key, provider coverage, redaction (PA-TC) ---
+
+// captureKeyFn installs a buildProviderFn that records the keyFn it is handed
+// (and the Config, for tests that assert on hosts) and returns a provider whose
+// TestConnection succeeds.
+func captureKeyFn(t *testing.T, seen *string) {
+	t.Helper()
+	orig := buildProviderFn
+	t.Cleanup(func() { buildProviderFn = orig })
+	buildProviderFn = func(_ Config, keyFn func(string) string) llm.Provider {
+		if keyFn == nil {
+			t.Error("buildProvider received a nil keyFn — the resolved key is unreachable")
+			return &mockProvider{name: "mock"}
+		}
+		*seen = keyFn("probe")
+		return &mockProvider{name: "mock"}
+	}
+}
+
+// TestSettingsService_TestConnection_TypedKeyWins pins defect #1: the key the
+// user typed in the API Key field is the key that gets tested, not the stored
+// one. Testing the stored key while a different key sits in the field is what
+// made a good OpenRouter key report "unauthorized" in UAT.
+//
+// Mutation check: ignoring the typedKey parameter (or restoring the keychain
+// Get as the unconditional source) makes keyFn return "sk-stored" and this
+// test fails.
+func TestSettingsService_TestConnection_TypedKeyWins(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.ctx = context.Background()
+	if err := mem.Set(keyring.Item{Key: "openai", Data: []byte("sk-stored")}); err != nil {
+		t.Fatalf("keyring Set(openai): %v", err)
+	}
+
+	var seen string
+	captureKeyFn(t, &seen)
+
+	if _, err := svc.TestConnection("openai", "gpt-4o-mini", "", "sk-typed"); err != nil {
+		t.Fatalf("TestConnection() unexpected error: %v", err)
+	}
+	if seen != "sk-typed" {
+		t.Errorf("expected the typed key to be tested, got %q", seen)
+	}
+}
+
+// TestSettingsService_TestConnection_EmptyTypedKeyFallsBackToStored pins the
+// other half of defect #1's contract, and the behavior the app-mount probe
+// depends on: an empty field tests the saved key.
+//
+// Mutation check: dropping the `if apiKey == ""` fallback (so an empty typed
+// key is passed through as "") makes this yield "" instead of "sk-stored".
+func TestSettingsService_TestConnection_EmptyTypedKeyFallsBackToStored(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.ctx = context.Background()
+	if err := mem.Set(keyring.Item{Key: "openai", Data: []byte("sk-stored")}); err != nil {
+		t.Fatalf("keyring Set(openai): %v", err)
+	}
+
+	var seen string
+	captureKeyFn(t, &seen)
+
+	if _, err := svc.TestConnection("openai", "gpt-4o-mini", "", ""); err != nil {
+		t.Fatalf("TestConnection() unexpected error: %v", err)
+	}
+	if seen != "sk-stored" {
+		t.Errorf("expected the stored key to be tested, got %q", seen)
+	}
+}
+
+// TestSettingsService_TestConnection_NeverPersistsTheTypedKey pins the security
+// property that makes forwarding the typed key safe: Test must not write it to
+// the keychain. Persisting is Save's job, on an explicit click.
+//
+// Mutation check: adding any keychainClient.Set (or SaveAPIKey) call to
+// TestConnection makes the stored value become "sk-typed" and this test fails.
+func TestSettingsService_TestConnection_NeverPersistsTheTypedKey(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.ctx = context.Background()
+	if err := mem.Set(keyring.Item{Key: "openai", Data: []byte("sk-stored")}); err != nil {
+		t.Fatalf("keyring Set(openai): %v", err)
+	}
+
+	var seen string
+	captureKeyFn(t, &seen)
+
+	if _, err := svc.TestConnection("openai", "gpt-4o-mini", "", "sk-typed"); err != nil {
+		t.Fatalf("TestConnection() unexpected error: %v", err)
+	}
+
+	item, ok := mem.items["openai"]
+	if !ok {
+		t.Fatal("expected the originally stored key to still be present")
+	}
+	if string(item.Data) != "sk-stored" {
+		t.Errorf("TestConnection persisted the typed key: expected %q, got %q", "sk-stored", string(item.Data))
+	}
+}
+
+// TestSettingsService_TestConnection_EveryKeyedProviderGetsTheKey pins defect
+// #2. The per-provider switch only injected the keychain key for openai,
+// anthropic, openrouter and ollama; the other six were handed a nil keyFn and
+// fell through to os.Getenv, so Test Connection failed for them whenever the
+// matching env var was unset — even though chat worked off the in-memory key.
+// Invisible until someone tried one of those six.
+//
+// Each env var is explicitly cleared, so a pass cannot come from the fallback.
+//
+// Mutation check: restoring the four-provider switch makes the six new rows
+// fail (nil keyFn, or a keyFn that returns ""). This is the test that pins #2.
+func TestSettingsService_TestConnection_EveryKeyedProviderGetsTheKey(t *testing.T) {
+	cases := []struct{ provider, envKey string }{
+		{"openai", "OPENAI_API_KEY"},
+		{"anthropic", "ANTHROPIC_API_KEY"},
+		{"openrouter", "OPENROUTER_API_KEY"},
+		{"ollama", ""}, // local: no env key; the keychain key is an optional bearer token
+		{"google", "GOOGLE_API_KEY"},
+		{"deepseek", "DEEPSEEK_API_KEY"},
+		{"xai", "XAI_API_KEY"},
+		{"mistral", "MISTRAL_API_KEY"},
+		{"groq", "GROQ_API_KEY"},
+		{"glm", "ZAI_API_KEY"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.provider, func(t *testing.T) {
+			homeDir := t.TempDir()
+			t.Setenv("HOME", homeDir)
+			t.Setenv("USERPROFILE", homeDir)
+			if tc.envKey != "" {
+				t.Setenv(tc.envKey, "") // cleared: the stored key is the only source
+			}
+
+			mem := newInMemoryKeyring()
+			svc := NewSettingsService(makeTestKeychainClient(mem))
+			svc.ctx = context.Background()
+
+			want := "sk-stored-" + tc.provider
+			if err := mem.Set(keyring.Item{Key: tc.provider, Data: []byte(want)}); err != nil {
+				t.Fatalf("keyring Set(%s): %v", tc.provider, err)
+			}
+
+			var seen string
+			orig := buildProviderFn
+			t.Cleanup(func() { buildProviderFn = orig })
+			buildProviderFn = func(_ Config, keyFn func(string) string) llm.Provider {
+				if keyFn == nil {
+					t.Errorf("%s: buildProvider received a nil keyFn — the stored key was dropped", tc.provider)
+					return &mockProvider{name: tc.provider}
+				}
+				seen = keyFn(tc.provider)
+				return &mockProvider{name: tc.provider}
+			}
+
+			if _, err := svc.TestConnection(tc.provider, "some-model", "", ""); err != nil {
+				t.Fatalf("%s: TestConnection() unexpected error: %v", tc.provider, err)
+			}
+			if seen != want {
+				t.Errorf("%s: expected the stored key %q to reach keyFn, got %q", tc.provider, want, seen)
+			}
+		})
+	}
+}
+
+// TestSettingsService_TestConnection_RedactsKeyFromErrors pins the §3/§6
+// guarantee that a key can never reach the UI inside an error string. The mock
+// echoes the key back the way a badly-worded provider error could.
+//
+// Mutation check: returning err unwrapped (no redactAPIKey) makes this test
+// find the raw key in the message.
+func TestSettingsService_TestConnection_RedactsKeyFromErrors(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.ctx = context.Background()
+
+	const typed = "sk-super-secret-typed-key"
+
+	orig := buildProviderFn
+	defer func() { buildProviderFn = orig }()
+	buildProviderFn = func(_ Config, keyFn func(string) string) llm.Provider {
+		// A provider error that carelessly includes the credential.
+		return &mockProvider{
+			name:    "openai",
+			connErr: fmt.Errorf("401 unauthorized: the key %s was rejected", keyFn("openai")),
+		}
+	}
+
+	_, err := svc.TestConnection("openai", "gpt-4o-mini", "", typed)
+	if err == nil {
+		t.Fatal("expected an error from the failing provider")
+	}
+	if strings.Contains(err.Error(), typed) {
+		t.Errorf("the API key leaked into the error string: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "[redacted]") {
+		t.Errorf("expected the key to be replaced with [redacted], got %q", err.Error())
+	}
+}
+
+// TestSettingsService_TestConnection_KeyedProviderWithNoKeyAnywhere pins the
+// "No API key saved for <provider>" message: a keyed provider with no key
+// typed, none stored and no env var cannot authenticate, so it should say so
+// instead of surfacing a provider-specific 401.
+//
+// Mutation check: removing the polish branch makes this return the mock
+// provider's success/"Connected" instead of the message.
+func TestSettingsService_TestConnection_KeyedProviderWithNoKeyAnywhere(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("DEEPSEEK_API_KEY", "")
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.ctx = context.Background()
+
+	orig := buildProviderFn
+	defer func() { buildProviderFn = orig }()
+	buildProviderFn = func(_ Config, _ func(string) string) llm.Provider {
+		t.Error("no provider should be built when there is no key to test with")
+		return &mockProvider{name: "deepseek"}
+	}
+
+	_, err := svc.TestConnection("deepseek", "deepseek-v4-flash", "", "")
+	if err == nil {
+		t.Fatal("expected an error when no key is available")
+	}
+	if !strings.Contains(err.Error(), "No API key saved for deepseek") {
+		t.Errorf("expected the actionable no-key message, got %q", err.Error())
+	}
+}
+
+// TestSettingsService_TestConnection_EmptyKeyKeepsEnvFallback pins that the
+// no-key polish does NOT swallow the documented environment fallback: with
+// DEEPSEEK_API_KEY set, an empty field must still reach the provider so
+// resolveKey can pick the env var up. Without the os.Getenv guard on the
+// polish branch, this would fail closed and break a configuration that
+// previously worked.
+//
+// Mutation check: dropping the `os.Getenv(cat.EnvKey) == ""` condition from the
+// polish branch makes this return the no-key error instead of connecting.
+func TestSettingsService_TestConnection_EmptyKeyKeepsEnvFallback(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("DEEPSEEK_API_KEY", "sk-from-env")
+
+	mem := newInMemoryKeyring()
+	svc := NewSettingsService(makeTestKeychainClient(mem))
+	svc.ctx = context.Background()
+
+	var seen string
+	var built bool
+	orig := buildProviderFn
+	defer func() { buildProviderFn = orig }()
+	buildProviderFn = func(_ Config, keyFn func(string) string) llm.Provider {
+		built = true
+		if keyFn != nil {
+			seen = keyFn("deepseek")
+		}
+		return &mockProvider{name: "deepseek"}
+	}
+
+	if _, err := svc.TestConnection("deepseek", "deepseek-v4-flash", "", ""); err != nil {
+		t.Fatalf("env-var fallback must be unchanged: %v", err)
+	}
+	if !built {
+		t.Fatal("expected a provider to be built so the env fallback can resolve the key")
+	}
+	if seen != "" {
+		t.Errorf("expected no key from keyFn (the env var supplies it), got %q", seen)
+	}
+}
+
+// TestSettingsService_TestConnection_KeylessProvidersStillTest pins that the
+// no-key message is gated on catalog NeedsKey, so the local providers — which
+// legitimately need no key — still test successfully with an empty field.
+//
+// Mutation check: keying the polish branch on anything broader than NeedsKey
+// (e.g. "not ollama") makes lmstudio fail here.
+func TestSettingsService_TestConnection_KeylessProvidersStillTest(t *testing.T) {
+	for _, provider := range []string{"ollama", "lmstudio"} {
+		t.Run(provider, func(t *testing.T) {
+			homeDir := t.TempDir()
+			t.Setenv("HOME", homeDir)
+			t.Setenv("USERPROFILE", homeDir)
+
+			mem := newInMemoryKeyring()
+			svc := NewSettingsService(makeTestKeychainClient(mem))
+			svc.ctx = context.Background()
+
+			orig := buildProviderFn
+			t.Cleanup(func() { buildProviderFn = orig })
+			buildProviderFn = func(_ Config, _ func(string) string) llm.Provider {
+				return &mockProvider{name: provider}
+			}
+
+			result, err := svc.TestConnection(provider, "", "", "")
+			if err != nil {
+				t.Fatalf("%s: keyless test must still work, got error: %v", provider, err)
+			}
+			if result != "Connected" {
+				t.Errorf("%s: expected 'Connected', got %q", provider, result)
+			}
+		})
 	}
 }
 
