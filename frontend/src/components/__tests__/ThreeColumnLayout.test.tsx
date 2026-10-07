@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 import { ThreeColumnLayout } from "@/components/layout/ThreeColumnLayout";
 import { useTerminalStore } from "@/stores/terminalStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 // xterm.js uses DOM APIs not available in jsdom — mock the whole module
 vi.mock("@xterm/xterm", () => {
@@ -55,12 +56,13 @@ vi.mock("../../../wailsjs/go/services/capture/CaptureManager", () => ({
 // yield the same mock instance ThreeColumnLayout.tsx's own internal dynamic
 // import resolves to.
 const getSettings = vi.fn();
+const testConnection = vi.fn();
 vi.mock("../../../wailsjs/go/services/SettingsService", () => ({
   GetSettings: (...args: unknown[]) => getSettings(...args),
   GetAPIKeyStatus: vi.fn(() => Promise.resolve("")),
   SaveSettings: vi.fn(() => Promise.resolve(undefined)),
   SaveAPIKey: vi.fn(() => Promise.resolve(undefined)),
-  TestConnection: vi.fn(() => Promise.resolve("Connected")),
+  TestConnection: (...args: unknown[]) => testConnection(...args),
   SetModel: vi.fn(() => Promise.resolve("")),
 }));
 
@@ -79,6 +81,11 @@ beforeEach(() => {
   global.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
   localStorage.clear();
   getSettings.mockReset().mockResolvedValue({});
+  testConnection.mockReset().mockResolvedValue("Connected");
+  // The connection store is module-level and persists across tests in this
+  // file; reset it to the app's initial value so the probe's guard is
+  // exercised the same way in every test.
+  useSettingsStore.setState({ connectionStatus: "checking", activeModel: "" });
 });
 
 describe("ThreeColumnLayout", () => {
@@ -359,6 +366,96 @@ describe("ThreeColumnLayout", () => {
     await waitFor(() =>
       expect(screen.queryByLabelText("Terminal output (copy mode)")).not.toBeInTheDocument()
     );
+  });
+
+
+  // --- Startup connection probe (PA-TC) ------------------------------------
+  // The app-mount probe must keep passing an EMPTY key so the backend tests the
+  // stored key. Forgetting the new 4th argument here is the easiest way to break
+  // this feature silently: the binding would be called with `undefined`, and in
+  // the real app every restart would test nothing.
+  //
+  // Mutation check: dropping the "" argument from probeLLMConnection's call (or
+  // reinstating a key here) makes the toHaveBeenCalledWith assertion fail.
+  it("probes the stored key on mount: TestConnection is called with an empty key", async () => {
+    getSettings.mockResolvedValue({ Provider: "openai", Model: "gpt-4o" });
+
+    render(
+      <ThreeColumnLayout sidebar={<div>Commands</div>}>
+        <div>Chat</div>
+      </ThreeColumnLayout>
+    );
+
+    await waitFor(() =>
+      expect(testConnection).toHaveBeenCalledWith("openai", "gpt-4o", "", "")
+    );
+  });
+
+  // The whole point of the probe: a successful stored-key test must actually
+  // populate the indicator, not just be called.
+  //
+  // Mutation check: removing the setConnectionStatus("connected") branch in
+  // probeLLMConnection leaves the status at "checking" and this fails.
+  it("sets connectionStatus to connected when the mount probe succeeds", async () => {
+    getSettings.mockResolvedValue({ Provider: "openai", Model: "gpt-4o" });
+    testConnection.mockResolvedValue("Connected");
+
+    render(
+      <ThreeColumnLayout sidebar={<div>Commands</div>}>
+        <div>Chat</div>
+      </ThreeColumnLayout>
+    );
+
+    await waitFor(() =>
+      expect(useSettingsStore.getState().connectionStatus).toBe("connected")
+    );
+  });
+
+  it("sets connectionStatus to disconnected when the mount probe fails", async () => {
+    getSettings.mockResolvedValue({ Provider: "openai", Model: "gpt-4o" });
+    testConnection.mockRejectedValue(new Error("connection refused"));
+
+    render(
+      <ThreeColumnLayout sidebar={<div>Commands</div>}>
+        <div>Chat</div>
+      </ThreeColumnLayout>
+    );
+
+    await waitFor(() =>
+      expect(useSettingsStore.getState().connectionStatus).toBe("disconnected")
+    );
+  });
+
+  // "Disable Pair LLM" is an explicit opt-out: the probe must never call out and
+  // must show Disabled, not Connected/Disconnected.
+  it("never probes and shows disabled when the saved provider is 'disabled'", async () => {
+    getSettings.mockResolvedValue({ Provider: "disabled" });
+
+    render(
+      <ThreeColumnLayout sidebar={<div>Commands</div>}>
+        <div>Chat</div>
+      </ThreeColumnLayout>
+    );
+
+    await waitFor(() =>
+      expect(useSettingsStore.getState().connectionStatus).toBe("disabled")
+    );
+    expect(testConnection).not.toHaveBeenCalled();
+  });
+
+  it("shows disconnected without probing when no provider is configured", async () => {
+    getSettings.mockResolvedValue({});
+
+    render(
+      <ThreeColumnLayout sidebar={<div>Commands</div>}>
+        <div>Chat</div>
+      </ThreeColumnLayout>
+    );
+
+    await waitFor(() =>
+      expect(useSettingsStore.getState().connectionStatus).toBe("disconnected")
+    );
+    expect(testConnection).not.toHaveBeenCalled();
   });
 
 });

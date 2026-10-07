@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { mergeAndSaveSettings } from "@/utils/settingsSync";
 import { wailsErrorMessage } from "@/utils/wailsError";
+import { probeLLMConnection } from "@/utils/connectionProbe";
 
 // CatalogProvider/CatalogModel mirror the camelCase views SettingsService
 // exposes via GetLLMCatalog (services.CatalogProviderView) — a provider/model
@@ -137,14 +138,28 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
     }
     setTestStatus("testing");
     setTestMessage("");
+    // Whether a typed key was tested decides which message the user gets, and
+    // only the frontend knows it. The backend's "Connected" string stays bare
+    // so existing callers and tests are unaffected.
+    const usedTypedKey = apiKey.trim() !== "";
     try {
       const { TestConnection } = await import(
         /* @vite-ignore */ "../../../wailsjs/go/services/SettingsService"
       );
       const hostURL = provider === "ollama" ? ollamaHost : provider === "lmstudio" ? lmstudioHost : "";
-      const result = await TestConnection(provider, model, hostURL);
+      // The typed key is forwarded so the test exercises what the user is
+      // looking at, not just what is already saved — testing the stored key
+      // while a different one sits in the field is how a good key gets
+      // reported as unauthorized (and a dead one as working). It is passed
+      // for this call only: never saved here, never cached, never written
+      // into an enclave. Persisting stays Save's job, on an explicit click.
+      const result = await TestConnection(provider, model, hostURL, apiKey);
       setTestStatus("ok");
-      setTestMessage(result || "Connected");
+      // An unsaved candidate key must NOT move the global indicator — see
+      // handleSave, which re-probes the actually-saved configuration. This
+      // only reports on the connection the user just asked about.
+      const base = result || "Connected";
+      setTestMessage(usedTypedKey ? `${base} (using the key you entered)` : `${base} (using the saved key)`);
     } catch (err) {
       setTestStatus("error");
       setTestMessage(wailsErrorMessage(err, "Connection failed"));
@@ -194,18 +209,25 @@ export function LLMConfigTab({ onClose }: LLMConfigTabProps) {
       }
       const activeModelStr = await SetModel(`${provider}:${model}`);
       setActiveModel(activeModelStr || `${provider}:${model}`);
-      // Re-enable restore: release the "disabled" state so normal
-      // connected/disconnected status updates resume (stream events drive
-      // them from here on). "disconnected" is the honest baseline — nothing
-      // re-probes on save — but it un-blocks the stream-event path, whereas
-      // leaving "disabled" in place would dead-end the chat input until
-      // restart.
-      if (useSettingsStore.getState().connectionStatus === "disabled") {
-        setConnectionStatus("disconnected");
-      }
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
       onClose();
+      // The saved configuration is the active one now, so re-probe it and set
+      // the Connected/Disconnected indicator from a real result. Without this
+      // the indicator kept showing the last chat failure (or the old
+      // "disconnected" baseline), so a freshly-saved working key still looked
+      // broken until the user happened to send a message.
+      //
+      // This is the same probe the app runs at mount — one shared helper, not a
+      // second copy that can drift. It also subsumes the old
+      // "disabled → disconnected" release here: the probe claims "checking"
+      // first, so a save that re-enables the LLM no longer dead-ends the chat
+      // input on the stale opt-out.
+      //
+      // Deliberately not awaited: the probe performs a real network round trip
+      // (a live chat completion), and the dialog must not stay open on it. The
+      // store is global, so the result lands even though this dialog unmounts.
+      void probeLLMConnection();
     } catch {
       setSaveStatus("error");
       setTimeout(() => setSaveStatus("idle"), 3000);

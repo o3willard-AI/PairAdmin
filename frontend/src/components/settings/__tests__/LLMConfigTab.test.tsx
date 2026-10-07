@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 import { LLMConfigTab, isLoopbackHost } from "@/components/settings/LLMConfigTab";
@@ -130,7 +130,7 @@ describe("LLMConfigTab — Disable Pair LLM", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("saving a real provider after being disabled calls SetModel and releases the disabled status gate", async () => {
+  it("saving a real provider after being disabled releases the disabled status gate", async () => {
     const user = userEvent.setup();
     // Simulate the app currently in the disabled state
     useSettingsStore.setState({ connectionStatus: "disabled" });
@@ -140,8 +140,15 @@ describe("LLMConfigTab — Disable Pair LLM", () => {
 
     // Default provider state is "openai" with an empty model
     expect(setModel).toHaveBeenCalledWith("openai:");
-    // "disabled" must be released so stream done/error events drive the
-    // status bar again (the startup probe only runs on mount)
+    // "disabled" must be released so the status bar is driven again rather than
+    // dead-ended on the stale opt-out. Since PA-TC this happens through the
+    // post-save probe, which claims "checking" before it calls out — so the
+    // assertion is that the status has MOVED, not that it equals any one value.
+    // (This fixture's GetSettings resolves {}, so the probe's honest no-provider
+    // answer is "disconnected"; the connected case is covered below.)
+    await waitFor(() =>
+      expect(useSettingsStore.getState().connectionStatus).not.toBe("disabled")
+    );
     expect(useSettingsStore.getState().connectionStatus).toBe("disconnected");
   });
 });
@@ -525,5 +532,157 @@ describe("LLMConfigTab — catalog-driven provider/model picker", () => {
     // Mutation check: if the combobox only allowed catalog ids (rejecting
     // free text), the typed custom model would not reach SaveSettings — this
     // fails, since OpenRouter/Ollama/LM Studio have an open-ended model space.
+  });
+});
+
+describe("LLMConfigTab — Test Connection tests the key you typed (PA-TC)", () => {
+  beforeEach(() => {
+    getSettings.mockReset().mockResolvedValue({});
+    saveSettings.mockReset().mockResolvedValue(undefined);
+    saveAPIKey.mockReset().mockResolvedValue(undefined);
+    setModel.mockReset().mockResolvedValue("Model set to openai:gpt-4o");
+    getApiKeyStatus.mockReset().mockResolvedValue("");
+    testConnection.mockReset().mockResolvedValue("Connected");
+    useSettingsStore.setState({
+      activeModel: "",
+      settingsOpen: false,
+      connectionStatus: "connected",
+    });
+  });
+
+  // The API Key input only shows a placeholder when nothing is stored, so this
+  // is the field the user types a candidate key into.
+  const typeApiKey = async (
+    user: ReturnType<typeof userEvent.setup>,
+    value: string
+  ) => {
+    await user.type(screen.getByPlaceholderText("Enter API key"), value);
+  };
+
+  // Mutation check: dropping the apiKey argument from the TestConnection call
+  // (i.e. reverting to the 3-argument binding) makes the mock receive "" and
+  // reject, so the success message never renders and this test fails. That is
+  // defect #1: the test would silently have exercised the stored key instead.
+  it("forwards the typed key to the backend and says it used it", async () => {
+    const user = userEvent.setup();
+    const typed = "sk-typed-candidate-key";
+    testConnection.mockImplementation((async (
+      _provider: string,
+      _model: string,
+      _host: string,
+      key: string
+    ) => {
+      if (key !== typed) {
+        throw new Error("the typed key was not forwarded");
+      }
+      return "Connected";
+    }) as never);
+
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await typeModel(user, "openai/gpt-4o");
+    await typeApiKey(user, typed);
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+
+    expect(
+      await screen.findByText(/✓ Connected \(using the key you entered\)/i)
+    ).toBeInTheDocument();
+    expect(testConnection).toHaveBeenCalledWith("openai", "openai/gpt-4o", "", typed);
+  });
+
+  // The other half of the contract: an empty field keeps testing the saved key,
+  // which is exactly what the app-mount probe relies on.
+  //
+  // Mutation check: always appending the "key you entered" suffix (or always
+  // forwarding a non-empty key) makes this fail — the user must be told which
+  // key was actually tested.
+  it("says it used the saved key when the API Key field is empty", async () => {
+    const user = userEvent.setup();
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await typeModel(user, "openai/gpt-4o");
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+
+    expect(
+      await screen.findByText(/✓ Connected \(using the saved key\)/i)
+    ).toBeInTheDocument();
+    expect(testConnection).toHaveBeenCalledWith("openai", "openai/gpt-4o", "", "");
+  });
+
+  // Security/correctness property: a typed-but-unsaved key is a CANDIDATE, not
+  // the active configuration. Flipping the global indicator to Connected because
+  // a candidate worked would be a new lie (and Save is what makes it active).
+  //
+  // Mutation check: making handleTestConnection write connectionStatus makes
+  // this fail.
+  it("a successful unsaved Test must not move the global connection indicator", async () => {
+    const user = userEvent.setup();
+    useSettingsStore.setState({ connectionStatus: "disconnected" });
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await typeModel(user, "openai/gpt-4o");
+    await typeApiKey(user, "sk-typed-candidate-key");
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+    await screen.findByText(/using the key you entered/i);
+
+    expect(useSettingsStore.getState().connectionStatus).toBe("disconnected");
+  });
+
+  // A failing unsaved Test must not move it either — the indicator describes the
+  // saved configuration, not the last thing the user poked at.
+  it("a failed unsaved Test must not move the global connection indicator", async () => {
+    const user = userEvent.setup();
+    useSettingsStore.setState({ connectionStatus: "connected" });
+    testConnection.mockRejectedValue(new Error("401 unauthorized"));
+    render(<LLMConfigTab onClose={vi.fn()} />);
+
+    await typeModel(user, "openai/gpt-4o");
+    await typeApiKey(user, "sk-bad-candidate-key");
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+    await screen.findByText(/✗ 401 unauthorized/i);
+
+    expect(useSettingsStore.getState().connectionStatus).toBe("connected");
+  });
+
+  // Defect #3: after saving a working key the indicator stayed Disconnected, so
+  // the key looked broken until the user happened to send a chat message.
+  //
+  // Mutation check: removing the probeLLMConnection() call from handleSave
+  // leaves the status at "disconnected" and this test fails.
+  it("re-probes after a successful Save and flips Disconnected to Connected", async () => {
+    const user = userEvent.setup();
+    useSettingsStore.setState({ connectionStatus: "disconnected" });
+    // Mount reads a config with no provider; the post-save probe reads the
+    // just-saved one. (The probe is the only later caller of GetSettings here.)
+    getSettings
+      .mockResolvedValueOnce({})
+      .mockResolvedValue({ Provider: "openai", Model: "gpt-4o" });
+    testConnection.mockResolvedValue("Connected");
+
+    render(<LLMConfigTab onClose={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() =>
+      expect(useSettingsStore.getState().connectionStatus).toBe("connected")
+    );
+    expect(useSettingsStore.getState().activeModel).toBe("openai:gpt-4o");
+  });
+
+  // The probe reports on the SAVED configuration, so a save that still cannot
+  // connect must land on "disconnected" rather than leaving "checking" behind.
+  it("re-probes after a successful Save and lands on Disconnected when it fails", async () => {
+    const user = userEvent.setup();
+    useSettingsStore.setState({ connectionStatus: "connected" });
+    getSettings
+      .mockResolvedValueOnce({})
+      .mockResolvedValue({ Provider: "openai", Model: "gpt-4o" });
+    testConnection.mockRejectedValue(new Error("connection refused"));
+
+    render(<LLMConfigTab onClose={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() =>
+      expect(useSettingsStore.getState().connectionStatus).toBe("disconnected")
+    );
   });
 });

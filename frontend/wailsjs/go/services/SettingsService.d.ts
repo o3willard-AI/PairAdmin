@@ -46,6 +46,6 @@ export function SetModel(arg1:string):Promise<string>;
 
 export function Startup(arg1:context.Context):Promise<void>;
 
-export function TestConnection(arg1:string,arg2:string,arg3:string):Promise<string>;
+export function TestConnection(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
 
 export function VerifyMasterPassword(arg1:string):Promise<boolean>;
