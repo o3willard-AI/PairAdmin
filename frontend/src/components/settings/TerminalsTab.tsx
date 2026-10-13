@@ -64,6 +64,10 @@ export function TerminalsTab() {
       <h3 className="text-xs font-semibold text-surface-text-muted uppercase tracking-wider">
         Capture Settings
       </h3>
+      <p className="text-xs text-surface-text-muted -mt-2">
+        Clipboard auto-clear applies to the next copy. The AT-SPI polling
+        interval takes effect after restarting the app.
+      </p>
 
       <div className="space-y-1">
         <label className="text-xs text-surface-text-muted">AT-SPI2 Polling Interval (ms)</label>
@@ -134,6 +138,10 @@ export function TerminalsTab() {
       <h3 className="text-xs font-semibold text-surface-text-muted uppercase tracking-wider pt-2">
         Remote Connections
       </h3>
+      <p className="text-xs text-surface-text-muted -mt-2">
+        These apply to the next connection (host keys) and immediately
+        (Network Finder).
+      </p>
 
       <label className="flex items-start gap-2 text-xs text-surface-text-muted">
         <input
