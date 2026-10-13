@@ -103,4 +103,32 @@ describe("TerminalsTab", () => {
     // "On by default" copy makes the queryByText(/On by default/) assertion
     // find text — this fails.
   });
+
+  // UAT: each section states when its settings take effect. The questions the
+  // notes answer are the ones support actually gets ("I cleared the clipboard
+  // interval and it still clears", "I changed the width and nothing moved").
+  //
+  // Mutation check: deleting any of the three note paragraphs (or moving one to
+  // a different section) fails — the assertions are anchored to the heading each
+  // note must sit under, not just to the presence of the text somewhere.
+  it("states when each section's settings take effect, under its own heading", async () => {
+    render(<TerminalsTab />);
+    await screen.findByRole("checkbox", { name: /Network Finder/ });
+
+    function noteUnder(headingText: RegExp): string {
+      const heading = screen.getByRole("heading", { name: headingText });
+      const note = heading.nextElementSibling;
+      expect(note?.tagName).toBe("P");
+      return note?.textContent ?? "";
+    }
+
+    expect(noteUnder(/^Capture Settings$/)).toMatch(
+      /Clipboard auto-clear applies to the next copy\.\s+The AT-SPI polling interval takes effect after restarting the app\./
+    );
+    // The Layout note predates this task and is kept verbatim.
+    expect(noteUnder(/^Layout$/)).toMatch(/takes effect after\s+restarting the app\./);
+    expect(noteUnder(/^Remote Connections$/)).toMatch(
+      /These apply to the next connection \(host keys\) and immediately\s+\(Network Finder\)\./
+    );
+  });
 });

@@ -7,6 +7,8 @@ import {context} from '../models';
 
 export function FilterCommand(arg1:string):Promise<string>;
 
+export function FilterText(arg1:string):Promise<string>;
+
 export function RebuildProvider():Promise<void>;
 
 export function SendMessage(arg1:string,arg2:string,arg3:string):Promise<void>;

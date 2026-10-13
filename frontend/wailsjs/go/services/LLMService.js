@@ -6,6 +6,10 @@ export function FilterCommand(arg1) {
   return window['go']['services']['LLMService']['FilterCommand'](arg1);
 }
 
+export function FilterText(arg1) {
+  return window['go']['services']['LLMService']['FilterText'](arg1);
+}
+
 export function RebuildProvider() {
   return window['go']['services']['LLMService']['RebuildProvider']();
 }
