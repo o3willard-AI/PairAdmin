@@ -315,6 +315,21 @@ func (s *LLMService) SendMessage(tabId, userInput, terminalContext string) error
 	return nil
 }
 
+// FilterText applies the ANSI + credential (+ custom pattern) pipeline to content
+// and returns the redacted result. Used by Copy Mode's "Filtered LLM buffer" tab so
+// the user can preview exactly what would be sent to the LLM.
+func (s *LLMService) FilterText(content string) (string, error) {
+	credFilter, err := filter.NewCredentialFilter()
+	if err != nil {
+		return "", err
+	}
+	filters := []filter.Filter{filter.NewANSIFilter(), credFilter}
+	if cp := customFilterPipeline(); cp != nil {
+		filters = append(filters, cp)
+	}
+	return filter.NewPipeline(filters...).Apply(content)
+}
+
 // customFilterPipeline loads AppConfig.CustomPatterns and builds a filter
 // pipeline from them, or returns nil if there are none configured (or the
 // config can't be loaded). Mirrors CaptureManager.buildFilterPipeline()'s

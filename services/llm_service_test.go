@@ -464,3 +464,64 @@ func TestAuditLoggerNilNoOpLLMService(t *testing.T) {
 	// Wait for goroutine
 	time.Sleep(200 * time.Millisecond)
 }
+
+// Mutation check: removing either the ANSI or credential filter from FilterText's
+// shared filter list leaves this ANSI-split GitHub token unredacted.
+func TestLLMServiceFilterTextRedactsANSIWrappedGitHubPAT(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	sentinel := "ghp_1234567890abcdefghij1234567890abcdef12"
+	ansiSplit := strings.Replace(sentinel, "abcdefghij", "abc\x1b[31mdefghij", 1)
+	got, err := (&LLMService{}).FilterText("prefix " + ansiSplit + " suffix")
+	if err != nil {
+		t.Fatalf("FilterText: %v", err)
+	}
+	if strings.Contains(got, sentinel) {
+		t.Fatalf("FilterText left the GitHub token in output: %q", got)
+	}
+	if !strings.Contains(got, "[REDACTED:github-token]") {
+		t.Fatalf("FilterText did not mark the token redacted: %q", got)
+	}
+	if strings.Contains(got, "\x1b[") {
+		t.Fatalf("FilterText did not strip ANSI control sequences: %q", got)
+	}
+}
+
+// Mutation check: an unconditional drop or replacement in FilterText breaks
+// this plain-text identity control; the preceding test guards filter omission.
+func TestLLMServiceFilterTextLeavesPlainTextUnchanged(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	const plain = "ordinary terminal text with no credentials"
+	got, err := (&LLMService{}).FilterText(plain)
+	if err != nil {
+		t.Fatalf("FilterText: %v", err)
+	}
+	if got != plain {
+		t.Fatalf("FilterText changed plain text: got %q, want %q", got, plain)
+	}
+}
+
+// Mutation check: omitting customFilterPipeline from FilterText leaves this
+// configured user pattern untouched.
+func TestLLMServiceFilterTextAppliesCustomPatterns(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+	cfg := &config.AppConfig{CustomPatterns: []config.CustomPattern{{Name: "uat-token", Regex: `UAT_TOKEN_[0-9]+`, Action: "redact"}}}
+	if err := config.SaveAppConfig(cfg); err != nil {
+		t.Fatalf("SaveAppConfig: %v", err)
+	}
+
+	got, err := (&LLMService{}).FilterText("value=UAT_TOKEN_123")
+	if err != nil {
+		t.Fatalf("FilterText: %v", err)
+	}
+	if strings.Contains(got, "UAT_TOKEN_123") || !strings.Contains(got, "[REDACTED:uat-token]") {
+		t.Fatalf("FilterText did not apply the configured custom pattern: %q", got)
+	}
+}
