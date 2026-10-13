@@ -28,30 +28,34 @@ type captureResult struct {
 	err     error
 }
 
-// CaptureManager owns a set of TerminalAdapters, polls them at 500ms intervals,
-// merges pane lists, deduplicates content via FNV-64a, and emits Wails events.
+// CaptureManager owns a set of TerminalAdapters, polls them at the configured
+// interval, merges pane lists, deduplicates content via FNV-64a, and emits Wails events.
 type CaptureManager struct {
 	adapters []TerminalAdapter
 	active   []TerminalAdapter // adapters that passed IsAvailable check
 	emitFn   func(ctx context.Context, eventName string, optionalData ...interface{})
 	log      *slog.Logger // structured diagnostics; configured once at construction
 
-	ctx      context.Context
-	cancel   context.CancelFunc
-	mu       sync.Mutex
-	panes    map[string]*captureState // keyed by namespaced pane ID
-	sem      *semaphore.Weighted
-	pipeline *filter.Pipeline // custom filter pipeline including CustomFilter patterns
+	ctx             context.Context
+	cancel          context.CancelFunc
+	mu              sync.Mutex
+	panes           map[string]*captureState // keyed by namespaced pane ID
+	sem             *semaphore.Weighted
+	pipeline        *filter.Pipeline // custom filter pipeline including CustomFilter patterns
+	pollInterval    time.Duration
+	loadAppConfigFn func() (*config.AppConfig, error)
 }
 
 // NewCaptureManager creates a CaptureManager with bounded concurrency of 4.
 func NewCaptureManager(adapters []TerminalAdapter, emitFn func(ctx context.Context, eventName string, optionalData ...interface{})) *CaptureManager {
 	return &CaptureManager{
-		adapters: adapters,
-		panes:    make(map[string]*captureState),
-		sem:      semaphore.NewWeighted(4),
-		emitFn:   emitFn,
-		log:      slog.Default().With("component", "capture"),
+		adapters:        adapters,
+		panes:           make(map[string]*captureState),
+		sem:             semaphore.NewWeighted(4),
+		emitFn:          emitFn,
+		log:             slog.Default().With("component", "capture"),
+		pollInterval:    500 * time.Millisecond,
+		loadAppConfigFn: config.LoadAppConfig,
 	}
 }
 
@@ -69,12 +73,24 @@ func (m *CaptureManager) Startup(ctx context.Context) {
 
 	m.pipeline = m.buildFilterPipeline()
 
+	// ATSPIPollingMs takes effect at the next app launch. Invalid or
+	// unavailable configuration fails back to the established 500ms cadence.
+	loadAppConfig := m.loadAppConfigFn
+	if loadAppConfig == nil {
+		loadAppConfig = config.LoadAppConfig
+	}
+	cfg, err := loadAppConfig()
+	m.pollInterval = 500 * time.Millisecond
+	if err == nil && cfg != nil && cfg.ATSPIPollingMs >= 100 && cfg.ATSPIPollingMs <= 5000 {
+		m.pollInterval = time.Duration(cfg.ATSPIPollingMs) * time.Millisecond
+	}
+
 	go m.pollLoop()
 }
 
-// pollLoop runs the capture tick at 500ms intervals until the context is cancelled.
+// pollLoop runs the capture tick at pollInterval until the context is cancelled.
 func (m *CaptureManager) pollLoop() {
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(m.pollInterval)
 	defer ticker.Stop()
 	for {
 		select {

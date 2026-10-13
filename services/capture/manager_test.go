@@ -2,9 +2,11 @@ package capture
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"pairadmin/services/config"
 )
@@ -583,5 +585,85 @@ func TestCaptureManagerCustomFilterRemoveAppliedDuringTick(t *testing.T) {
 	}
 	if !strings.Contains(content, "user: admin") || !strings.Contains(content, "role: admin") {
 		t.Errorf("expected non-password lines preserved, got: %s", content)
+	}
+}
+
+// Mutation check: replacing the config-derived pollInterval with a hard-coded
+// 500ms interval makes the custom interval and the observed polling cadence fail.
+func TestCaptureManagerStartupUsesATSPIPollingMs(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  *config.AppConfig
+		err  error
+		want time.Duration
+	}{
+		{name: "configured", cfg: &config.AppConfig{ATSPIPollingMs: 275}, want: 275 * time.Millisecond},
+		{name: "too low falls back", cfg: &config.AppConfig{ATSPIPollingMs: 50}, want: 500 * time.Millisecond},
+		{name: "too high falls back", cfg: &config.AppConfig{ATSPIPollingMs: 6000}, want: 500 * time.Millisecond},
+		{name: "load error falls back", err: errors.New("load failed"), want: 500 * time.Millisecond},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("USERPROFILE", t.TempDir())
+			mgr := NewCaptureManager(nil, func(context.Context, string, ...interface{}) {})
+			mgr.loadAppConfigFn = func() (*config.AppConfig, error) { return tc.cfg, tc.err }
+			ctx, cancel := context.WithCancel(context.Background())
+			mgr.Startup(ctx)
+			cancel()
+			if mgr.cancel != nil {
+				mgr.cancel()
+			}
+			if mgr.pollInterval != tc.want {
+				t.Fatalf("pollInterval = %s, want %s", mgr.pollInterval, tc.want)
+			}
+		})
+	}
+}
+
+type countingAdapter struct {
+	mockAdapter
+	calls chan struct{}
+}
+
+func (a *countingAdapter) Discover(ctx context.Context) ([]PaneInfo, error) {
+	select {
+	case a.calls <- struct{}{}:
+	default:
+	}
+	return a.mockAdapter.Discover(ctx)
+}
+
+// Mutation check: changing pollLoop back to a literal 500ms ticker prevents
+// two 100ms configured polling cycles from arriving before the deadline.
+func TestCaptureManagerPollLoopUsesConfiguredInterval(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
+	adapter := &countingAdapter{
+		mockAdapter: mockAdapter{name: "tmux", available: true},
+		calls:       make(chan struct{}, 8),
+	}
+	mgr := NewCaptureManager([]TerminalAdapter{adapter}, func(context.Context, string, ...interface{}) {})
+	mgr.loadAppConfigFn = func() (*config.AppConfig, error) {
+		return &config.AppConfig{ATSPIPollingMs: 100}, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	mgr.Startup(ctx)
+	defer func() {
+		cancel()
+		if mgr.cancel != nil {
+			mgr.cancel()
+		}
+	}()
+
+	deadline := time.NewTimer(450 * time.Millisecond)
+	defer deadline.Stop()
+	for observed := 0; observed < 2; {
+		select {
+		case <-adapter.calls:
+			observed++
+		case <-deadline.C:
+			t.Fatalf("observed %d Discover calls, want 2 at the configured 100ms cadence", observed)
+		}
 	}
 }
