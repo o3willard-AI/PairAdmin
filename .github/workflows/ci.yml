@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   go-test:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     permissions:
       contents: read
     steps:
@@ -75,7 +75,7 @@ jobs:
         run: go test ./services/... -count=1
 
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     permissions:
       contents: read
     steps:
@@ -125,7 +125,7 @@ jobs:
           node scripts/check-diff-coverage.mjs "$BASE_SHA"
 
   govulncheck:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     permissions:
       contents: read
     steps:
@@ -150,7 +150,7 @@ jobs:
           govulncheck ./...
 
   gitleaks:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     permissions:
       contents: read
     steps:
