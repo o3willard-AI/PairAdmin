@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Environment } from "../../../wailsjs/runtime/runtime";
 import { mergeAndSaveSettings } from "@/utils/settingsSync";
 
 // Matches DefaultTerminalsSidebarWidthCh/DefaultCommandsSidebarWidthCh in
@@ -20,6 +21,10 @@ export function TerminalsTab() {
   );
   const [promptNewHostKeys, setPromptNewHostKeys] = useState(false);
   const [scannerEnabled, setScannerEnabled] = useState(true);
+  const [launchAsAdministrator, setLaunchAsAdministrator] = useState(false);
+  // null means "not known yet". It must NOT be treated as Windows: the checkbox
+  // is Windows-only, so anything but a confirmed "windows" leaves it disabled.
+  const [isWindows, setIsWindows] = useState<boolean | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
@@ -36,8 +41,21 @@ export function TerminalsTab() {
         // Default to enabled when absent (scanner_enabled defaults to true in
         // services/config/config.go).
         setScannerEnabled(cfg.ScannerEnabled === undefined ? true : cfg.ScannerEnabled);
+        setLaunchAsAdministrator(!!cfg.LaunchAsAdministrator);
       })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    // Platform gate for the Windows-only administrator toggle. Wrapped in
+    // Promise.resolve().then() because the Wails runtime binding reads
+    // window.runtime directly: outside a Wails webview (a plain `vite dev`, or
+    // jsdom) that throws synchronously rather than rejecting, and an effect that
+    // throws takes the whole settings dialog down with it.
+    Promise.resolve()
+      .then(() => Environment())
+      .then((env) => setIsWindows(env?.platform === "windows"))
+      .catch(() => setIsWindows(false));
   }, []);
 
   const handleSave = async () => {
@@ -50,6 +68,7 @@ export function TerminalsTab() {
         CommandsSidebarWidthCh: clamp(commandsSidebarWidthCh, 10, 80),
         PromptNewHostKeys: promptNewHostKeys,
         ScannerEnabled: scannerEnabled,
+        LaunchAsAdministrator: launchAsAdministrator,
       });
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
@@ -176,6 +195,34 @@ export function TerminalsTab() {
             PairAdmin can search local networks for SSH hosts. Turn this off
             to hide the panel and its entry point entirely. Only
             displayed/available when this checkbox is enabled.
+          </span>
+        </span>
+      </label>
+
+      <h3 className="text-xs font-semibold text-surface-text-muted uppercase tracking-wider pt-2">
+        Administrator
+      </h3>
+      <p className="text-xs text-surface-text-muted -mt-2">
+        Takes effect on the next launch: PairAdmin restarts itself elevated, and
+        the terminals it opens inherit that administrator token.
+      </p>
+
+      <label className="flex items-start gap-2 text-xs text-surface-text-muted">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={launchAsAdministrator}
+          disabled={!isWindows}
+          onChange={(e) => setLaunchAsAdministrator(e.target.checked)}
+        />
+        <span>
+          Launch PairAdmin as Local Windows Administrator
+          <span className="block text-surface-text-muted/80">
+            Windows only. On the next launch PairAdmin asks for administrator
+            rights once (a UAC prompt) and runs elevated, so every terminal it
+            opens starts with an administrator token — no per-terminal prompt.
+            The terminals stay inside PairAdmin, so the assistant can still read
+            and drive them. Turn this off to go back to launching normally.
           </span>
         </span>
       </label>
