@@ -124,6 +124,14 @@ type AppConfig struct {
 	// seam, which honors this field for the default (non-forked) build — see that
 	// seam for how an Enterprise fork force-disables scanning.
 	ScannerEnabled bool `mapstructure:"scanner_enabled" yaml:"scanner_enabled"`
+	// LaunchAsAdministrator makes PairAdmin relaunch itself elevated on startup
+	// (Windows only), so every terminal it opens inherits an administrator
+	// token with no per-terminal UAC prompt and without the terminal leaving
+	// the app. Off by default — the bool zero value IS the correct default, so
+	// there is no default-setting code for it. Read by
+	// services/elevation_windows.go; the non-Windows build persists the setting
+	// but never acts on it.
+	LaunchAsAdministrator bool `mapstructure:"launch_as_administrator" yaml:"launch_as_administrator"`
 	// EnabledProviders and DisabledProviders are the OSS LLM policy: a
 	// user-settable, UNSIGNED, self-imposed allow/deny list applied through
 	// the same evaluation engine as everything else
@@ -335,6 +343,7 @@ func SaveAppConfig(cfg *AppConfig) error {
 	v.Set("pinned_commands", cfg.PinnedCommands)
 	v.Set("prompt_new_host_keys", cfg.PromptNewHostKeys)
 	v.Set("scanner_enabled", cfg.ScannerEnabled)
+	v.Set("launch_as_administrator", cfg.LaunchAsAdministrator)
 	v.Set("enabled_providers", cfg.EnabledProviders)
 	v.Set("disabled_providers", cfg.DisabledProviders)
 	return v.WriteConfigAs(configPath())

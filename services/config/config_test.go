@@ -234,6 +234,9 @@ func TestAppConfig_FullRoundTrip(t *testing.T) {
 		FontSize:           14,
 		ContextLines:       200,
 		CustomPatterns:     []CustomPattern{{Name: "test", Regex: ".*", Action: "redact"}},
+		// Security/terminal toggle added by PA-1: must survive a save/load round
+		// trip, or the "launch as administrator" setting silently never sticks.
+		LaunchAsAdministrator: true,
 	}
 
 	if err := SaveAppConfig(original); err != nil {
@@ -271,6 +274,13 @@ func TestAppConfig_FullRoundTrip(t *testing.T) {
 	}
 	if len(loaded.CustomPatterns) != 1 {
 		t.Fatalf("CustomPatterns: expected 1, got %d", len(loaded.CustomPatterns))
+	}
+	// Mutation check: SaveAppConfig writes each field explicitly via v.Set, so
+	// deleting its `v.Set("launch_as_administrator", ...)` line makes this
+	// assertion read back false — the checkbox in Settings would appear to save
+	// and then never take effect on the next launch.
+	if !loaded.LaunchAsAdministrator {
+		t.Error("LaunchAsAdministrator: expected true after a round trip, got false")
 	}
 }
 

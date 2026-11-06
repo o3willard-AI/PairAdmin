@@ -143,6 +143,7 @@ export namespace config {
 	    PinnedCommands: PinnedCommand[];
 	    PromptNewHostKeys: boolean;
 	    ScannerEnabled: boolean;
+	    LaunchAsAdministrator: boolean;
 	    EnabledProviders: string[];
 	    DisabledProviders: string[];
 	
@@ -176,6 +177,7 @@ export namespace config {
 	        this.PinnedCommands = this.convertValues(source["PinnedCommands"], PinnedCommand);
 	        this.PromptNewHostKeys = source["PromptNewHostKeys"];
 	        this.ScannerEnabled = source["ScannerEnabled"];
+	        this.LaunchAsAdministrator = source["LaunchAsAdministrator"];
 	        this.EnabledProviders = source["EnabledProviders"];
 	        this.DisabledProviders = source["DisabledProviders"];
 	    }

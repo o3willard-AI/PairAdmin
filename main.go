@@ -44,6 +44,15 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Launch as administrator: with the setting on (Windows only), start an
+	// elevated copy of this executable and exit, so every terminal the app opens
+	// inherits an administrator token. This runs AFTER the uninstall-cleanup
+	// path above — that must stay the first thing in main() and must never be
+	// skipped or turned into a UAC prompt — and BEFORE wails.Run(), so the
+	// elevated instance is the one that builds the window. No-op on macOS/Linux,
+	// and a no-op when the setting is off (its default).
+	services.RelaunchAsAdminIfNeeded()
+
 	// Full software-rendering stack for systems without reliable GPU support
 	// (VMs with VirtIO/Virtio GPU, no-dGPU desktops, headless).
 	// All vars must be set before wails.Run() so GTK/WebKit pick them up at init.
