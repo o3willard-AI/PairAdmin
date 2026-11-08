@@ -398,9 +398,9 @@ The `/security` page (§5.7) is the linkable asset. Secondary: a plainly written
 
 ## 8. The paid tier
 
-**Both agents: read, do not publish specifics.**
+**Both agents: the tier is announced. Read the boundaries below before publishing.**
 
-Centralized configuration lockdown and auto-populated connections from a database or file are **deliberately reserved** for a future licensed build (name undecided; "Enterprise" is preferred over "Pro" because both features are bought by central IT rather than by an individual operator). Planning for it happens in a private repository that is not public and must not be referenced, linked, or described in any public surface of this repo. **Do not announce, name, date, or price this tier.**
+Centralized configuration lockdown, auto-populated connections, SSO identity, provenance, and audit-forwarding ship as **PairAdmin Enterprise** — the licensed build, announced 2026-11-08 on the strength of working, publicly downloadable binaries (v0.1.0 alpha, currently unsigned). The public surface is **https://pairadmin.com/enterprise/**. The source repository remains private and must still not be linked or described. Licensing is **non-blocking by construction**: the download is open, and the license gates enterprise-feature activation (banner + audit), never the application itself. **Do not date or price this tier** — those remain unannounced.
 
 ### 8.1 The open-core line holds
 
@@ -410,11 +410,11 @@ Every guarantee in §2 is unconditional in the open-source build. The paid tier 
 
 When asked "can I enforce this across four hundred engineers?" — in an issue, a Discussion, a review, or site copy — the approved response is:
 
-> Central policy control is on the enterprise roadmap. In the open build, the posture is set per operator and shown on screen for the whole session.
+> Central policy control ships in PairAdmin Enterprise — https://pairadmin.com/enterprise/. In the open build, the posture is set per operator and shown on screen for the whole session.
 
 True today, signals direction, promises no date. Silence is worse than this sentence: an evaluator who asks and gets nothing concludes the answer is *no, permanently*.
 
-### 8.3 When the tier does ship
+### 8.3 The tier has shipped (v0.1.0 alpha)
 
 Position connection-import as a **security** feature, not a convenience one. It ends the text file of IP addresses, and means connection details come from a system of record rather than a hundred personal notes files. Internal topology stops living on laptops. Sold as bulk import it competes with a CSV parser; sold as controlled provenance for connection data it belongs in the same story as everything in §2.
 

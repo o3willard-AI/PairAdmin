@@ -399,6 +399,10 @@ third-party webviews, no network-loaded JS.
 Rationale, OS matrix, and alternatives are recorded in
 [`docs/adr/ADR-0001-webkit-sandbox-disable.md`](docs/adr/ADR-0001-webkit-sandbox-disable.md).
 
+## PairAdmin Enterprise
+
+Are you an Enterprise or a Professional Organization that needs enhanced security features and support? [PairAdmin Enterprise](https://pairadmin.com/enterprise/) is your answer — organization-level policy, SSO identity, provenance, and a tamper-evident audit chain, on top of the terminal you already trust.
+
 ## License
 
 [Apache License 2.0](LICENSE)
